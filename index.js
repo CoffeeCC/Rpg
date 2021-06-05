@@ -1,9 +1,42 @@
-
+///import {Progress2} from './Progression.js';
 const input = require("readline-sync");
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,);
-  console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------");
+  console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
+function MOVING(){
+  let EncounterChance = math.floor(Math.random() *10) + 1;
+  let Choice;
+  console.log("1. Move Forwards.\n");
+  console.log("2. Rest.\n");
+  console.log("3. Move Backwards.\n");
+  console.log("4. Search\n");
+Choice = input.question("...\n");
+///Maybe use a switch for this?
+  if (Choice == 1){
+Character1.Progress++
+Character.search = !bool;
+if (EncounterChance >= 5) {
+  //run create montser Function here
+}
+  }
+  if (Choice == 2) {
+    //Rest and Gain Health,Day Progresses.
+  }
+  if (Choice == 3) {
+Character1.Progress--
+Character.search = !bool;
+  }
+  if (Choice == 4) {
+    console.log("You Search the Area for Anything Useful\n");
+    if (Character1.Progress = 2) {
+      Progress2();
+    }
+    else {
+      console.log("You dont see anything Interesting\n");
+    }
+    }
+    }
 let Start = [""];
 let Races = ["Human"];
 let Classes = ["Warrior", "Mage","Thief","Bard"]
@@ -16,7 +49,7 @@ let Character1 = {
   HP: 1,
   Strength: 1,
   MaxHP: 100,
-  Progress: 0,
+  Progress: 1,
 };
 let Monster1 = {
   Name:  " ",
@@ -49,5 +82,5 @@ Character1.Class = input.question("\n");
 Start = input.question("Would you like to Begin? (Y/N)\n");
 if (Start = "Y") {
  HUD();
-
+MOVING();
 }
