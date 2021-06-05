@@ -1,19 +1,29 @@
 
 const input = require("readline-sync");
+function HUD() {
+  console.log("--------------------------------------------------------------\nLocation:",Location,);
+  console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------");
+}
+let Start = [""];
 let Races = ["Human"];
 let Classes = ["Warrior", "Mage","Thief","Bard"]
+let Location = ["Town"];
 let Character1 = {
   Name:  " ",
   Race:  " ",
   Class:  " ",
   Level:  1,
-  HP: 0,
+  HP: 1,
+  Strength: 1,
+  MaxHP: 100,
+  Progress: 0,
 };
 let Monster1 = {
   Name:  " ",
   Race:  " ",
   Class:  " ",
   Level:  1,
+  Strength: 1,
   MonsterHP: 30,
   MonsterLevel: Character1.Level,
   MonsterXp: 5
@@ -35,3 +45,9 @@ for (i = 0; i < Classes.length; i++) {
   console.log(Classes[i]);
 }
 Character1.Class = input.question("\n");
+
+Start = input.question("Would you like to Begin? (Y/N)\n");
+if (Start = "Y") {
+ HUD();
+
+}
