@@ -7,6 +7,7 @@ function HUD() {
 }
 
 let Start = [""];
+let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
 let Classes = ["Warrior", "Mage","Thief","Bard","Knight",]
 let Location = ["Town"];
@@ -19,6 +20,7 @@ let Character1 = {
   Strength: 1,
   MaxHP: 100,
   Progress: 1,
+  Search: 1,
 };
 let Monster1 = {
   Name:  " ",
@@ -87,15 +89,17 @@ if (Monster1.MonsterLevel == 0) {
 };
 function MOVING(){
   let EncounterChance = Math.floor(Math.random() * 10) + 1;
+  let ItemChance = Math.floor (Math.random() * 10) + 1;
   let Choice;
   console.log("1. Move Forwards.\n");
   console.log("2. Rest.\n");
   console.log("3. Move Backwards.\n");
   console.log("4. Search\n");
-Choice = input.question("...\n");
+Choice = input.question("______________________________________________________________\n");
 ///Maybe use a switch for this?
   if (Choice == 1){
 Character1.Progress++
+Character1.Search++
 if (EncounterChance >= 5) {
   //run create montser Function here
   CreateMonster();
@@ -107,10 +111,18 @@ if (EncounterChance >= 5) {
   }
   if (Choice == 3) {
 Character1.Progress--
-Character.search = !bool;
   }
   if (Choice == 4) {
+    if (Character1.Search >= 1) {
     console.log("You Search the Area for Anything Useful\n");
+    if (ItemChance > 6) {
+      console.log("You found a",ItemList[Math.floor(Math.random()*ItemList.length)]);
+    }
+    Character1.Search--
+    }
+    else if (Character1.Search < 1) {
+      console.log("You have Already Searched this area.\n.");
+    }
     if (Character1.Progress = 2) {
   ///Run Event for Second Space
     }
