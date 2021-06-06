@@ -1,8 +1,9 @@
 
 const input = require("readline-sync");
-let MonsterNames = ["Jake","Paul","Tom",];
+let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
+let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
 function HUD() {
-  console.log("--------------------------------------------------------------\nLocation:",Location,);
+  console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
 
@@ -27,10 +28,14 @@ let Monster1 = {
   Race:  " ",
   Class:  " ",
   Level:  1,
-  HP: 1,
+  HP: 0,
   Strength: 1,
-  MaxHP: 1,
+  MaxHP: 100,
+  Progress: 1,
+  Search: 1,
 };
+CreateCharacter();
+function CreateCharacter(){
 Character1.Name = input.question("Please enter your name... \n\n");
 
 console.log("Characters name is", Character1.Name,"\n\n");
@@ -48,11 +53,17 @@ for (i = 0; i < Classes.length; i++) {
 }
 Character1.Class = input.question("\n");
 
-Start = input.question("Would you like to Begin? (Y/N)\n");
+Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
 if (Start = "Y") {
-HUD();
-MOVING();
+  console.clear();
+  HUD();
+  MOVING();
 }
+else {
+  CreateCharacter();
+}
+};
+
 
 
 
@@ -66,25 +77,24 @@ MOVING();
 
 ////////////////////////Function Storage/////////////
 function CombatHUD() {
-    console.log(Character1.Name,"|",Character1.HP,Monster1.Name,Monster1.HP)
+  console.clear();
+  CreateMonster();
+  console.log("*****************************************************************************")
+    console.log(Character1.Name,"HP",Character1.HP,"|", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,);
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
-let MonsterHP = (Math.random() * 30) * Character1.Level;
-let Monster1 = {
-MonsterName: MonsterNames[Math.floor(Math.random()*MonsterNames.length)],
-MonsterMaxHP: MonsterHP,
-MonsterLevel: (R + Character1.Level),
-MonsterXP: (MonsterHP/2),
-};
+Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
+Monster1.MaxHP = Monster1.MonsterHP,
+Monster1.Level = (Math.floor(Math.random()* 5)) + Character1.Level,
+Monster1.MonsterXP = (Monster1.MonsterHP/2),
+Monster1.Name = MonsterNamesPRE[Math.floor(Math.random()*MonsterNamesPRE.length)] + "-" + MonsterNamesSUF[Math.floor(Math.random()*MonsterNamesSUF.length)]
+
 if (Monster1.MonsterHP <= 10) {
   CreateMonster();
 };
 if (Monster1.MonsterLevel == 0) {
   CreateMonster();
-  function CombatHUD() {
-    console.log(Character1.Name,"|",Character1.HP,Monster1.Name,Monster1.HP)
-  };
 };
 };
 function MOVING(){
@@ -95,6 +105,7 @@ function MOVING(){
   console.log("2. Rest.\n");
   console.log("3. Move Backwards.\n");
   console.log("4. Search\n");
+  console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question("______________________________________________________________\n");
 ///Maybe use a switch for this?
   if (Choice == 1){
@@ -102,8 +113,14 @@ Character1.Progress++
 Character1.Search++
 if (EncounterChance >= 5) {
   //run create montser Function here
+
+  console.clear();
   CreateMonster();
   CombatHUD();
+}
+else {
+  HUD();
+  MOVING();
 }
   }
   if (Choice == 2) {
@@ -130,8 +147,5 @@ Character1.Progress--
       console.log("You dont see anything Interesting\n");
     }
     }
-    console.log('\n'.repeat('75'));
-    HUD();
-    MOVING();
     };
   
