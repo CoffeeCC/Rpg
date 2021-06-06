@@ -39,7 +39,7 @@ Character1.Class = input.question("\n");
 
 Start = input.question("Would you like to Begin? (Y/N)\n");
 if (Start = "Y") {
- HUD();
+HUD();
 MOVING();
 }
 
@@ -56,9 +56,9 @@ MOVING();
 ////////////////////////Function Storage/////////////
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
+let MonsterHP = (Math.random() * 30) * Character1.Level;
 let Monster1 = {
 MonsterName: MonsterNames[Math.floor(Math.random()*MonsterNames.length)],
-MonsterHP: 30,
 MonsterMaxHP: MonsterHP,
 MonsterLevel: (R + Character1.Level),
 MonsterXP: (MonsterHP/2),
@@ -84,6 +84,7 @@ Character1.Progress++
 if (EncounterChance >= 5) {
   //run create montser Function here
   CreateMonster();
+  CombatHUD();
 }
   }
   if (Choice == 2) {
@@ -105,4 +106,6 @@ Character.search = !bool;
     console.log('\n'.repeat('75'));
     HUD();
     MOVING();
-    }
+    };
+  function CombatHUD() {/////Need to create this again since i broke it last time.
+  };
