@@ -1,4 +1,4 @@
-///import {Progress2} from './Progression.js';
+
 const input = require("readline-sync");
 let MonsterNames = ["Jake","Paul","Tom",];
 function HUD() {
@@ -7,8 +7,8 @@ function HUD() {
 }
 
 let Start = [""];
-let Races = ["Human"];
-let Classes = ["Warrior", "Mage","Thief","Bard"]
+let Races = ["Human","Elf","Dwarf",""];
+let Classes = ["Warrior", "Mage","Thief","Bard","Knight",]
 let Location = ["Town"];
 let Character1 = {
   Name:  " ",
@@ -19,6 +19,15 @@ let Character1 = {
   Strength: 1,
   MaxHP: 100,
   Progress: 1,
+};
+let Monster1 = {
+  Name:  " ",
+  Race:  " ",
+  Class:  " ",
+  Level:  1,
+  HP: 1,
+  Strength: 1,
+  MaxHP: 1,
 };
 Character1.Name = input.question("Please enter your name... \n\n");
 
@@ -54,6 +63,9 @@ MOVING();
 
 
 ////////////////////////Function Storage/////////////
+function CombatHUD() {
+    console.log(Character1.Name,"|",Character1.HP,Monster1.Name,Monster1.HP)
+  };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
 let MonsterHP = (Math.random() * 30) * Character1.Level;
@@ -68,6 +80,9 @@ if (Monster1.MonsterHP <= 10) {
 };
 if (Monster1.MonsterLevel == 0) {
   CreateMonster();
+  function CombatHUD() {
+    console.log(Character1.Name,"|",Character1.HP,Monster1.Name,Monster1.HP)
+  };
 };
 };
 function MOVING(){
@@ -107,5 +122,4 @@ Character.search = !bool;
     HUD();
     MOVING();
     };
-  function CombatHUD() {/////Need to create this again since i broke it last time.
-  };
+  
