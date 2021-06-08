@@ -7,12 +7,13 @@ function HUD() {
   console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
 
-let Start = [""];
+let Start =[""]
 let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
 let Classes = ["Warrior", "Mage","Thief","Bard","Knight",]
 let Location = ["Town"];
 let Character1 = {
+  Start: " ",
   Name:  " ",
   Race:  " ",
   Class:  " ",
@@ -30,6 +31,11 @@ let Monster1 = {
   Level:  1,
   HP: 0,
   Strength: 1,
+  Mana: 1,
+  Intellect: 1,
+  Agility: 1,
+  Luck: 1,
+
   MaxHP: 100,
   Progress: 1,
   Search: 1,
@@ -53,15 +59,25 @@ for (i = 0; i < Classes.length; i++) {
 }
 Character1.Class = input.question("\n");
 
-Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
-if (Start = "Y") {
+Character1.Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
+if (Start = "Y") {////////////////////////WHY DONT YOU WORK!?
   console.clear();
+  if(Character1.race = "Human") {
+    Character1.HP = 100;
+    Character1.Strength = 3;
+    Character1.Luck = 3;
+    Character1.Mana = 3;
+    Character1.Intellect = 3;
+    Character1.Agility = 3;
+    Character1.MaxHP = 100;
   HUD();
   MOVING();
+    }
 }
 else {
+  console.clear();
   CreateCharacter();
-}
+};
 };
 
 
