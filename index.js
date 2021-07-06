@@ -60,24 +60,25 @@ for (i = 0; i < Classes.length; i++) {
 Character1.Class = input.question("\n");
 
 Character1.Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
-if (Start = "Y") {////////////////////////WHY DONT YOU WORK!?
+if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
   console.clear();
-  if(Character1.race = "Human") {
+  if(Character1.race == "Human") {
     Character1.HP = 100;
+    Character1.MP = 50;
     Character1.Strength = 3;
     Character1.Luck = 3;
     Character1.Mana = 3;
     Character1.Intellect = 3;
     Character1.Agility = 3;
     Character1.MaxHP = 100;
-  HUD();
-  MOVING();
-    }
-}
-else {
-  console.clear();
+    };
+};
+if (Character1.Start == "N") {
   CreateCharacter();
 };
+
+HUD();
+MOVING();
 };
 
 
@@ -96,7 +97,7 @@ function CombatHUD() {
   console.clear();
   CreateMonster();
   console.log("*****************************************************************************")
-    console.log(Character1.Name,"HP",Character1.HP,"|", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,);
+    console.log(Character1.Name," | ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP",Character1.HP,"\n",Character1.MP,"\n");
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
@@ -150,17 +151,21 @@ Character1.Progress--
     console.log("You Search the Area for Anything Useful\n");
     if (ItemChance > 6) {
       console.log("You found a",ItemList[Math.floor(Math.random()*ItemList.length)]);
+      console.log("\n\n\n");
     }
     Character1.Search--
+    MOVING();
     }
     else if (Character1.Search < 1) {
       console.log("You have Already Searched this area.\n.");
+      MOVING();
     }
     if (Character1.Progress = 2) {
   ///Run Event for Second Space
     }
-    else {
+    else  {
       console.log("You dont see anything Interesting\n");
+      MOVING();
     }
     }
     };
