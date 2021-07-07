@@ -62,7 +62,7 @@ Character1.Class = input.question("\n");
 Character1.Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
 if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
   console.clear();
-  if(Character1.race == "Human") {
+  if(Character1.race = "Human") {
     Character1.HP = 100;
     Character1.MP = 50;
     Character1.Strength = 3;
@@ -94,13 +94,29 @@ MOVING();
 
 ////////////////////////Function Storage/////////////
 function CombatHUD() {
-  console.clear();
-  CreateMonster();
-  console.log("*****************************************************************************")
-    console.log(Character1.Name," | ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP",Character1.HP,"\n",Character1.MP,"\n");
+  let Dmg = 0;
+  console.log(" *****************************************************************************")
+    console.log(Character1.Name,"   |  ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
+  console.log("1: Attack\n");
+  console.log("2: Defend\n");
+  console.log("3: Magic\n");
+  console.log("4: Items\n");
+   CombatAction = input.question("Choose an Action...");
+  switch(CombatAction) {
+    case '1':
+    console.log(Character1.Name,"Attacked",Monster1.Name,"!");
+    Dmg = (Character1.Strength - Monster1.Defense);
+    console.log(Monster1.Name,"Suffered",Dmg,"Damage!");
+    Monster1.MonsterHP = (Monster1.MonsterHP - Dmg)
+    CombatHUD();
+    case '2':
+    case '3':
+    case '4':
+  }
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
+Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
 Monster1.MaxHP = Monster1.MonsterHP,
 Monster1.Level = (Math.floor(Math.random()* 5)) + Character1.Level,
@@ -168,5 +184,6 @@ Character1.Progress--
       MOVING();
     }
     }
-    };
+};
+    
   
