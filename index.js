@@ -1,4 +1,4 @@
-
+const colors = require('colors/safe');
 const input = require("readline-sync");
 let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
 let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
@@ -72,6 +72,10 @@ if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
     Character1.Agility = 3;
     Character1.MaxHP = 100;
     };
+    if(CHaracter.Class = "Mage") {
+      Character1.Weapon = "Wooden Staff";
+      Character1.Armor = "Apprentice Robes";
+    }
 };
 if (Character1.Start == "N") {
   CreateCharacter();
@@ -97,16 +101,18 @@ function CombatHUD() {
   let Dmg = 0;
   console.log(" *****************************************************************************")
     console.log(Character1.Name,"   |  ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
-  console.log("1: Attack\n");
-  console.log("2: Defend\n");
-  console.log("3: Magic\n");
-  console.log("4: Items\n");
-   CombatAction = input.question("Choose an Action...");
+  console.log(colors.blue("1: Attack\n"));
+  console.log(colors.blue("2: Defend\n"));
+  console.log(colors.blue("3: Magic\n"));
+  console.log(colors.blue("4: Items\n"));
+   CombatAction = input.question("Choose an Action...\n");
+   console.clear();
+   console.log("-----------------------------------------------------------------\n")
   switch(CombatAction) {
     case '1':
-    console.log(Character1.Name,"Attacked",Monster1.Name,"!");
+    console.log(colors.green(Character1.Name,"Attacked",Monster1.Name,"!"));
     Dmg = (Character1.Strength - Monster1.Defense);
-    console.log(Monster1.Name,"Suffered",Dmg,"Damage!");
+    console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg)
     CombatHUD();
     case '2':
