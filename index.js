@@ -1,7 +1,12 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
-let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
-let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har",];
+ let Wooden_Staff = {
+      Attack: 1,
+      Magic: 5,
+
+    };
+let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
+let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
@@ -72,9 +77,10 @@ if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
     Character1.Agility = 3;
     Character1.MaxHP = 100;
     };
-    if(CHaracter.Class = "Mage") {
-      Character1.Weapon = "Wooden Staff";
+    if(Character1.Class = "Mage") {
+      Character1.Weapon = Wooden_Staff;
       Character1.Armor = "Apprentice Robes";
+      Character1.Spells = (colors.red("Flare"))+(colors.yellow(" Stun"))+(colors.blue(" Spout"));
     }
 };
 if (Character1.Start == "N") {
@@ -98,25 +104,30 @@ MOVING();
 
 ////////////////////////Function Storage/////////////
 function CombatHUD() {
+  let R = Math.floor(Math.random() * 3);
   let Dmg = 0;
   console.log(" *****************************************************************************")
     console.log(Character1.Name,"   |  ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
   console.log(colors.blue("1: Attack\n"));
   console.log(colors.blue("2: Defend\n"));
   console.log(colors.blue("3: Magic\n"));
-  console.log(colors.blue("4: Items\n"));
+  console.log(colors.blue("4: Tame\n"));
+  console.log(colors.blue("5: Items\n"));
    CombatAction = input.question("Choose an Action...\n");
    console.clear();
    console.log("-----------------------------------------------------------------\n")
   switch(CombatAction) {
     case '1':
     console.log(colors.green(Character1.Name,"Attacked",Monster1.Name,"!"));
-    Dmg = (Character1.Strength - Monster1.Defense);
+    Dmg = (Character1.Strength + Character1.Weapon.Attack + R) - (Monster1.Defense);
     console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg)
     CombatHUD();
     case '2':
     case '3':
+    let Spells = Character1.Spells
+
+    console.log(Spells);
     case '4':
   }
   };
@@ -188,8 +199,8 @@ Character1.Progress--
     else  {
       console.log("You dont see anything Interesting\n");
       MOVING();
-    }
-    }
+    };
 };
-    
+};
+   
   
