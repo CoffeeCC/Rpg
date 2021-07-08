@@ -65,7 +65,7 @@ for (i = 0; i < Classes.length; i++) {
 Character1.Class = input.question("\n");
 
 Character1.Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
-if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
+if (Character1.Start == "Y") {
   console.clear();
   if(Character1.race = "Human") {
     Character1.HP = 100;
@@ -80,7 +80,7 @@ if (Character1.Start == "Y") {////////////////////////WHY DONT YOU WORK!?
     if(Character1.Class = "Mage") {
       Character1.Weapon = Wooden_Staff;
       Character1.Armor = "Apprentice Robes";
-      Character1.Spells = (colors.red("Flare"))+(colors.yellow(" Stun"))+(colors.blue(" Spout"));
+      Character1.Spells = (colors.red("1. Flare"))+(colors.yellow("2. Stun"))+(colors.blue("3. Spout"));
     }
 };
 if (Character1.Start == "N") {
@@ -106,6 +106,7 @@ MOVING();
 function CombatHUD() {
   let R = Math.floor(Math.random() * 3);
   let Dmg = 0;
+  let Mag = 0
   console.log(" *****************************************************************************")
     console.log(Character1.Name,"   |  ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
   console.log(colors.blue("1: Attack\n"));
@@ -126,8 +127,12 @@ function CombatHUD() {
     case '2':
     case '3':
     let Spells = Character1.Spells
-
     console.log(Spells);
+    console.log("\n");
+    SpellChoice = input.question("Choose a Spell...");
+    if (SpellChoice == 1 && Character1.Class == "Mage") {
+console.log(colors.green(Character1.Name),"Cast"(colors.red("Flare!"),Monster1.Name,"!"));
+    }
     case '4':
   }
   };
