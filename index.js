@@ -5,7 +5,7 @@ let CombatStates = {
   Burned: 3,
   Frozen: 1,
   Stunned: 0,
-  Normal: 0,
+  Normal: -1,
   Poisoned: 4,
 }
 ///Equipable items
@@ -18,8 +18,8 @@ let CombatStates = {
     Magic: 2,
   };
   //Monster Names
-let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
-let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
+let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","Glee","tug","Bloo"];
+let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug","Bloo",];
 //The HUD
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
@@ -85,6 +85,7 @@ if (Character1.Start == "Y") {
     Character1.HP = 100;
     Character1.MP = 50;
     Character1.Strength = 3;
+    Character1.Defense = 2;
     Character1.Luck = 3;
     Character1.Mana = 3;
     Character1.Intellect = 3;
@@ -111,15 +112,19 @@ function CombatHUD() {
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
   let MgDmg = 0;
+  let BlkDmg = 0;
   let SpellEffectChance = Math.floor(Math.random() * 10);
   Critical = 0;
   console.log(" ***************************************************************************")
     console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
     switch ( Monster1.State ) {
-      case 3:
+      case CombatStates.Burned:
       console.log(colors.green(Monster1.Name,"takes", Monster1.State,"Damage from its Burn.\n\n"));
       Monster1.MonsterHP = (Monster1.MonsterHP - Monster1.State);
-    };
+    
+      case CombatStates.Stunned: console.log(colors.green(Monster1.Name,"takes", Monster1.State,"Damage from its Stun.\n\n"))
+      Monster1.MonsterHP = (Monster1.MonsterHP - Monster1.State);
+    }
   console.log(colors.blue("1: Attack\n"));
   console.log(colors.blue("2: Defend\n"));
   console.log(colors.blue("3: Magic\n"));
@@ -136,6 +141,14 @@ function CombatHUD() {
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
     CombatHUD();
     case '2':
+    console.log(colors.green(Character1.Name,"Braced for impact","!"));
+    BlkDmg = (Monster1.Attack - (Character1.Defense + Character1.Armor.Defense));
+    console.log(colors.green(Monster1.Name,"Attacked",Character1.Name,"!"));
+    console.log(colors.green(Character1.Name," Blocked",Monster1.Name,"'s attack!"));
+    console.log(colors.green(Character1.Name," suffered",BlkDmg,"Damage"));
+    Character1.HP = (Character1.HP - BlkDmg);
+    CombatHUD();
+    
     case '3':
     let Spells = Character1.Spells
     console.log(Spells);
@@ -146,18 +159,30 @@ console.log("\n",colors.green(Character1.Name,"Cast",(colors.red("Flare!")),"at 
 MgDmg = (5 + Character1.Weapon.Magic + Character1.Armor.Magic + DmgR);
 console.log(colors.green(Monster1.Name,"Suffered",MgDmg,"Damage!\n"))
 Monster1.MonsterHP = (Monster1.MonsterHP - MgDmg);
-if (SpellEffectChance >= 8 ) {
+if (SpellEffectChance >= 7 ) {
   console.log(Monster1.Name,"Was Burned!");
   Monster1.State = CombatStates.Burned;
-}3
+};
 CombatHUD();
     }
+  if (SpellChoice == 2 && Character1.Class == "Mage") {
+console.log("\n",colors.green(Character1.Name,"Cast",(colors.yellow("Stun!")),"at ",Monster1.Name,"!"));
+MgDmg = (1 + Character1.Weapon.Magic + Character1.Armor.Magic + DmgR);
+console.log(colors.green(Monster1.Name,"Suffered",MgDmg,"Damage!\n"))
+Monster1.MonsterHP = (Monster1.MonsterHP - MgDmg);
+if (SpellEffectChance >= 8 ) {
+  console.log(Monster1.Name,"Was Stunned!");
+  Monster1.State = CombatStates.Stunned;
+};
+CombatHUD();
+  }
     case '4':
   }
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
 Monster1.State = CombatStates.Normal,
+Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.MgDef = Math.floor(Math.random() * 2) + Monster1.Level
 Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
