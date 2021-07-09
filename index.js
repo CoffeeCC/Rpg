@@ -1,17 +1,31 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
+///Combat States
+let CombatStates = {
+  Burned: 3,
+  Frozen: 1,
+  Stunned: 0,
+  Normal: 0,
+  Poisoned: 4,
+}
+///Equipable items
  let Wooden_Staff = {
       Attack: 1,
       Magic: 5,
-
     };
+  let Apprentice_Robes = {
+    Defense: 1,
+    Magic: 2,
+  };
+  //Monster Names
 let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
 let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug"];
+//The HUD
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
-
+////Instancing stuff
 let Start =[""]
 let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
@@ -79,8 +93,8 @@ if (Character1.Start == "Y") {
     };
     if(Character1.Class = "Mage") {
       Character1.Weapon = Wooden_Staff;
-      Character1.Armor = "Apprentice Robes";
-      Character1.Spells = (colors.red("1. Flare"))+(colors.yellow("2. Stun"))+(colors.blue("3. Spout"));
+      Character1.Armor = Apprentice_Robes;
+      Character1.Spells = (colors.red(" 1. Flare"))+(colors.yellow(" 2. Stun"))+(colors.blue(" 3. Spout"));
     }
 };
 if (Character1.Start == "N") {
@@ -92,53 +106,60 @@ MOVING();
 };
 
 
-
-
-
-
-
-
-
-
-
-
 ////////////////////////Function Storage/////////////
 function CombatHUD() {
-  let R = Math.floor(Math.random() * 3);
+  let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
-  let Mag = 0
-  console.log(" *****************************************************************************")
-    console.log(Character1.Name,"   |  ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
+  let MgDmg = 0;
+  let SpellEffectChance = Math.floor(Math.random() * 10);
+  Critical = 0;
+  console.log(" ***************************************************************************")
+    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
+    switch ( Monster1.State ) {
+      case 3:
+      console.log(colors.green(Monster1.Name,"takes", Monster1.State,"Damage from its Burn.\n\n"));
+      Monster1.MonsterHP = (Monster1.MonsterHP - Monster1.State);
+    };
   console.log(colors.blue("1: Attack\n"));
   console.log(colors.blue("2: Defend\n"));
   console.log(colors.blue("3: Magic\n"));
   console.log(colors.blue("4: Tame\n"));
   console.log(colors.blue("5: Items\n"));
    CombatAction = input.question("Choose an Action...\n");
-   console.clear();
+  console.clear();
    console.log("-----------------------------------------------------------------\n")
   switch(CombatAction) {
     case '1':
     console.log(colors.green(Character1.Name,"Attacked",Monster1.Name,"!"));
-    Dmg = (Character1.Strength + Character1.Weapon.Attack + R) - (Monster1.Defense);
+    Dmg = (Character1.Strength + Character1.Weapon.Attack + DmgR) - (Monster1.Defense);
     console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
-    Monster1.MonsterHP = (Monster1.MonsterHP - Dmg)
+    Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
     CombatHUD();
     case '2':
     case '3':
     let Spells = Character1.Spells
     console.log(Spells);
     console.log("\n");
-    SpellChoice = input.question("Choose a Spell...");
+    SpellChoice = input.question("Choose a Spell...\n");
     if (SpellChoice == 1 && Character1.Class == "Mage") {
-console.log(colors.green(Character1.Name),"Cast"(colors.red("Flare!"),Monster1.Name,"!"));
+console.log("\n",colors.green(Character1.Name,"Cast",(colors.red("Flare!")),"at ",Monster1.Name,"!"));
+MgDmg = (5 + Character1.Weapon.Magic + Character1.Armor.Magic + DmgR);
+console.log(colors.green(Monster1.Name,"Suffered",MgDmg,"Damage!\n"))
+Monster1.MonsterHP = (Monster1.MonsterHP - MgDmg);
+if (SpellEffectChance >= 8 ) {
+  console.log(Monster1.Name,"Was Burned!");
+  Monster1.State = CombatStates.Burned;
+}3
+CombatHUD();
     }
     case '4':
   }
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
+Monster1.State = CombatStates.Normal,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
+Monster1.MgDef = Math.floor(Math.random() * 2) + Monster1.Level
 Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
 Monster1.MaxHP = Monster1.MonsterHP,
 Monster1.Level = (Math.floor(Math.random()* 5)) + Character1.Level,
