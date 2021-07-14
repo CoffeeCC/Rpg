@@ -18,14 +18,14 @@ let CombatStates = {
     Magic: 2,
   };
   //Monster Names
-let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","Glee","tug","Bloo"];
-let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug","Bloo",];
+let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","Glee","tug","Bloo","Tal",];
+let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug","Bloo","Tal",];
 //The HUD
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
-////Instancing stuff
+/////////////////////////////////////Instancing stuff
 let Start =[""]
 let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
@@ -42,6 +42,9 @@ let Character1 = {
   MaxHP: 100,
   Progress: 1,
   Search: 1,
+  EXP: 0,
+  Level: 1,
+  AttributePoints: 0,
 };
 let Monster1 = {
   Name:  " ",
@@ -82,14 +85,14 @@ Character1.Start = input.question("Does everything look correct? Would you like 
 if (Character1.Start == "Y") {
   console.clear();
   if(Character1.race = "Human") {
+    Character1.Mana = 3;
     Character1.HP = 100;
-    Character1.MP = 50;
+    Character1.MP = 5;
     Character1.Strength = 3;
     Character1.Defense = 2;
     Character1.Luck = 3;
-    Character1.Mana = 3;
     Character1.Intellect = 3;
-    Character1.Agility = 3;
+    Character1.Dexterity = 3;
     Character1.MaxHP = 100;
     };
     if(Character1.Class = "Mage") {
@@ -108,6 +111,19 @@ MOVING();
 
 
 ////////////////////////Function Storage/////////////
+function EXPgain () {
+Character1.EXP = Character1.EXP + Monster1.EXP;
+if (Character1.EXP >= 100 {
+  LevelUp()
+};
+function LevelUp() {
+Character.Level++
+Character.AttributePoints = (Character.AttributePoints + 6);
+console.log("Congratulations!, You've Leveled up!\n");
+console.log(Character1.Name," has gained 6 attribute points! Spend them wisely!");
+Moving();
+}
+};
 function CombatHUD() {
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
@@ -182,6 +198,7 @@ CombatHUD();
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
 Monster1.State = CombatStates.Normal,
+Monster1.EXP = Math.floor(Math.random() * 5) * (Monster1.Level),
 Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.MgDef = Math.floor(Math.random() * 2) + Monster1.Level
@@ -202,10 +219,12 @@ function MOVING(){
   let EncounterChance = Math.floor(Math.random() * 10) + 1;
   let ItemChance = Math.floor (Math.random() * 10) + 1;
   let Choice;
+  console.log("______________________________________________________________\n")
   console.log("1. Move Forwards.\n");
   console.log("2. Rest.\n");
   console.log("3. Move Backwards.\n");
   console.log("4. Search\n");
+  console.log("5. Character\n");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question("______________________________________________________________\n");
 ///Maybe use a switch for this?
@@ -237,6 +256,9 @@ Character1.Progress--
       console.log("You found a",ItemList[Math.floor(Math.random()*ItemList.length)]);
       console.log("\n\n\n");
     }
+    else {
+      console.log("You Failed to find anything noteworthy")
+    }
     Character1.Search--
     MOVING();
     }
@@ -252,6 +274,41 @@ Character1.Progress--
       MOVING();
     };
 };
+if (Choice == 5) {
+  console.log("Attribute Points remaining: ",Character1.AttributePoints,"\n\n");
+  console.log("To spend your remaining Attribute Points, type the Attribute you wish to increase, followed by the amount of points you wish to allocate. ( example:  STR. Followed by 2.)\n\n");
+  console.log("Character Stats:\n");
+  console.log (" HP",Character1.HP,"\n","MP",Character1.MP,"\n","STR",Character1.Strength,"\n","DEF",Character1.Defense,"\n","LUCK",Character1.Luck,"\n","MANA",Character1.Mana,"\n","INT",Character1.Intellect,"\n","DEX",Character1.Dexterity,"\n\n");
+   AttributeIncrease = input.question("Which Attribute would you like to increase?\n\n");
+   AttributeIncreaseAmount = input.question("How many points would you like to allocate?\n\n");
+  switch (AttributeIncrease) {
+    case "STR": 
+      Character1.Strength = (Character1.Strength + AttributeIncreaseAmount)
+      console.log(colors.green("Strength was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING();
+    case "DEF": 
+      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
+      console.log(colors.green("Defense was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING();
+    case "LUCK": 
+      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
+      console.log(colors.green("Luck was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING();
+  case "MANA": 
+      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
+      console.log(colors.green("Mana was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING();
+  case "INT": 
+      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
+      console.log(colors.green("Intellect was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING;
+  case "DEX": 
+      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
+      console.log(colors.green("Dexterity was increased by",AttributeIncreaseAmount,"!\n\n"));
+  MOVING();
+  };
+
+}
 };
    
   
