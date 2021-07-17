@@ -1,13 +1,6 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
-///Combat States
-let CombatStates = {
-  Burned: 3,
-  Frozen: 1,
-  Stunned: 0,
-  Normal: -1,
-  Poisoned: 4,
-}
+
 ///Equipable items
  let Wooden_Staff = {
       Attack: 1,
@@ -23,7 +16,7 @@ let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Sp
 //The HUD
 function HUD() {
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
-  console.log(" Name:",Character1.Name,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
+  console.log(" Name:",Character1.Name," Level:",Character1.Level,"EXP",Character1.EXP,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
 /////////////////////////////////////Instancing stuff
 let Start =[""]
@@ -113,17 +106,26 @@ MOVING();
 ////////////////////////Function Storage/////////////
 function EXPgain () {
 Character1.EXP = Character1.EXP + Monster1.EXP;
-if (Character1.EXP >= 100 {
-  LevelUp()
+if (Character1.EXP >= 10 && Character1.Level == 1) {
+  Character1.Level++ 
+  console.log ("You have Leveled up! Make sure you check out the Character Options in the main menu, to increase your stats!");
+};
+function DeathCheck() {
+  if (Monster1.HP >= 0) {
+console.log(Monster1.Name,"Was Defeated!");
+
+  }
+}
+
 };
 function LevelUp() {
-Character.Level++
-Character.AttributePoints = (Character.AttributePoints + 6);
-console.log("Congratulations!, You've Leveled up!\n");
+Character1.Level++
+Character1.AttributePoints = (Character1.AttributePoints + 6);
+console.logcolors.yellow(("Congratulations!, You've Leveled up!\n"));
 console.log(Character1.Name," has gained 6 attribute points! Spend them wisely!");
 Moving();
-}
 };
+
 function CombatHUD() {
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
@@ -131,15 +133,30 @@ function CombatHUD() {
   let BlkDmg = 0;
   let SpellEffectChance = Math.floor(Math.random() * 10);
   Critical = 0;
+  let Burned = 5;
+  let Normal = 0;
+  let Stunned = 0;
+
   console.log(" ***************************************************************************")
-    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","*****************************************************************************");
+    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Tameness:",Monster1.Tame,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","****************************************************************************");
     switch ( Monster1.State ) {
-      case CombatStates.Burned:
-      console.log(colors.green(Monster1.Name,"takes", Monster1.State,"Damage from its Burn.\n\n"));
-      Monster1.MonsterHP = (Monster1.MonsterHP - Monster1.State);
-    
-      case CombatStates.Stunned: console.log(colors.green(Monster1.Name,"takes", Monster1.State,"Damage from its Stun.\n\n"))
-      Monster1.MonsterHP = (Monster1.MonsterHP - Monster1.State);
+      case "Normal":
+      console.log(colors.green("\n"));
+  break;
+      case "Burned":
+      console.log(colors.green(Monster1.Name,"Takes",Burned,"Damage due to its Burn!\n\n"));
+    break;  
+      case "Stunned":
+      console.log(colors.green(Monster1.Name," is Paralyzed and cannot move!\n\n"));
+      break;
+    }
+    if (Monster1.MonsterHP <= 0) {
+      console.clear();
+    console.log(colors.yellow(Monster1.Name, "Has been Defeated!\n"));
+    console.log(colors.green (Character1.Name, "has gained", Monster1.EXP,"Experience!\n"));
+    EXPgain();
+    HUD();
+    MOVING();
     }
   console.log(colors.blue("1: Attack\n"));
   console.log(colors.blue("2: Defend\n"));
@@ -153,6 +170,9 @@ function CombatHUD() {
     case '1':
     console.log(colors.green(Character1.Name,"Attacked",Monster1.Name,"!"));
     Dmg = (Character1.Strength + Character1.Weapon.Attack + DmgR) - (Monster1.Defense);
+    if (Dmg <= 0) {
+      Dmg = 1
+    }
     console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
     CombatHUD();
@@ -176,8 +196,8 @@ MgDmg = (5 + Character1.Weapon.Magic + Character1.Armor.Magic + DmgR);
 console.log(colors.green(Monster1.Name,"Suffered",MgDmg,"Damage!\n"))
 Monster1.MonsterHP = (Monster1.MonsterHP - MgDmg);
 if (SpellEffectChance >= 7 ) {
-  console.log(Monster1.Name,"Was Burned!");
-  Monster1.State = CombatStates.Burned;
+  console.log(colors.green(Monster1.Name,"Was Burned!"));
+  Monster1.State = "Burned";
 };
 CombatHUD();
     }
@@ -187,8 +207,8 @@ MgDmg = (1 + Character1.Weapon.Magic + Character1.Armor.Magic + DmgR);
 console.log(colors.green(Monster1.Name,"Suffered",MgDmg,"Damage!\n"))
 Monster1.MonsterHP = (Monster1.MonsterHP - MgDmg);
 if (SpellEffectChance >= 8 ) {
-  console.log(Monster1.Name,"Was Stunned!");
-  Monster1.State = CombatStates.Stunned;
+  console.log(colors.green(Monster1.Name,"Was Stunned!"));
+  Monster1.State = "Stunned";
 };
 CombatHUD();
   }
@@ -197,7 +217,8 @@ CombatHUD();
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
-Monster1.State = CombatStates.Normal,
+Monster1.State = "Normal",
+Monster1.Tame = Math.floor(Math.random() * 10) - (Monster1.Level),
 Monster1.EXP = Math.floor(Math.random() * 5) * (Monster1.Level),
 Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
