@@ -355,6 +355,7 @@ ShopQuestion = input.question("Would you like to buy something? Or Perhaps youre
 switch (ShopQuestion) {
   
   case "Buy":
+  console.clear();
    console.log (Object.entries(ShopInv));
    console.log("\n\n My Stock is Limited until the Goblins Between Here and the Next town are cleared out. Sorry!");
    BuyChoice = input.question("What are ya Buyin'?\n")
@@ -366,6 +367,19 @@ switch (ShopQuestion) {
    console.log(Character1.Inv);
    HUD();
    MOVING();
+
+   case "Sell":
+   console.clear();
+   SellChoice = input.question("What are ya Sellin'?");
+   let SoldItem = SellChoice;
+   SellAmount = input.question("And how Many?");
+   let index = Character1.Inv.indexOf(SellChoice);
+   while(index !== -1) {
+     Character1.Inv.splice(index, 1);
+     index = Character1.Inv.indexOf(SellChoice);
+   }
+     console.log(SoldItem)
+
    };
    
 }
