@@ -360,14 +360,14 @@ switch (ShopQuestion) {
    BuyChoice = input.question("What are ya Buyin'?\n")
    BuyAmount = input.question("And How Many?\n");
    console.log ("Heh, heh, heh... Thank you.");
-   for (let i = 0; i < BuyAmount; i++) {
+   for ( i = 0; i < BuyAmount; i++) {
    Character1['Inv'].push(BuyChoice);
-  console.log(Character1.Inv);
+   }
+   console.log(Character1.Inv);
    HUD();
    MOVING();
    };
    
 }
 
-}
   
