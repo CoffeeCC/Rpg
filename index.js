@@ -38,6 +38,8 @@ let Character1 = {
   EXP: 0,
   Level: 1,
   AttributePoints: 0,
+  Inv: [],
+
 };
 let Monster1 = {
   Name:  " ",
@@ -213,6 +215,13 @@ if (SpellEffectChance >= 8 ) {
 CombatHUD();
   }
     case '4':
+    console.log("You attempt to tame the monster.");
+    if (Monster1.Tame <100) {
+      
+    }
+    if (Monster1.Tame >= 100) {
+      console.log("You Successfully Tame the monster!");
+    }
   }
   };
 function CreateMonster() {
@@ -243,7 +252,7 @@ function MOVING(){
   console.log("______________________________________________________________\n")
   console.log("1. Move Forwards.\n");
   console.log("2. Rest.\n");
-  console.log("3. Move Backwards.\n");
+  console.log("3. Use Shop(This will be Deprecated).\n");
   console.log("4. Search\n");
   console.log("5. Character\n");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
@@ -269,6 +278,7 @@ else {
   }
   if (Choice == 3) {
 Character1.Progress--
+Shop();
   }
   if (Choice == 4) {
     if (Character1.Search >= 1) {
@@ -329,7 +339,35 @@ if (Choice == 5) {
   MOVING();
   };
 
-}
 };
+}
+function Shop() {
+  let ShopQuestion;
+  let ShopInv = {
+    Jerky: 1,
+    Sirloin: 1,
+    Water: 1,
+    Herb: 1,
+  };
+  console.log("Hello! Welcome to my Shop!\n");
+ShopQuestion = input.question("Would you like to buy something? Or Perhaps youre looking to sell?\n\n");
+
+switch (ShopQuestion) {
+  
+  case "Buy":
+   console.log (Object.entries(ShopInv));
+   console.log("\n\n My Stock is Limited until the Goblins Between Here and the Next town are cleared out. Sorry!");
+   BuyChoice = input.question("What are ya Buyin'?\n")
+   BuyAmount = input.question("And How Many?\n");
+   console.log ("Heh, heh, heh... Thank you.");
+   for (let i = 0; i < BuyAmount; i++) {
+   Character1['Inv'].push(BuyChoice);
+  console.log(Character1.Inv);
+   HUD();
+   MOVING();
+   };
    
+}
+
+}
   
