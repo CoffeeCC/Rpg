@@ -38,7 +38,7 @@ let Character1 = {
   EXP: 0,
   Level: 1,
   AttributePoints: 0,
-  Inv: [],
+  Inv: ["Jerky","Jerky"],
 
 };
 let Monster1 = {
@@ -216,12 +216,23 @@ CombatHUD();
   }
     case '4':
     console.log("You attempt to tame the monster.");
-    if (Monster1.Tame <100) {
+    if (Monster1.Wild <100) {
       
     }
-    if (Monster1.Tame >= 100) {
+    if (Monster1.Wild >= 100) {
       console.log("You Successfully Tame the monster!");
     }
+    case '5':  
+    console.clear();
+   console.log (Object.entries(Character1.Inv));
+   ItemChoice = input.question("Choose a Bait to use\n");
+switch(ItemChoice) {
+  case 'Jerky':
+  console.log(ItemChoice,"Was offered to, ",Monster1.Name);
+  Monster1.Wild = (Monster1.Wild * .1);
+  console.log(Monster1.Name,"'s Wild Nature was reduced.\n");
+CombatHUD();
+}
   }
   };
 function CreateMonster() {
@@ -237,7 +248,7 @@ Monster1.MaxHP = Monster1.MonsterHP,
 Monster1.Level = (Math.floor(Math.random()* 5)) + Character1.Level,
 Monster1.MonsterXP = (Monster1.MonsterHP/2),
 Monster1.Name = MonsterNamesPRE[Math.floor(Math.random()*MonsterNamesPRE.length)] + "-" + MonsterNamesSUF[Math.floor(Math.random()*MonsterNamesSUF.length)]
-
+Monster1.Wild = 100,
 if (Monster1.MonsterHP <= 10) {
   CreateMonster();
 };
@@ -373,15 +384,14 @@ switch (ShopQuestion) {
    SellChoice = input.question("What are ya Sellin'?");
    let SoldItem = SellChoice;
    SellAmount = input.question("And how Many?");
-   let index = Character1.Inv.indexOf(SellChoice);
-   while(index !== -1) {
-     Character1.Inv.splice(index, 1);
-     index = Character1.Inv.indexOf(SellChoice);
-   }
-     console.log(SoldItem)
+  
+  for (var i=Character1.Inv.length-1; i>=SellAmount; i--) {
+    if (Character1.Inv[i] === SellChoice) {
+        Character1.Inv.splice(i, 1);
+    }
 
    };
-   
+   Shop(); 
 }
-
+}
   
