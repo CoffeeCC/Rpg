@@ -1,5 +1,6 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
+const utils = require('./utils.js');
 
 ///Equipable items
  let Wooden_Staff = {
@@ -140,7 +141,7 @@ function CombatHUD() {
   let Stunned = 0;
 
   console.log(" ***************************************************************************")
-    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Tameness:",Monster1.Tame,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","****************************************************************************");
+    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","****************************************************************************");
     switch ( Monster1.State ) {
       case "Normal":
       console.log(colors.green("\n"));
@@ -215,13 +216,15 @@ if (SpellEffectChance >= 8 ) {
 CombatHUD();
   }
     case '4':
-    console.log("You attempt to tame the monster.");
-    if (Monster1.Wild <100) {
+    console.log("You attempt to tame the monster...\n\n");
+    if (Monster1.Wild <= 33) {
+      console.log(Monster1.Name," was succesfully Tamed!");
       
     }
     if (Monster1.Wild >= 100) {
-      console.log("You Successfully Tame the monster!");
+      console.log(Monster1.Name," Is to Wild To Tame!");
     }
+    CombatHUD();
     case '5':  
     console.clear();
    console.log (Object.entries(Character1.Inv));
@@ -229,7 +232,7 @@ CombatHUD();
 switch(ItemChoice) {
   case 'Jerky':
   console.log(ItemChoice,"Was offered to, ",Monster1.Name);
-  Monster1.Wild = (Monster1.Wild * .1);
+  Monster1.Wild = (Monster1.Wild * .75) - 5;
   console.log(Monster1.Name,"'s Wild Nature was reduced.\n");
 CombatHUD();
 }
@@ -238,7 +241,6 @@ CombatHUD();
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
 Monster1.State = "Normal",
-Monster1.Tame = Math.floor(Math.random() * 10) - (Monster1.Level),
 Monster1.EXP = Math.floor(Math.random() * 5) * (Monster1.Level),
 Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
@@ -247,8 +249,8 @@ Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
 Monster1.MaxHP = Monster1.MonsterHP,
 Monster1.Level = (Math.floor(Math.random()* 5)) + Character1.Level,
 Monster1.MonsterXP = (Monster1.MonsterHP/2),
-Monster1.Name = MonsterNamesPRE[Math.floor(Math.random()*MonsterNamesPRE.length)] + "-" + MonsterNamesSUF[Math.floor(Math.random()*MonsterNamesSUF.length)]
 Monster1.Wild = 100,
+Monster1.Name = MonsterNamesPRE[Math.floor(Math.random()*MonsterNamesPRE.length)] + "-" + MonsterNamesSUF[Math.floor(Math.random()*MonsterNamesSUF.length)]
 if (Monster1.MonsterHP <= 10) {
   CreateMonster();
 };
