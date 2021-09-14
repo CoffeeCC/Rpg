@@ -1,6 +1,6 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
-const utils = require('./utils.js');
+  require('./Functions.js');
 
 ///Equipable items
  let Wooden_Staff = {
@@ -25,6 +25,7 @@ let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
 let Classes = ["Warrior", "Mage","Thief","Bard","Knight",]
 let Location = ["Town"];
+
 let Character1 = {
   Start: " ",
   Name:  " ",
@@ -39,8 +40,22 @@ let Character1 = {
   EXP: 0,
   Level: 1,
   AttributePoints: 0,
-  Inv: ["Jerky","Jerky"],
-
+  Inv: ["Jerky",],
+};
+let Character2 = {
+  Start: " ",
+  Name:  " ",
+  Race:  " ",
+  Class:  " ",
+  Level:  1,
+  HP: 1,
+  Strength: 1,
+  MaxHP: 100,
+  Progress: 1,
+  Search: 1,
+  EXP: 0,
+  Level: 1,
+  AttributePoints: 0,
 };
 let Monster1 = {
   Name:  " ",
@@ -58,9 +73,11 @@ let Monster1 = {
   Progress: 1,
   Search: 1,
 };
+
 CreateCharacter();
 function CreateCharacter(){
 Character1.Name = input.question("Please enter your name... \n\n");
+//// Example import console.log(character2Test.HP);
 
 console.log("Characters name is", Character1.Name,"\n\n");
 
@@ -130,6 +147,7 @@ Moving();
 };
 
 function CombatHUD() {
+
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
   let MgDmg = 0;
@@ -141,7 +159,16 @@ function CombatHUD() {
   let Stunned = 0;
 
   console.log(" ***************************************************************************")
-    console.log(Character1.Name,"       |      ", Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild,"\n","HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","****************************************************************************");
+    console.log(Character1.Name,"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************");
+    function PartyMembers() {
+      console.log(" ***************************************************************************")
+    console.log(Character2.Name,"Level:","HP:",Character2.HP,"\n****************************************************************************\n");
+    console.log(colors.red("***************************************************************************"))
+    console.log(Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild);
+    console.log(colors.red("***************************************************************************"));
+    }
+    
+    PartyMembers();
     switch ( Monster1.State ) {
       case "Normal":
       console.log(colors.green("\n"));
@@ -166,6 +193,7 @@ function CombatHUD() {
   console.log(colors.blue("3: Magic\n"));
   console.log(colors.blue("4: Tame\n"));
   console.log(colors.blue("5: Items\n"));
+  console.log(colors.blue("6: DOC\n"));
    CombatAction = input.question("Choose an Action...\n");
   console.clear();
    console.log("-----------------------------------------------------------------\n")
@@ -219,7 +247,8 @@ CombatHUD();
     console.log("You attempt to tame the monster...\n\n");
     if (Monster1.Wild <= 33) {
       console.log(Monster1.Name," was succesfully Tamed!");
-      
+      Character2.Name = Monster1.Name;
+      Character2.HP = Monster1.MaxHP;
     }
     if (Monster1.Wild >= 100) {
       console.log(Monster1.Name," Is to Wild To Tame!");
@@ -236,7 +265,7 @@ switch(ItemChoice) {
   console.log(Monster1.Name,"'s Wild Nature was reduced.\n");
 CombatHUD();
 }
-  }
+}
   };
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
@@ -262,14 +291,14 @@ function MOVING(){
   let EncounterChance = Math.floor(Math.random() * 10) + 1;
   let ItemChance = Math.floor (Math.random() * 10) + 1;
   let Choice;
-  console.log("______________________________________________________________\n")
+  console.log(colors.yellow("______________________________________________________________\n"));
   console.log("1. Move Forwards.\n");
   console.log("2. Rest.\n");
   console.log("3. Use Shop(This will be Deprecated).\n");
   console.log("4. Search\n");
   console.log("5. Character\n");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
-Choice = input.question("______________________________________________________________\n");
+Choice = input.question(colors.yellow("______________________________________________________________\n"));
 ///Maybe use a switch for this?
   if (Choice == 1){
 Character1.Progress++
@@ -295,13 +324,14 @@ Shop();
   }
   if (Choice == 4) {
     if (Character1.Search >= 1) {
-    console.log("You Search the Area for Anything Useful\n");
+      console.clear()
+    console.log(colors.green("You Search the Area for Anything Useful\n"));
     if (ItemChance > 6) {
       console.log("You found a",ItemList[Math.floor(Math.random()*ItemList.length)]);
       console.log("\n\n\n");
     }
     else {
-      console.log("You Failed to find anything noteworthy")
+      console.log(colors.green("You Failed to find anything noteworthy"));
     }
     Character1.Search--
     MOVING();
@@ -375,9 +405,9 @@ switch (ShopQuestion) {
    BuyAmount = input.question("And How Many?\n");
    console.log ("Heh, heh, heh... Thank you.");
    for ( i = 0; i < BuyAmount; i++) {
-   Character1['Inv'].push(BuyChoice);
+   Character1.Inv.push(BuyChoice);
    }
-   console.log(Character1.Inv);
+   console.log(Character1.js.Inv);
    HUD();
    MOVING();
 
