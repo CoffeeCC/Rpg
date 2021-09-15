@@ -128,7 +128,7 @@ function EXPgain () {
 Character1.EXP = Character1.EXP + Monster1.EXP;
 if (Character1.EXP >= 10 && Character1.Level == 1) {
   Character1.Level++ 
-  console.log ("You have Leveled up! Make sure you check out the Character Options in the main menu, to increase your stats!");
+  LevelUp()
 };
 function DeathCheck() {
   if (Monster1.HP >= 0) {
@@ -141,13 +141,13 @@ console.log(Monster1.Name,"Was Defeated!");
 function LevelUp() {
 Character1.Level++
 Character1.AttributePoints = (Character1.AttributePoints + 6);
-console.logcolors.yellow(("Congratulations!, You've Leveled up!\n"));
+console.log(colors.yellow("Congratulations!, You've Leveled up!\n"));
 console.log(Character1.Name," has gained 6 attribute points! Spend them wisely!");
-Moving();
+MOVING();
 };
 
 function CombatHUD() {
-
+  let HitChance = (Math.floor(Math.random() * 100)) + Character1.Dexterity;
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
   let MgDmg = 0;
@@ -159,13 +159,13 @@ function CombatHUD() {
   let Stunned = 0;
 
   console.log(" ***************************************************************************")
-    console.log(Character1.Name,"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************");
+    console.log(Character1.Name,"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************\n");
     function PartyMembers() {
-      console.log(" ***************************************************************************")
+      console.log("***************************************************************************")
     console.log(Character2.Name,"Level:","HP:",Character2.HP,"\n****************************************************************************\n");
-    console.log(colors.red("***************************************************************************"))
+    console.log(colors.red("****************************************************************************"))
     console.log(Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild);
-    console.log(colors.red("***************************************************************************"));
+    console.log(colors.red("****************************************************************************"));
     }
     
     PartyMembers();
@@ -199,10 +199,15 @@ function CombatHUD() {
    console.log("-----------------------------------------------------------------\n")
   switch(CombatAction) {
     case '1':
+    if (HitChance >= 50) {
     console.log(colors.green(Character1.Name,"Attacked",Monster1.Name,"!"));
     Dmg = (Character1.Strength + Character1.Weapon.Attack + DmgR) - (Monster1.Defense);
     if (Dmg <= 0) {
       Dmg = 1
+    }
+    }
+    else {
+      console.log(colors.green(Character1.Name," Attacked and Missed"));
     }
     console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
@@ -270,7 +275,7 @@ CombatHUD();
 function CreateMonster() {
 let R = Math.floor(Math.random() * 3);
 Monster1.State = "Normal",
-Monster1.EXP = Math.floor(Math.random() * 5) * (Monster1.Level),
+Monster1.EXP = Math.floor((Math.random() * 5) * (Monster1.Level) + 1),
 Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.MgDef = Math.floor(Math.random() * 2) + Monster1.Level
@@ -300,11 +305,12 @@ function MOVING(){
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question(colors.yellow("______________________________________________________________\n"));
 ///Maybe use a switch for this?
-  if (Choice == 1){
+switch (Choice) {
+ case '1':
 Character1.Progress++
 Character1.Search++
 if (EncounterChance >= 5) {
-  //run create montser Function here
+ 
 
   console.clear();
   CreateMonster();
@@ -314,15 +320,14 @@ else {
   HUD();
   MOVING();
 }
-  }
-  if (Choice == 2) {
+  case '2': 
     //Rest and Gain Health,Day Progresses.
-  }
-  if (Choice == 3) {
+  
+  case '3':
 Character1.Progress--
 Shop();
-  }
-  if (Choice == 4) {
+
+  case '4':
     if (Character1.Search >= 1) {
       console.clear()
     console.log(colors.green("You Search the Area for Anything Useful\n"));
@@ -345,44 +350,49 @@ Shop();
     }
     else  {
       console.log("You dont see anything Interesting\n");
+      
       MOVING();
     };
-};
-if (Choice == 5) {
+
+  case '5':
+  function PrintCharSheet() {
+
   console.log("Attribute Points remaining: ",Character1.AttributePoints,"\n\n");
   console.log("To spend your remaining Attribute Points, type the Attribute you wish to increase, followed by the amount of points you wish to allocate. ( example:  STR. Followed by 2.)\n\n");
-  console.log("Character Stats:\n");
-  console.log (" HP",Character1.HP,"\n","MP",Character1.MP,"\n","STR",Character1.Strength,"\n","DEF",Character1.Defense,"\n","LUCK",Character1.Luck,"\n","MANA",Character1.Mana,"\n","INT",Character1.Intellect,"\n","DEX",Character1.Dexterity,"\n\n");
-   AttributeIncrease = input.question("Which Attribute would you like to increase?\n\n");
-   AttributeIncreaseAmount = input.question("How many points would you like to allocate?\n\n");
-  switch (AttributeIncrease) {
-    case "STR": 
-      Character1.Strength = (Character1.Strength + AttributeIncreaseAmount)
-      console.log(colors.green("Strength was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING();
-    case "DEF": 
-      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
-      console.log(colors.green("Defense was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING();
-    case "LUCK": 
-      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
-      console.log(colors.green("Luck was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING();
-  case "MANA": 
-      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
-      console.log(colors.green("Mana was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING();
-  case "INT": 
-      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
-      console.log(colors.green("Intellect was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING;
-  case "DEX": 
-      Character1.Strength = (Character1.Defense + AttributeIncreaseAmount)
-      console.log(colors.green("Dexterity was increased by",AttributeIncreaseAmount,"!\n\n"));
-  MOVING();
-  };
 
+  console.log("Character Stats:\n");
+  console.log ("1: STR",Character1.Strength,"\n","2: DEF",Character1.Defense,"\n","3: LUCK",Character1.Luck,"\n","4: MANA",Character1.Mana,"\n","5: INT",Character1.Intellect,"\n","6: DEX",Character1.Dexterity,"\n\n");
+   AttributeIncrease = input.question("Which Attribute would you like to increase?\n\n");
+
+  switch (AttributeIncrease) {
+    case "1": 
+      Character1.Strength++
+      console.log(colors.green("Strength was increased by 1!!\n\n"));
+  MOVING();
+    case "2": 
+      Character1.Strength++
+      console.log(colors.green("Defense was increased by !!\n\n"));
+  MOVING();
+    case "3": 
+      Character1.Strength++
+      console.log(colors.green("Luck was increased by 1!\n\n"));
+  MOVING();
+  case "4": 
+      Character1.Strength++
+      console.log(colors.green("Mana was increased by 1!\n\n"));
+  MOVING();
+  case "5": 
+      Character1.Strength++
+      console.log(colors.green("Intellect was increased by 1!\n\n"));
+  MOVING;
+  case "6": 
+      Character1.Strength++
+      console.log(colors.green("Dexterity was increased by 1!\n\n"));
+  };
+  };
+  PrintCharSheet()
 };
+
 }
 function Shop() {
   let ShopQuestion;
