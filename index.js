@@ -391,6 +391,26 @@ Shop();
   };
   };
   PrintCharSheet()
+  case '6':
+  console.clear()
+  console.log(colors.green("Current Equipment.\n"));
+  console.log("-----------------------------------------------------------------\n")
+  console.log("Weapon",Character1.Weapon,"\n");
+  console.log("Armor",Character1.Armor,"\n");
+  console.log("Headpiece", Character1.Headpiece,"\n");
+  console.log("Legs",Character1.Legs,"\n");
+  console.log("Gloves",Character1.Gloves,"\n");
+  console.log("Boots",Character1.Boots,"\n");
+  console.log("Left-Ring",Character1.L_Ring,"\n");
+  console.log("Right Ring",Character1.R_Ring,"\n");
+  console.log("-----------------------------------------------------------------\n")
+  Return = input.question(colors.green("Type 1 to return to Main Screen"));
+switch (Return) {
+  case "1":
+  console.clear()
+  HUD();
+  MOVING();
+}
 };
 
 }
