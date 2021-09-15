@@ -456,4 +456,35 @@ switch (ShopQuestion) {
    Shop(); 
 }
 }
-  
+////////////////////////////WORK IN PROGRESS
+function GenerateItem() {
+
+ let Sword_type = ["Broken","Rusted","Stone","Bronze","Iron","Steel","Glass"];
+ let Staff_type = ["Broken","Wooden","Stone","Bronze","Iron","Steel","Glass"];
+ let Armor_type = ["Broken","Leather","Cloth","Robes",];
+ let Headpiece_type = ["Broken",];
+ let Glove_type = ["Broken",];
+ let Boot_type = ["Broken",];
+ let Ring_type = ["Broken",];
+
+let Item = {
+  Sword:  "",
+  Staff:  "",
+  Armor: "",
+  Headpiece: "",
+  Glove: "",
+  Boot: "",
+  Ring: "",
+}
+  function pickRandomItemType(Item) {
+    let ItemTypeResult;
+    var count = 0;
+    for (var prop in obj)
+        if (Math.random() < 1/++count)
+           ItemTypeResult = prop;   
+  };
+  if (ItemTypeResult = Sword) {
+    Item.Sword = Sword_type[Math.floor(Math.random()*Sword_type.length)]
+  }
+};
+};
