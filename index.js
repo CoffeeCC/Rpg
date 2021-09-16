@@ -476,54 +476,60 @@ function GenerateItem() {
  let Headpiece_type = ["Broken","Leather","Wooden","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Glove_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Boot_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
- let Ring_type = ["Broken","Wood","Stone","Brass","Bronze","Iron","Steel","Mithril",];
- let Stat_Buff = ["+1HP","+1MP","+1STR","+1DEF","+1LUCK","+1MANA","+1INT","+1DEX",];
- let Stat_Nerf = ["-HP","-MP","-STR","-DEF","-LUCK","-MANA","-INT","-DEX","+2HP","+2MP","+2STR","+2DEF","+2LUCK","+2MANA","+2INT","+2DEX","+3HP","+3MP","+3STR","+3DEF","+3LUCK","+3MANA","+3INT","+3DEX",];
+ let Ring_type = ["Broken","Wooden","Stone","Brass","Bronze","Iron","Steel","Mithril",];
+ let Stat_Buff = ["1HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
+ let Stat_Nerf = ["-HP","-MP","-STR","-DEF","-LUCK","-MANA","-INT","-DEX",];
 let ModChance = Math.floor(Math.random() * 10) + Character1.Luck;
-let ItemTemplate = {
-  Type: "",
-  Sword: "",
-  Staff: "",
-  Armor: "",
-  Headpiece: "",
-  Glove: "",
-  Boot: "",
-  Ring: "",
-  Modifiers: "",
+let ItemTemplate;
+let GeneratedItem;
+let GeneratedType;
+let GeneratedMod;
 
-}
 
-  ItemTemplate.Type = Items[Math.floor(Math.random()*Items.length)]/////Generates the Type of Item and stores it.
+
+  ItemTemplate = Items[Math.floor(Math.random()*Items.length)]/////Generates the Type of Item and stores it.
 ///////////Takes the Item Type and Creates a Quality of that Item
-  if (ItemTemplate.Type == "Sword") {
-    ItemTemplate.Sword = Sword_type[Math.floor(Math.random()*Sword_type.length)]
+  if (ItemTemplate == "Sword") {
+    GeneratedType = Sword_type[Math.floor(Math.random()*Sword_type.length)]
+    GeneratedItem = "Sword";
     }
-  if (ItemTemplate.Type == "Staff") {
-    ItemTemplate.Staff = Staff_type[Math.floor(Math.random()*Staff_type.length)]
+  if (ItemTemplate == "Staff") {
+   GeneratedType = Staff_type[Math.floor(Math.random()*Staff_type.length)]
+    GeneratedItem = "Staff";
     }
-  if (ItemTemplate.Type == "Armor") {
-    ItemTemplate.Armor = Armor_type[Math.floor(Math.random()*Armor_type.length)]
+  if (ItemTemplate == "Armor") {
+    GeneratedType = Armor_type[Math.floor(Math.random()*Armor_type.length)]
+    GeneratedItem = "Armor";
     }
-    if (ItemTemplate.Type == "Headpiece") {
-    ItemTemplate.Headpiece = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
+    if (ItemTemplate == "Headpiece") {
+    GeneratedType = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
+    GeneratedItem = "Headpiece";
     }
-    if (ItemTemplate.Type == "Glove") {
-    ItemTemplate.Glove = Glove_type[Math.floor(Math.random()*Glove_type.length)]
+    if (ItemTemplate == "Glove") {
+    GeneratedType = Glove_type[Math.floor(Math.random()*Glove_type.length)]
+    GeneratedItem = "Glove";
     }
-    if (ItemTemplate.Type == "Boot") {
-    ItemTemplate.Boot = Boot_type[Math.floor(Math.random()*Boot_type.length)]
+    if (ItemTemplate == "Boot") {
+    GeneratedType = Boot_type[Math.floor(Math.random()*Boot_type.length)]
+    GeneratedItem ="Boot";
     }
-    if (ItemTemplate.Type == "Ring") {
-    ItemTemplate.Ring = Ring_type[Math.floor(Math.random()*Ring_type.length)]
+    if (ItemTemplate == "Ring") {
+    GeneratedType = Ring_type[Math.floor(Math.random()*Ring_type.length)]
+    GeneratedItem = "Ring";
     }
     if (ModChance >= 9) {
-      ItemTemplate.Modifiers = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
+      GeneratedMod = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
+
     }
     if (ModChance <= 3) {
-      ItemTemplate.Modifiers = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
+      GeneratedMod = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
     }
     
-  console.log(ItemTemplate);
+    
+  
+  console.log(ItemTemplate,"\n\n");
+  
+  console.log(colors.green("You Found...", GeneratedType,GeneratedItem,GeneratedMod));
   HUD();
   MOVING();
 };
