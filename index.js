@@ -469,29 +469,52 @@ switch (ShopQuestion) {
 }
 ////////////////////////////WORK IN PROGRESS
 function GenerateItem() {
+  //////Instancing Item Quality
  let Items = ["Sword","Staff","Armor","Headpiece","Glove","Boot","Ring"];
  let Sword_type = ["Broken","Rusted","Stone","Bronze","Iron","Steel","Glass"];
  let Staff_type = ["Broken","Wooden","Stone","Bronze","Iron","Steel","Glass"];
- let Armor_type = ["Broken","Leather","Wooden","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
+ let Armor_type = ["Broken","Leather","Wooden","Cloth","Silk","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Headpiece_type = ["Broken","Leather","Wooden","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Glove_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Boot_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
  let Ring_type = ["Broken","Wooden","Stone","Brass","Bronze","Iron","Steel","Mithril",];
- let Stat_Buff = ["1HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
- let Stat_Nerf = ["-HP","-MP","-STR","-DEF","-LUCK","-MANA","-INT","-DEX",];
+ let Stat_Buff = ["HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
+ let Stat_Nerf = ["HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
 let ModChance = Math.floor(Math.random() * 10) + Character1.Luck;
 let ItemTemplate;
 let GeneratedItem;
 let GeneratedType;
 let GeneratedMod;
+let ItemQuality = 0;
 
 
 
   ItemTemplate = Items[Math.floor(Math.random()*Items.length)]/////Generates the Type of Item and stores it.
 ///////////Takes the Item Type and Creates a Quality of that Item
   if (ItemTemplate == "Sword") {
-    GeneratedType = Sword_type[Math.floor(Math.random()*Sword_type.length)]
     GeneratedItem = "Sword";
+    GeneratedType = Sword_type[Math.floor(Math.random()*Sword_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality = (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality = (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality = (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality = (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality = (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
+    }
     }
   if (ItemTemplate == "Staff") {
    GeneratedType = Staff_type[Math.floor(Math.random()*Staff_type.length)]
@@ -525,11 +548,13 @@ let GeneratedMod;
       GeneratedMod = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
     }
     
+
+    
     
   
   console.log(ItemTemplate,"\n\n");
   
-  console.log(colors.green("You Found...", GeneratedType,GeneratedItem,GeneratedMod));
+  console.log(colors.green("You Found...", GeneratedType,GeneratedItem,ItemQuality,GeneratedMod));
   HUD();
   MOVING();
 };
