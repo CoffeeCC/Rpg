@@ -302,7 +302,7 @@ function MOVING(){
   console.log("3. Use Shop(This will be Deprecated).\n");
   console.log("4. Search\n");
   console.log("5. Character\n");
-  console.log("6. Test Item Generator");
+  console.log("6. Equipment");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question(colors.yellow("______________________________________________________________\n"));
 ///Maybe use a switch for this?
@@ -391,11 +391,10 @@ Shop();
       console.log(colors.green("Dexterity was increased by 1!\n\n"));
   };
   };
-  case '6': 
-  GenerateItem();
   
   PrintCharSheet()
   case '6':
+
   console.clear()
   console.log(colors.green("Current Equipment.\n"));
   console.log("-----------------------------------------------------------------\n")
@@ -415,6 +414,14 @@ switch (Return) {
   HUD();
   MOVING();
 }
+case '7': 
+  GenerateItem();
+  Return = input.question(colors.green("Type 1 to return to Main Screen"));
+switch (Return) {
+  case "1":
+  console.clear()
+  HUD();
+  MOVING();
 };
 
 }
@@ -465,12 +472,14 @@ function GenerateItem() {
  let Items = ["Sword","Staff","Armor","Headpiece","Glove","Boot","Ring"];
  let Sword_type = ["Broken","Rusted","Stone","Bronze","Iron","Steel","Glass"];
  let Staff_type = ["Broken","Wooden","Stone","Bronze","Iron","Steel","Glass"];
- let Armor_type = ["Broken","Leather","Cloth","Robes",];
- let Headpiece_type = ["Broken",];
- let Glove_type = ["Broken",];
- let Boot_type = ["Broken",];
- let Ring_type = ["Broken",];
-
+ let Armor_type = ["Broken","Leather","Wooden","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
+ let Headpiece_type = ["Broken","Leather","Wooden","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
+ let Glove_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
+ let Boot_type = ["Broken","Leather","Cloth","Carapace","Bronze","Iron","Steel","Mithril","DragonScale",];
+ let Ring_type = ["Broken","Wood","Stone","Brass","Bronze","Iron","Steel","Mithril",];
+ let Stat_Buff = ["+1HP","+1MP","+1STR","+1DEF","+1LUCK","+1MANA","+1INT","+1DEX",];
+ let Stat_Nerf = ["-HP","-MP","-STR","-DEF","-LUCK","-MANA","-INT","-DEX","+2HP","+2MP","+2STR","+2DEF","+2LUCK","+2MANA","+2INT","+2DEX","+3HP","+3MP","+3STR","+3DEF","+3LUCK","+3MANA","+3INT","+3DEX",];
+let ModChance = Math.floor(Math.random() * 10) + Character1.Luck;
 let ItemTemplate = {
   Type: "",
   Sword: "",
@@ -480,6 +489,7 @@ let ItemTemplate = {
   Glove: "",
   Boot: "",
   Ring: "",
+  Modifiers: "",
 
 }
 
@@ -494,8 +504,8 @@ let ItemTemplate = {
   if (ItemTemplate.Type == "Armor") {
     ItemTemplate.Armor = Armor_type[Math.floor(Math.random()*Armor_type.length)]
     }
-    if (ItemTemplate.Type == "HeadPiece") {
-    ItemTemplate.HeadPiece = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
+    if (ItemTemplate.Type == "Headpiece") {
+    ItemTemplate.Headpiece = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
     }
     if (ItemTemplate.Type == "Glove") {
     ItemTemplate.Glove = Glove_type[Math.floor(Math.random()*Glove_type.length)]
@@ -506,6 +516,15 @@ let ItemTemplate = {
     if (ItemTemplate.Type == "Ring") {
     ItemTemplate.Ring = Ring_type[Math.floor(Math.random()*Ring_type.length)]
     }
+    if (ModChance >= 9) {
+      ItemTemplate.Modifiers = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
+    }
+    if (ModChance <= 3) {
+      ItemTemplate.Modifiers = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
+    }
     
   console.log(ItemTemplate);
+  HUD();
+  MOVING();
+};
 };
