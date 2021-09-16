@@ -302,6 +302,7 @@ function MOVING(){
   console.log("3. Use Shop(This will be Deprecated).\n");
   console.log("4. Search\n");
   console.log("5. Character\n");
+  console.log("6. Test Item Generator");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question(colors.yellow("______________________________________________________________\n"));
 ///Maybe use a switch for this?
@@ -390,6 +391,9 @@ Shop();
       console.log(colors.green("Dexterity was increased by 1!\n\n"));
   };
   };
+  case '6': 
+  GenerateItem();
+  
   PrintCharSheet()
   case '6':
   console.clear()
@@ -458,7 +462,7 @@ switch (ShopQuestion) {
 }
 ////////////////////////////WORK IN PROGRESS
 function GenerateItem() {
-
+ let Items = ["Sword","Staff","Armor","Headpiece","Glove","Boot","Ring"];
  let Sword_type = ["Broken","Rusted","Stone","Bronze","Iron","Steel","Glass"];
  let Staff_type = ["Broken","Wooden","Stone","Bronze","Iron","Steel","Glass"];
  let Armor_type = ["Broken","Leather","Cloth","Robes",];
@@ -467,24 +471,41 @@ function GenerateItem() {
  let Boot_type = ["Broken",];
  let Ring_type = ["Broken",];
 
-let Item = {
-  Sword:  "",
-  Staff:  "",
+let ItemTemplate = {
+  Type: "",
+  Sword: "",
+  Staff: "",
   Armor: "",
   Headpiece: "",
   Glove: "",
   Boot: "",
   Ring: "",
+
 }
-  function pickRandomItemType(Item) {
-    let ItemTypeResult;
-    var count = 0;
-    for (var prop in obj)
-        if (Math.random() < 1/++count)
-           ItemTypeResult = prop;   
-  };
-  if (ItemTypeResult = Sword) {
-    Item.Sword = Sword_type[Math.floor(Math.random()*Sword_type.length)]
-  }
-};
+
+  ItemTemplate.Type = Items[Math.floor(Math.random()*Items.length)]/////Generates the Type of Item and stores it.
+///////////Takes the Item Type and Creates a Quality of that Item
+  if (ItemTemplate.Type == "Sword") {
+    ItemTemplate.Sword = Sword_type[Math.floor(Math.random()*Sword_type.length)]
+    }
+  if (ItemTemplate.Type == "Staff") {
+    ItemTemplate.Staff = Staff_type[Math.floor(Math.random()*Staff_type.length)]
+    }
+  if (ItemTemplate.Type == "Armor") {
+    ItemTemplate.Armor = Armor_type[Math.floor(Math.random()*Armor_type.length)]
+    }
+    if (ItemTemplate.Type == "HeadPiece") {
+    ItemTemplate.HeadPiece = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
+    }
+    if (ItemTemplate.Type == "Glove") {
+    ItemTemplate.Glove = Glove_type[Math.floor(Math.random()*Glove_type.length)]
+    }
+    if (ItemTemplate.Type == "Boot") {
+    ItemTemplate.Boot = Boot_type[Math.floor(Math.random()*Boot_type.length)]
+    }
+    if (ItemTemplate.Type == "Ring") {
+    ItemTemplate.Ring = Ring_type[Math.floor(Math.random()*Ring_type.length)]
+    }
+    
+  console.log(ItemTemplate);
 };
