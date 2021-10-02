@@ -16,6 +16,7 @@ let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Sp
 let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug","Bloo","Tal",];
 //The HUD
 function HUD() {
+  console.clear()
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name," Level:",Character1.Level,"EXP",Character1.EXP,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
@@ -40,7 +41,8 @@ let Character1 = {
   EXP: 0,
   Level: 1,
   AttributePoints: 0,
-  Inv: ["Jerky",],
+  IInv: ["Jerky",],
+  EInv: [""],
 };
 let Character2 = {
   Start: " ",
@@ -136,8 +138,12 @@ if (Character1.EXP >= 10 && Character1.Level == 1) {
   LevelUp()
 };
 function DeathCheck() {
+  let DropChance
   if (Monster1.HP >= 0) {
 console.log(Monster1.Name,"Was Defeated!");
+  if (DropChance >= 5) {
+    GenerateItem();
+  }
 
   }
 }
@@ -466,9 +472,9 @@ switch (ShopQuestion) {
    BuyAmount = input.question("And How Many?\n");
    console.log ("Heh, heh, heh... Thank you.");
    for ( i = 0; i < BuyAmount; i++) {
-   Character1.Inv.push(BuyChoice);
+   Character1.IInv.push(BuyChoice);
    }
-   console.log(Character1.js.Inv);
+   console.log(Character1.js.IInv);
    HUD();
    MOVING();
 
@@ -506,6 +512,13 @@ let GeneratedItem;
 let GeneratedType;
 let GeneratedMod;
 let ItemQuality = 0;
+
+let FinishedItem = {
+  Type: " ",
+  Item: " ",
+  Quality: " ",
+  Mod: " ",
+};
 
 
 
@@ -567,6 +580,7 @@ let ItemQuality = 0;
     if (ModChance <= 3) {
       GeneratedMod = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
     }
+  
     
 
     
@@ -575,6 +589,10 @@ let ItemQuality = 0;
   console.log(ItemTemplate,"\n\n");
   
   console.log(colors.green("You Found...", GeneratedType,GeneratedItem,ItemQuality,GeneratedMod));
+  FinishedItem.Type = GeneratedType
+  FinishedItem.Item = GeneratedItem
+  FinishedItem.Quality = ItemQuality
+  FinishedItem.Mod = GeneratedMod
   HUD();
   MOVING();
 };
