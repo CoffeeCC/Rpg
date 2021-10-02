@@ -76,25 +76,30 @@ let Monster1 = {
 
 CreateCharacter();
 function CreateCharacter(){
-Character1.Name = input.question("Please enter your name... \n\n");
+Character1.Name = input.question(colors.green("Please enter your name... \n\n"));
 //// Example import console.log(character2Test.HP);
-
-console.log("Characters name is", Character1.Name,"\n\n");
-
-
-  console.log("Please Choose a Race\n");
+console.clear();
+  console.log(colors.green("Please Choose a Race\n"));
 for (i = 0; i < Races.length; i++) {
   console.log(Races[i]);
 }
 Character1.Race = input.question("\n");
-
-console.log("Please Choose a Class\n");
+console.clear();
+console.log(colors.green("Please Choose a Class\n"));
 for (i = 0; i < Classes.length; i++) {
   console.log(Classes[i]);
 }
-Character1.Class = input.question("\n");
-
-Character1.Start = input.question("Does everything look correct? Would you like to Begin? (Y/N)\n");
+Character1.Class = input.question("\n\n");
+console.clear();
+console.log(colors.yellow("______________________________________________________________\n"));
+console.log("Name: ");
+console.log(colors.blue(Character1.Name,"\n"));
+console.log("Race: ");
+console.log(colors.blue(Character1.Race,"\n"));
+console.log("Class: ");
+console.log(colors.blue(Character1.Class,"\n"));
+console.log(colors.yellow("______________________________________________________________\n"));
+Character1.Start = input.question(colors.green("Does everything look correct? Would you like to Begin? (Y/N)\n"));
 if (Character1.Start == "Y") {
   console.clear();
   if(Character1.race = "Human") {
@@ -159,15 +164,15 @@ function CombatHUD() {
   let Stunned = 0;
 
   console.log(" ***************************************************************************")
-    console.log(Character1.Name,"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************\n");
+    console.log(colors.blue(Character1.Name),"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************\n");
     function PartyMembers() {
-      console.log("***************************************************************************")
-    console.log(Character2.Name,"Level:","HP:",Character2.HP,"\n****************************************************************************\n");
+      console.log("****************************************************************************")
+    console.log(colors.blue(Character2.Name),"Level:","HP:",Character2.HP,"\n****************************************************************************\n");
     console.log(colors.red("****************************************************************************"))
-    console.log(Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild);
+    console.log(colors.red(Monster1.Name,"HP",Monster1.MonsterHP,"Level:",Monster1.Level,"Wildness:",Monster1.Wild));
     console.log(colors.red("****************************************************************************"));
     }
-    
+
     PartyMembers();
     switch ( Monster1.State ) {
       case "Normal":
@@ -188,12 +193,14 @@ function CombatHUD() {
     HUD();
     MOVING();
     }
+  console.log(colors.yellow("______________________________________________________________\n"));
   console.log(colors.blue("1: Attack\n"));
   console.log(colors.blue("2: Defend\n"));
   console.log(colors.blue("3: Magic\n"));
   console.log(colors.blue("4: Tame\n"));
   console.log(colors.blue("5: Items\n"));
   console.log(colors.blue("6: DOC\n"));
+  console.log(colors.yellow("______________________________________________________________\n"));
    CombatAction = input.question("Choose an Action...\n");
   console.clear();
    console.log("-----------------------------------------------------------------\n")
@@ -249,16 +256,24 @@ if (SpellEffectChance >= 8 ) {
 CombatHUD();
   }
     case '4':
-    console.log("You attempt to tame the monster...\n\n");
+    console.clear();
+    console.log(colors.green("You attempt to tame the monster...\n"));
+    input.question(colors.green("..."));
     if (Monster1.Wild <= 33) {
-      console.log(Monster1.Name," was succesfully Tamed!");
+
+      console.log(colors.green(Monster1.Name," was succesfully Tamed!"));
+      console.log(colors.green("You May Choose a Name, and inspect your monster in the monster Menu."))
       Character2.Name = Monster1.Name;
       Character2.HP = Monster1.MaxHP;
+      HUD();
+      MOVING();
+      
     }
     if (Monster1.Wild >= 100) {
       console.log(Monster1.Name," Is to Wild To Tame!");
+      CombatHUD();
     }
-    CombatHUD();
+    
     case '5':  
     console.clear();
    console.log (Object.entries(Character1.Inv));
@@ -302,7 +317,8 @@ function MOVING(){
   console.log("3. Use Shop(This will be Deprecated).\n");
   console.log("4. Search\n");
   console.log("5. Character\n");
-  console.log("6. Equipment");
+  console.log("6. Equipment\n");
+  console.log("7. Party(Not added yet.)\n");
   console.log("EncounterChance",EncounterChance,"ItemChance",ItemChance);
 Choice = input.question(colors.yellow("______________________________________________________________\n"));
 ///Maybe use a switch for this?
@@ -358,12 +374,16 @@ Shop();
   case '5':
   function PrintCharSheet() {
 
+    console.clear();
+  console.log(colors.yellow("______________________________________________________________\n"));
   console.log("Attribute Points remaining: ",Character1.AttributePoints,"\n\n");
   console.log("To spend your remaining Attribute Points, type the Attribute you wish to increase, followed by the amount of points you wish to allocate. ( example:  STR. Followed by 2.)\n\n");
 
   console.log("Character Stats:\n");
   console.log ("1: STR",Character1.Strength,"\n","2: DEF",Character1.Defense,"\n","3: LUCK",Character1.Luck,"\n","4: MANA",Character1.Mana,"\n","5: INT",Character1.Intellect,"\n","6: DEX",Character1.Dexterity,"\n\n");
-   AttributeIncrease = input.question("Which Attribute would you like to increase?\n\n");
+  console.log(colors.yellow("______________________________________________________________\n"));
+   AttributeIncrease = input.question(colors.green("Which Attribute would you like to increase?\n\n"));
+   
 
   switch (AttributeIncrease) {
     case "1": 
@@ -409,7 +429,7 @@ Shop();
   console.log("-----------------------------------------------------------------\n")
   Return = input.question(colors.green("Type 1 to return to Main Screen"));
 switch (Return) {
-  case "1":
+  case "1":7
   console.clear()
   HUD();
   MOVING();
