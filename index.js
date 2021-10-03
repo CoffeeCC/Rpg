@@ -16,7 +16,7 @@ let MonsterNamesPRE = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Sp
 let MonsterNamesSUF = ["Gro","Zoo","Glo","Gru","Dro","Dre","Zar","Klo","Gre","Spoo","Tre","Glar","Zar","Kar","Tar","Tu","Har","glee","tug","Bloo","Tal",];
 //The HUD
 function HUD() {
-  console.clear()
+
   console.log("--------------------------------------------------------------\nLocation:",Location,"Progress",Character1.Progress);
   console.log(" Name:",Character1.Name," Level:",Character1.Level,"EXP",Character1.EXP,"\n","Health:",Character1.HP,"\n","Race:",Character1.Race,"\n","Class:",Character1.Class,"\n--------------------------------------------------------------\n");
 }
@@ -435,7 +435,7 @@ Shop();
   console.log("-----------------------------------------------------------------\n")
   Return = input.question(colors.green("Type 1 to return to Main Screen"));
 switch (Return) {
-  case "1":7
+  case "1":
   console.clear()
   HUD();
   MOVING();
@@ -445,7 +445,6 @@ case '7':
   Return = input.question(colors.green("Type 1 to return to Main Screen"));
 switch (Return) {
   case "1":
-  console.clear()
   HUD();
   MOVING();
 };
@@ -512,13 +511,8 @@ let GeneratedItem;
 let GeneratedType;
 let GeneratedMod;
 let ItemQuality = 0;
+let Mod2;
 
-let FinishedItem = {
-  Type: " ",
-  Item: " ",
-  Quality: " ",
-  Mod: " ",
-};
 
 
 
@@ -549,29 +543,55 @@ let FinishedItem = {
       ItemQuality = (ItemQuality +4);
     }
     }
-  if (ItemTemplate == "Staff") {
-   GeneratedType = Staff_type[Math.floor(Math.random()*Staff_type.length)]
+    if (ItemTemplate == "Staff") {
     GeneratedItem = "Staff";
+    GeneratedType = Staff_type[Math.floor(Math.random()*Staff_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality == (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality == (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality == (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality == (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality == (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality == (ItemQuality +4);
     }
-  if (ItemTemplate == "Armor") {
-    GeneratedType = Armor_type[Math.floor(Math.random()*Armor_type.length)]
+    }
+    if (ItemTemplate == "Armor") {
     GeneratedItem = "Armor";
+    GeneratedType = Armor_type[Math.floor(Math.random()*Armor_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality == (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality == (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality == (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality == (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality == (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality == (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality == (ItemQuality +4);
     }
-    if (ItemTemplate == "Headpiece") {
-    GeneratedType = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
-    GeneratedItem = "Headpiece";
-    }
-    if (ItemTemplate == "Glove") {
-    GeneratedType = Glove_type[Math.floor(Math.random()*Glove_type.length)]
-    GeneratedItem = "Glove";
-    }
-    if (ItemTemplate == "Boot") {
-    GeneratedType = Boot_type[Math.floor(Math.random()*Boot_type.length)]
-    GeneratedItem ="Boot";
-    }
-    if (ItemTemplate == "Ring") {
-    GeneratedType = Ring_type[Math.floor(Math.random()*Ring_type.length)]
-    GeneratedItem = "Ring";
     }
     if (ModChance >= 9) {
       GeneratedMod = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
@@ -581,18 +601,16 @@ let FinishedItem = {
       GeneratedMod = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
     }
   
-    
-
-    
-    
-  
-  console.log(ItemTemplate,"\n\n");
-  
-  console.log(colors.green("You Found...", GeneratedType,GeneratedItem,ItemQuality,GeneratedMod));
+  let FinishedItem = {
+  Type: "",
+  Item:"",
+  Quality:ItemQuality,
+  Mod: GeneratedMod,
+};
   FinishedItem.Type = GeneratedType
   FinishedItem.Item = GeneratedItem
   FinishedItem.Quality = ItemQuality
-  FinishedItem.Mod = GeneratedMod
+  console.log(colors.green("You Found...", Object.entries(FinishedItem)));
   HUD();
   MOVING();
 };
