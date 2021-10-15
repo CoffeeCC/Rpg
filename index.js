@@ -1,7 +1,7 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
-  require('./Functions.js');
-
+ const functions = require('./Functions.js');
+//////////////hw to imprt stuff console.log(require('.Functions'))
 ///Equipable items
  let Wooden_Staff = {
       Attack: 1,
@@ -505,13 +505,14 @@ function GenerateItem() {
  let Ring_type = ["Broken","Wooden","Stone","Brass","Bronze","Iron","Steel","Mithril",];
  let Stat_Buff = ["HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
  let Stat_Nerf = ["HP","MP","STR","DEF","LUCK","MANA","INT","DEX",];
+
 let ModChance = Math.floor(Math.random() * 10) + Character1.Luck;
 let ItemTemplate;
 let GeneratedItem;
 let GeneratedType;
 let GeneratedMod;
 let ItemQuality = 0;
-let Mod2;
+let Mods = [];
 
 
 
@@ -543,6 +544,7 @@ let Mod2;
       ItemQuality = (ItemQuality +4);
     }
     }
+
     if (ItemTemplate == "Staff") {
     GeneratedItem = "Staff";
     GeneratedType = Staff_type[Math.floor(Math.random()*Staff_type.length)]
@@ -550,62 +552,175 @@ let Mod2;
       ItemQuality = (ItemQuality - 3);
     };
      if (GeneratedType == "Rusted") {
-      ItemQuality == (ItemQuality - 2);
+      ItemQuality = (ItemQuality - 2);
     };
      if (GeneratedType == "Stone") {
-      ItemQuality == (ItemQuality - 1);
+      ItemQuality = (ItemQuality - 1);
     };
      if (GeneratedType == "Bronze") {
-      ItemQuality == (ItemQuality + 1);
+      ItemQuality = (ItemQuality + 1);
     };
      if (GeneratedType == "Iron") {
-      ItemQuality == (ItemQuality + 2);
+      ItemQuality = (ItemQuality + 2);
     };
      if (GeneratedType == "Steel") {
-      ItemQuality == (ItemQuality + 3);
+      ItemQuality = (ItemQuality + 3);
     };
      if (GeneratedType == "Glass") {
-      ItemQuality == (ItemQuality +4);
+      ItemQuality = (ItemQuality +4);
     }
     }
+
     if (ItemTemplate == "Armor") {
     GeneratedItem = "Armor";
     GeneratedType = Armor_type[Math.floor(Math.random()*Armor_type.length)]
     if (GeneratedType == "Broken") {
-      ItemQuality == (ItemQuality - 3);
+      ItemQuality = (ItemQuality - 3);
     };
      if (GeneratedType == "Rusted") {
-      ItemQuality == (ItemQuality - 2);
+      ItemQuality = (ItemQuality - 2);
     };
      if (GeneratedType == "Stone") {
-      ItemQuality == (ItemQuality - 1);
+      ItemQuality = (ItemQuality - 1);
     };
      if (GeneratedType == "Bronze") {
-      ItemQuality == (ItemQuality + 1);
+      ItemQuality = (ItemQuality + 1);
     };
      if (GeneratedType == "Iron") {
-      ItemQuality == (ItemQuality + 2);
+      ItemQuality = (ItemQuality + 2);
     };
      if (GeneratedType == "Steel") {
-      ItemQuality == (ItemQuality + 3);
+      ItemQuality = (ItemQuality + 3);
     };
      if (GeneratedType == "Glass") {
-      ItemQuality == (ItemQuality +4);
+      ItemQuality = (ItemQuality +4);
     }
     }
-    if (ModChance >= 9) {
-      GeneratedMod = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
 
+    if (ItemTemplate == "Headpiece") {
+    GeneratedItem = "Headpiece";
+    GeneratedType = Headpiece_type[Math.floor(Math.random()*Headpiece_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality = (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality = (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality = (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality = (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality = (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
     }
-    if (ModChance <= 3) {
-      GeneratedMod = Stat_Nerf[Math.floor(Math.random()*Stat_Nerf.length)]
     }
+
+    if (ItemTemplate == "Glove") {
+    GeneratedItem = "Glove";
+    GeneratedType = Glove_type[Math.floor(Math.random()*Glove_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality = (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality = (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality = (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality = (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality = (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
+    }
+    }
+
+    if (ItemTemplate == "Boot") {
+    GeneratedItem = "Boots";
+    GeneratedType = Boot_type[Math.floor(Math.random()*Boot_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality = (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality = (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality = (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality = (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality = (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
+    }
+    }
+
+    if (ItemTemplate == "Ring") {
+      ItemStatMod = 
+    GeneratedItem = "Ring";
+    GeneratedType = Ring_type[Math.floor(Math.random()*Ring_type.length)]
+    if (GeneratedType == "Broken") {
+      ItemQuality = (ItemQuality - 3);
+    };
+     if (GeneratedType == "Rusted") {
+      ItemQuality = (ItemQuality - 2);
+    };
+     if (GeneratedType == "Stone") {
+      ItemQuality = (ItemQuality - 1);
+    };
+     if (GeneratedType == "Bronze") {
+      ItemQuality = (ItemQuality + 1);
+    };
+     if (GeneratedType == "Iron") {
+      ItemQuality = (ItemQuality + 2);
+    };
+     if (GeneratedType == "Steel") {
+      ItemQuality = (ItemQuality + 3);
+    };
+     if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
+    }
+    }
+    if (ItemQuality >= 1) {
+      function GenerateItemBuff() {
+      GeneratedMod = Stat_Buff[Math.floor(Math.random()*Stat_Buff.length)]
+      }
+      for (let i = 0; i <= ItemQuality; i++) {
+        Mods[i] = GeneratedMod
+        GenerateItemBuff();
+      }
+    }
+
   
   let FinishedItem = {
   Type: "",
   Item:"",
-  Quality:ItemQuality,
-  Mod: GeneratedMod,
+  Quality: ItemQuality,
+  Mod1: Mods[1],
+  Mod2: Mods[2],
+  Mod3: Mods[3],
+  Mod4: Mods[4],
+  Mod5: Mods[5],
 };
   FinishedItem.Type = GeneratedType
   FinishedItem.Item = GeneratedItem
