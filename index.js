@@ -159,6 +159,7 @@ MOVING();
 
 function CombatHUD() {
   let HitChance = (Math.floor(Math.random() * 100)) + Character1.Dexterity;
+  let MHitChance = (Math.floor(Math.random() * 100)) + Monster1.Dexterity;
   let DmgR = Math.floor(Math.random() * 3);
   let Dmg = 0;
   let MgDmg = 0;
@@ -168,6 +169,7 @@ function CombatHUD() {
   let Burned = 5;
   let Normal = 0;
   let Stunned = 0;
+  let PMHit = (Math.floor(Math.random() * 3));
 
   console.log(" ***************************************************************************")
     console.log(colors.blue(Character1.Name),"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************\n");
@@ -224,6 +226,13 @@ function CombatHUD() {
     }
     console.log(colors.green(Monster1.Name,"Suffered",Dmg,"Damage!\n"));
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
+    console.log(colors.red(Monster1.Name,"Attacked!"));
+    if (MHitChance >= 50) {
+      Dmg = (Monster1.Strength + DmgR) - (Character1.Defense);
+    }
+    if (PMHit = 1) {
+      Character1.Health = (Character1.HP - Dmg);
+    }
     CombatHUD();
     case '2':
     console.log(colors.green(Character1.Name,"Braced for impact","!"));
@@ -298,6 +307,7 @@ let R = Math.floor(Math.random() * 3);
 Monster1.State = "Normal",
 Monster1.EXP = Math.floor((Math.random() * 5) * (Monster1.Level) + 1),
 Monster1.Attack = Math.floor(Math.random() * 3) + Monster1.Level,
+Monster1.Dexterity = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.Defense = Math.floor(Math.random() * 3) + Monster1.Level,
 Monster1.MgDef = Math.floor(Math.random() * 2) + Monster1.Level
 Monster1.MonsterHP = Math.floor(Math.random() * 30) + Character1.Level,
@@ -580,9 +590,12 @@ let Mods = [];
      if (GeneratedType == "Rusted") {
       ItemQuality = (ItemQuality - 2);
     };
-     if (GeneratedType == "Stone") {
-      ItemQuality = (ItemQuality - 1);
+     if (GeneratedType == "Leather") {
+      ItemQuality = (ItemQuality = 0);
     };
+    if (GeneratedType == "Wooden") {
+      ItemQuality = (ItemQuality + 1);
+    }
      if (GeneratedType == "Bronze") {
       ItemQuality = (ItemQuality + 1);
     };
@@ -593,6 +606,9 @@ let Mods = [];
       ItemQuality = (ItemQuality + 3);
     };
      if (GeneratedType == "Glass") {
+      ItemQuality = (ItemQuality +4);
+    }
+    if (GeneratedType == "Mithril") {
       ItemQuality = (ItemQuality +4);
     }
     }
@@ -618,8 +634,14 @@ let Mods = [];
      if (GeneratedType == "Steel") {
       ItemQuality = (ItemQuality + 3);
     };
+    if (GeneratedType == "Mithril") {
+      ItemQuality = (ItemQuality +4);
+    }
      if (GeneratedType == "Glass") {
       ItemQuality = (ItemQuality +4);
+    }
+    if (GeneratedType == "DragonScale") {
+      ItemQuality = (ItemQuality +5);
     }
     }
 
@@ -647,6 +669,9 @@ let Mods = [];
      if (GeneratedType == "Glass") {
       ItemQuality = (ItemQuality +4);
     }
+    if (GeneratedType == "Carapace") {
+      ItemQuality = (ItemQuality +2);
+    }
     }
 
     if (ItemTemplate == "Boot") {
@@ -658,10 +683,10 @@ let Mods = [];
      if (GeneratedType == "Rusted") {
       ItemQuality = (ItemQuality - 2);
     };
-     if (GeneratedType == "Stone") {
+     if (GeneratedType == "Cloth") {
       ItemQuality = (ItemQuality - 1);
     };
-     if (GeneratedType == "Bronze") {
+     if (GeneratedType == "Leather") {
       ItemQuality = (ItemQuality + 1);
     };
      if (GeneratedType == "Iron") {
@@ -670,8 +695,11 @@ let Mods = [];
      if (GeneratedType == "Steel") {
       ItemQuality = (ItemQuality + 3);
     };
-     if (GeneratedType == "Glass") {
+     if (GeneratedType == "Mithril") {
       ItemQuality = (ItemQuality +4);
+    }
+    if (GeneratedType == "Carapace") {
+      ItemQuality = (ItemQuality +2);
     }
     }
 
