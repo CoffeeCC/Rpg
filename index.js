@@ -333,7 +333,7 @@ CombatHUD();
       Character2.HP = Monster1.MaxHP;
       Character2.Strength = Monster1.Attack;
       Character2.Dexterity = Monster1.Dexterity;
-      Character2.Defense. = Monster1.Defense;
+      Character2.Defense = Monster1.Defense;
       Character2.MgDef = Monster1.MgDef;
       Character2.Level = Monster1.Level;
       Character2.EXP = 0;
