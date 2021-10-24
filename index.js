@@ -26,6 +26,8 @@ let ItemList = ["Green Herb","Red Herb","Yellow Herb",]
 let Races = ["Human","Elf","Dwarf",""];
 let Classes = ["Warrior", "Mage","Thief","Bard","Knight",]
 let Location = ["Town"];
+let P2 = false;
+let P3 = false;
 
 let Character1 = {
   Start: " ",
@@ -35,6 +37,11 @@ let Character1 = {
   Level:  1,
   HP: 1,
   Strength: 1,
+  Defense: 1,
+  Dexterity: 1,
+  Mana: 1,
+  MgDef: 1,
+  Intellect: 1,
   MaxHP: 100,
   Progress: 1,
   Search: 1,
@@ -52,12 +59,41 @@ let Character2 = {
   Level:  1,
   HP: 1,
   Strength: 1,
+  Defense: 1,
+  Dexterity: 1,
+  Mana: 1,
+  MgDef: 1,
+  Intellect: 1,
   MaxHP: 100,
   Progress: 1,
   Search: 1,
   EXP: 0,
   Level: 1,
   AttributePoints: 0,
+  IInv: ["Jerky",],
+  EInv: [""],
+};
+let Character3 = {
+  Start: " ",
+  Name:  " ",
+  Race:  " ",
+  Class:  " ",
+  Level:  1,
+  HP: 1,
+  Strength: 1,
+  Defense: 1,
+  Dexterity: 1,
+  Mana: 1,
+  MgDef: 1,
+  Intellect: 1,
+  MaxHP: 100,
+  Progress: 1,
+  Search: 1,
+  EXP: 0,
+  Level: 1,
+  AttributePoints: 0,
+  IInv: ["Jerky",],
+  EInv: [""],
 };
 let Monster1 = {
   Name:  " ",
@@ -169,7 +205,7 @@ function CombatHUD() {
   let Burned = 5;
   let Normal = 0;
   let Stunned = 0;
-  let PMHit = (Math.floor(Math.random() * 3));
+  let PMHit = (Math.floor(Math.random() * 4));
 
   console.log(" ***************************************************************************")
     console.log(colors.blue(Character1.Name),"HP:",Character1.HP,"\n","MP:",Character1.MP,"\n","***************************************************************************\n");
@@ -228,11 +264,25 @@ function CombatHUD() {
     Monster1.MonsterHP = (Monster1.MonsterHP - Dmg);
     console.log(colors.red(Monster1.Name,"Attacked!"));
     if (MHitChance >= 50) {
-      Dmg = (Monster1.Strength + DmgR) - (Character1.Defense);
+      Dmg = (Monster1.Attack + DmgR) - (Character1.Defense) + Monster1.Level;
     }
     if (PMHit = 1) {
-      Character1.Health = (Character1.HP - Dmg);
+      Character1.HP = (Character1.HP - Dmg);
+      console.log(colors.red(Character1.Name, "Suffered", Dmg,"Damage!\n"))
     }
+    if (PMHit == 2 & P2 == true) {
+      Character2.HP = (Character2.HP - Dmg);
+      console.log(colors.red(Character2.Name, "Suffered", Dmg,"Damage!\n"))
+    }
+    if (PMHit == 3 && P3 == true) {
+      Character3.Hp = (Character3.HP - Dmg);
+      console.log(colors.red(Character3.Name, "Suffered", Dmg,"Damage!\n"))
+    }
+    if (PMHit == 0) {
+      console.log(colors.red(Monster1.Name, "Missed its target!"));
+    }
+    
+    console.log(PMHit);
     CombatHUD();
     case '2':
     console.log(colors.green(Character1.Name,"Braced for impact","!"));
@@ -278,8 +328,17 @@ CombatHUD();
 
       console.log(colors.green(Monster1.Name," was succesfully Tamed!"));
       console.log(colors.green("You May Choose a Name, and inspect your monster in the monster Menu."))
+      P2 = !P2;
       Character2.Name = Monster1.Name;
       Character2.HP = Monster1.MaxHP;
+      Character2.Strength = Monster1.Attack;
+      Character2.Dexterity = Monster1.Dexterity;
+      Character2.Defense. = Monster1.Defense;
+      Character2.MgDef = Monster1.MgDef;
+      Character2.Level = Monster1.Level;
+      Character2.EXP = 0;
+
+
       HUD();
       MOVING();
       
@@ -391,6 +450,8 @@ Shop();
   function PrintCharSheet() {
 
     console.clear();
+    if (Character1.AttributePoints > 0) {
+
   console.log(colors.yellow("______________________________________________________________\n"));
   console.log("Attribute Points remaining: ",Character1.AttributePoints,"\n\n");
   console.log("To spend your remaining Attribute Points, type the Attribute you wish to increase, followed by the amount of points you wish to allocate. ( example:  STR. Followed by 2.)\n\n");
@@ -405,31 +466,40 @@ Shop();
     case "1": 
       Character1.Strength++
       console.log(colors.green("Strength was increased by 1!!\n\n"));
-  MOVING();
+      Character1.AttributePoints--
+ PrintCharSheet()
     case "2": 
-      Character1.Strength++
+      Character1.Defense++
       console.log(colors.green("Defense was increased by !!\n\n"));
-  MOVING();
-    case "3": 
-      Character1.Strength++
-      console.log(colors.green("Luck was increased by 1!\n\n"));
-  MOVING();
-  case "4": 
-      Character1.Strength++
-      console.log(colors.green("Mana was increased by 1!\n\n"));
-  MOVING();
-  case "5": 
-      Character1.Strength++
-      console.log(colors.green("Intellect was increased by 1!\n\n"));
-  MOVING;
-  case "6": 
-      Character1.Strength++
-      console.log(colors.green("Dexterity was increased by 1!\n\n"));
-  };
-  };
-  
+      Character1.AttributePoints--
   PrintCharSheet()
-  case '6':
+    case "3": 
+      Character1.Luck++
+      console.log(colors.green("Luck was increased by 1!\n\n"));
+      Character1.AttributePoints--
+  PrintCharSheet()
+    case "4": 
+      Character1.Mana++
+      console.log(colors.green("Mana was increased by 1!\n\n"));
+      Character1.AttributePoints--
+  PrintCharSheet()
+    case "5": 
+      Character1.Intellect++
+      console.log(colors.green("Intellect was increased by 1!\n\n"));
+      Character1.AttributePoints--
+  PrintCharSheet()
+    case "6": 
+      Character1.Dexterity++
+      console.log(colors.green("Dexterity was increased by 1!\n\n"));
+      Character1.AttributePoints--
+      PrintCharSheet()
+  };
+  };
+  };
+  PrintCharSheet();
+  console.clear();
+  HUD();
+  MOVING();
 
   console.clear()
   console.log(colors.green("Current Equipment.\n"));
