@@ -1,7 +1,6 @@
 const colors = require('colors/safe');
 const input = require("readline-sync");
  const functions = require('./Functions.js');
-//////////////hw to imprt stuff console.log(require('.Functions'))
 ///Equipable items
  let Wooden_Staff = {
       Attack: 1,
