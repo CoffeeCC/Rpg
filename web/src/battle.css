@@ -8,7 +8,7 @@
     'header'
     'main'
     'log';
-  max-width: 1460px;
+  max-width: none;
 }
 
 .realm-name {
@@ -22,7 +22,7 @@
 .battle-stage {
   position: relative;
   overflow: hidden;
-  min-height: 640px;
+  min-height: calc(100vh - 210px);
   display: flex;
   flex-direction: column;
   background:
@@ -837,4 +837,38 @@
   object-fit: cover;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7);
   border: 1px solid var(--border-bright);
+}
+
+/* ===== v8.1: fullscreen + big overlapping hand + painted card art ===== */
+.card-art-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.92;
+}
+.card-art-window {
+  position: relative;
+  overflow: hidden;
+}
+.hand-fan .hand-slot + .hand-slot {
+  margin-left: -46px; /* cards overlap to spend the width on ART, not gaps */
+}
+.hand-fan .hand-slot:hover,
+.hand-fan .hand-slot:focus-within {
+  transform: translateY(-22px) scale(1.05);
+  z-index: 30;
+}
+.hand-fan .hand-slot {
+  position: relative;
+  z-index: 1;
+}
+.enemy-slot {
+  width: 300px;
+  height: 210px;
+}
+.enemy-slot.boss {
+  width: 360px;
+  height: 300px;
 }

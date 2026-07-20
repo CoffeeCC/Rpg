@@ -370,12 +370,12 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       <div className="stage-row ffrow">
         <div className="party-column">
           <div className={`combatant-figure hero-fig ${flashing['hero'] ?? ''}`}>
-            <HeroImage className={player.className} size={150} />
+            <HeroImage className={player.className} size={185} />
             {renderPopups('hero')}
           </div>
           {state.party.map((m: MonsterInstance) => (
             <div key={m.uid} className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''}`}>
-              <MonsterImage speciesId={m.speciesId} size={86} facing="right" />
+              <MonsterImage speciesId={m.speciesId} size={110} facing="right" />
               {!m.isAlive() && <span className="ko-label">FALLEN</span>}
               {renderPopups(m.uid)}
             </div>
@@ -391,7 +391,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-            const size = enemy.isBoss ? 220 : 150;
+            const size = enemy.isBoss ? 280 : 190;
             return (
               <div
                 key={enemy.uid}

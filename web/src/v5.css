@@ -602,3 +602,11 @@
     transform: translateX(-120px) translateY(30px) rotate(-8deg);
   }
 }
+
+/* v8.1: painted icons composite over dark UI */
+.ui-icon {
+  mix-blend-mode: screen;
+  object-fit: contain;
+  vertical-align: middle;
+  pointer-events: none;
+}

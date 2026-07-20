@@ -4,44 +4,46 @@ import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
 import { isOpened, isBroken, unitAt, movFor, threatTiles, TILE, type FloorUnit } from '../engine/systems/floors';
-import { MonsterArt } from '../art/monsterArt';
+import { MonsterImage } from '../art/MonsterImage';
 import { TileFill } from '../art/tileArt';
+import { Icon } from './Icon';
+import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 
-const TILE_VIEW: Record<string, { emoji: string; cls: string }> = {
-  [TILE.WALL]: { emoji: '', cls: 'wall' },
-  [TILE.FLOOR]: { emoji: '', cls: 'floor-tile' },
-  [TILE.START]: { emoji: '🚪', cls: 'special stairs' },
-  [TILE.STAIRS]: { emoji: '🕳️', cls: 'special stairs' },
-  [TILE.BOSS]: { emoji: '💀', cls: 'special boss' },
-  [TILE.MINIBOSS]: { emoji: '', cls: 'floor-tile' },
-  [TILE.ENEMY]: { emoji: '', cls: 'floor-tile' },
-  [TILE.TAMER]: { emoji: '', cls: 'floor-tile' },
-  [TILE.MERCHANT]: { emoji: '', cls: 'floor-tile' },
-  [TILE.BREAKABLE]: { emoji: '🛢️', cls: 'special breakable' },
-  [TILE.CHEST]: { emoji: '🎁', cls: 'special chest' },
-  [TILE.SHRINE]: { emoji: '⛲', cls: 'special shrine' },
-  [TILE.EVENT]: { emoji: '❓', cls: 'special event-tile' },
-  [TILE.SECRET]: { emoji: '', cls: 'floor-tile' },
+const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
+  [TILE.WALL]: { emoji: '', icon: '', cls: 'wall' },
+  [TILE.FLOOR]: { emoji: '', icon: '', cls: 'floor-tile' },
+  [TILE.START]: { emoji: '🚪', icon: 'door', cls: 'special stairs' },
+  [TILE.STAIRS]: { emoji: '🕳️', icon: 'stairs', cls: 'special stairs' },
+  [TILE.BOSS]: { emoji: '💀', icon: 'boss', cls: 'special boss' },
+  [TILE.MINIBOSS]: { emoji: '', icon: '', cls: 'floor-tile' },
+  [TILE.ENEMY]: { emoji: '', icon: '', cls: 'floor-tile' },
+  [TILE.TAMER]: { emoji: '', icon: '', cls: 'floor-tile' },
+  [TILE.MERCHANT]: { emoji: '', icon: '', cls: 'floor-tile' },
+  [TILE.BREAKABLE]: { emoji: '🛢️', icon: 'barrel', cls: 'special breakable' },
+  [TILE.CHEST]: { emoji: '🎁', icon: 'chest', cls: 'special chest' },
+  [TILE.SHRINE]: { emoji: '⛲', icon: 'shrine', cls: 'special shrine' },
+  [TILE.EVENT]: { emoji: '❓', icon: 'event', cls: 'special event-tile' },
+  [TILE.SECRET]: { emoji: '', icon: '', cls: 'floor-tile' },
 };
 
 function UnitToken({ unit }: { unit: FloorUnit }) {
   if (unit.kind === 'merchant') {
     return (
       <span className="unit-token merchant" title={unit.label}>
-        🏮
+        {SPRITE_ART.merchant ? <img src={SPRITE_ART.merchant} width={40} height={40} className="ui-icon" alt="" /> : '🏮'}
       </span>
     );
   }
   if (unit.kind === 'tamer') {
     return (
       <span className="unit-token tamer" title={`${unit.label} (Lv${unit.level})`}>
-        ⚔️
+        {SPRITE_ART.tamer ? <img src={SPRITE_ART.tamer} width={40} height={40} className="ui-icon" alt="" /> : '⚔️'}
       </span>
     );
   }
   return (
     <span className={`unit-token ${unit.kind}`} title={`${unit.label} (Lv${unit.level})`}>
-      {unit.speciesId && <MonsterArt speciesId={unit.speciesId} size={22} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />}
+      {unit.speciesId && <MonsterImage speciesId={unit.speciesId} size={44} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />}
       {unit.kind === 'miniboss' && <span className="unit-crown">👑</span>}
     </span>
   );
@@ -184,6 +186,20 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     return def && def.effect.type !== 'bait';
   });
 
+  // v8.1: one continuous painted terrain texture per gate — cells sample it
+  // by position, so the "tiles" genuinely flow together with zero seams.
+  const tex = TILE_TEXTURES[exp.gateId];
+  const cols = Math.max(...floor.grid.map((r) => r.length));
+  const rows = floor.grid.length;
+  const wallStyle = (x: number, y: number) =>
+    tex
+      ? {
+          backgroundImage: `url(${tex.wall})`,
+          backgroundSize: `${cols * 48}px ${rows * 48}px`,
+          backgroundPosition: `${-x * 48}px ${-y * 48}px`,
+        }
+      : undefined;
+
   return (
     <div className="panel">
       <h1 className="title">
@@ -192,15 +208,17 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       <p className="subtitle">{gate.description}</p>
 
       <div className="floor-layout">
-        <div className="map-grid">
+        <div className="map-grid" style={tex ? { backgroundImage: `url(${tex.ground})`, backgroundSize: 'cover' } : undefined}>
           {floor.grid.map((row, y) => (
             <div className="map-row" key={y}>
               {row.split('').map((ch, x) => {
                 if (x === exp.x && y === exp.y) {
                   return (
                     <span key={x} className="map-cell player">
-                      <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
-                      <span className="cell-top">🧝</span>
+                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                      <span className="cell-top">
+                        {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={42} height={42} className="ui-icon" alt="" /> : '🧝'}
+                      </span>
                     </span>
                   );
                 }
@@ -208,7 +226,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (unit) {
                   return (
                     <span key={x} className="map-cell floor-tile">
-                      <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
+                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
                       <UnitToken unit={unit} />
                     </span>
                   );
@@ -226,7 +244,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (tile === TILE.SECRET) {
                   return (
                     <span key={x} className="map-cell special secret" title="Something behind the stone...">
-                      <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={36} />
+                      {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={48} />}
                       <span className="cell-top">✨</span>
                     </span>
                   );
@@ -236,9 +254,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
                 const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                 return (
-                  <span key={x} className={`map-cell ${view.cls}${danger ? ' threat' : ''}`} title={danger ? 'A hostile can reach this tile next turn' : undefined}>
-                    <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
-                    {view.emoji && <span className="cell-top">{view.emoji}</span>}
+                  <span key={x} className={`map-cell ${view.cls}${danger ? ' threat' : ''}`} style={ch === '#' ? wallStyle(x, y) : undefined} title={danger ? 'A hostile can reach this tile next turn' : undefined}>
+                    {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                    {view.emoji && (
+                      <span className="cell-top">
+                        <Icon name={view.icon} emoji={view.emoji} size={34} />
+                      </span>
+                    )}
                   </span>
                 );
               })}

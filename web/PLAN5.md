@@ -84,3 +84,22 @@ branch, enable Pages via `gh api`. Link: https://coffeecc.github.io/Rpg/
    personalities+MP → controls → anims → Tellings
 4. Integrate + QC art as batches land
 5. Full tests, build, deploy gh-pages, enable Pages, Telegram ping WITH LINK
+
+## v8.1 addendum — TOTAL art sweep + fullscreen (Paul directive)
+- Grok redoes ALL remaining art, orchestrating its own subagents + QC (it has
+  image viewing). Staging dir: public/art/gen-staging; Grok gets write/ls/view
+  + image_gen and must emit manifest.json (id -> file) — positional trust is dead.
+- Card art: species cards reuse their monster painting (via SPECIES_CARDS
+  lookup); unique class/race/reward/tame cards get painted 5:7 vignettes
+  (no text/border). CardView gets an art layer; bigger cards (220px) with
+  overlapping fan (negative margin, hover lift).
+- Tiles: per-gate large seamless GROUND texture + WALL texture; rendered as
+  one continuous background across the map grid (background-position per
+  cell = tiles that truly work together). Feature sprites (chest, shrine,
+  stairs, door, barrel, event, secret) replace map emojis.
+- Icons: full set replacing UI emojis (town menu, piles, stats, buttons);
+  Icon component with emoji fallback until each lands.
+- Map units: painted monster images at 48px tokens; player/merchant/tamer
+  sprites from Grok.
+- Fullscreen: kill .game max-width (100%), battle stage fills viewport,
+  map cells 48px+, panels stretch.

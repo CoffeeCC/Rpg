@@ -23,7 +23,7 @@ export function MonsterImage({
   facing?: 'left' | 'right';
 }) {
   const src = PAINTED_MONSTERS[speciesId];
-  if (!src || size < 60) return <MonsterArt speciesId={speciesId} size={size} rarity={rarity} boss={boss} />;
+  if (!src || size < 40) return <MonsterArt speciesId={speciesId} size={size} rarity={rarity} boss={boss} />;
   return (
     <img
       src={src}

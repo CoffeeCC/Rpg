@@ -4,6 +4,7 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { cardNumbers } from '../engine/systems/cardBattle';
 import { CardOrnament, CardArtBackdrop } from '../art/cardFrames';
 import { MonsterArt } from '../art/monsterArt';
+import { CARD_ART } from '../art/cardArt';
 
 export interface CardViewProps {
   card: CardDef;
@@ -24,7 +25,7 @@ const TYPE_LABEL: Record<CardDef['type'], string> = {
   summon: 'Summon',
 };
 
-export function CardView({ card, hero, sourceMonster, width = 176, playable = true, selected = false, upgraded = false }: CardViewProps) {
+export function CardView({ card, hero, sourceMonster, width = 216, playable = true, selected = false, upgraded = false }: CardViewProps) {
   const height = Math.round(width * 1.4);
   const numbers = cardNumbers(card, hero, sourceMonster, upgraded);
   return (
@@ -35,7 +36,13 @@ export function CardView({ card, hero, sourceMonster, width = 176, playable = tr
       <div className="card-art-window">
         <CardArtBackdrop type={card.type} />
         <div className="card-art-content">
-          {sourceMonster ? <MonsterArt speciesId={sourceMonster.speciesId} size={Math.round(width * 0.62)} /> : <span className="card-glyph">{card.emoji}</span>}
+          {CARD_ART[card.id] ? (
+            <img className="card-art-img" src={CARD_ART[card.id]} alt="" draggable={false} />
+          ) : sourceMonster ? (
+            <MonsterArt speciesId={sourceMonster.speciesId} size={Math.round(width * 0.62)} />
+          ) : (
+            <span className="card-glyph">{card.emoji}</span>
+          )}
         </div>
       </div>
       <div className="card-cost">{card.cost}</div>

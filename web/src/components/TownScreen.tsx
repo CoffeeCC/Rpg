@@ -1,5 +1,6 @@
 import type { GameAction, GameState } from '../engine/game';
 import { availableQuests } from '../engine/game';
+import { Icon } from './Icon';
 import { PAINTED_TOWN } from '../art/painted';
 
 export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
@@ -16,48 +17,48 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
       <p className="subtitle">The Last Lantern burns low over the square. {4 - state.orbs.length > 0 ? `${4 - state.orbs.length} orb(s) still missing.` : 'The Abyss awaits.'}</p>
       <div className="menu-grid">
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}>
-          🚪 The Gates
+          <Icon name="gates" emoji="🚪" size={22} /> The Gates
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'REST' })}>
-          🛏️ Rest (free)
+          <Icon name="rest" emoji="🛏️" size={22} /> Rest (free)
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'shopItems' })}>
-          🧪 Item Shop
+          <Icon name="itemshop" emoji="🧪" size={22} /> Item Shop
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'shopGear' })}>
-          ⚒️ Gear Shop
+          <Icon name="gearshop" emoji="⚒️" size={22} /> Gear Shop
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'stable' })}>
-          🐴 Stable
+          <Icon name="stable" emoji="🐴" size={22} /> Stable
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'breeding' })}>
-          🥚 Breeding Lab
+          <Icon name="breeding" emoji="🥚" size={22} /> Breeding Lab
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'questBoard' })}>
-          📜 Quest Board
+          <Icon name="quests" emoji="📜" size={22} /> Quest Board
           {(questsNew || questsClaimable) && <span className="badge-dot" title={questsClaimable ? 'Rewards to claim' : 'New requests posted'} />}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'tavern' })}>
-          🕯️ Tavern
+          <Icon name="tavern" emoji="🕯️" size={22} /> Tavern
           {tavernNew && <span className="badge-dot" title="People have new things to say" />}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'deck' })}>
-          🃏 Deck
+          <Icon name="deck" emoji="🃏" size={22} /> Deck
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'smith' })}>
-          🔥 Smith
+          <Icon name="smith" emoji="🔥" size={22} /> Smith
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'chronicle' })}>
-          📖 Chronicle
+          <Icon name="chronicle" emoji="📖" size={22} /> Chronicle
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'characterSheet' })}>
-          🧝 Character{state.player && state.player.attributePoints > 0 ? ` (${state.player.attributePoints})` : ''}
+          <Icon name="character" emoji="🧝" size={22} /> Character{state.player && state.player.attributePoints > 0 ? ` (${state.player.attributePoints})` : ''}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
-          🎒 Equipment{state.player && state.player.items.length > 0 ? ` (${state.player.items.length})` : ''}
+          <Icon name="equipment" emoji="🎒" size={22} /> Equipment{state.player && state.player.items.length > 0 ? ` (${state.player.items.length})` : ''}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
-          💾 Save / Load
+          <Icon name="save" emoji="💾" size={22} /> Save / Load
         </button>
       </div>
       </div>
