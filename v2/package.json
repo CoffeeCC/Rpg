@@ -1,0 +1,15 @@
+{
+  "name": "text-rpg-v2",
+  "version": "2.0.0",
+  "description": "Rewrite of CoffeeCC/Rpg - a text based RPG",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "colors": "^1.4.0",
+    "readline-sync": "^1.4.10"
+  }
+}

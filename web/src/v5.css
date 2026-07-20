@@ -1,0 +1,308 @@
+/* =========================================================
+   v5: piles, ghosts, legends, deck & smith (PLAN3)
+   ========================================================= */
+
+/* --- Pile widgets (Deck / Embers / Ashes) --- */
+.pile-widget {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: linear-gradient(180deg, #17151c 0%, #100e13 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.12s;
+  min-width: 74px;
+}
+
+.pile-widget:hover {
+  border-color: var(--gold);
+  box-shadow: var(--glow-gold);
+  transform: translateY(-2px);
+}
+
+.pile-cardback {
+  font-size: 1.5rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+}
+
+.pile-discard .pile-cardback {
+  color: var(--ember);
+}
+
+.pile-exhaust .pile-cardback {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.pile-count-num {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pile-name {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.hand-right-piles {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- Pile inspection tray --- */
+.pile-inspect {
+  border-top: 1px solid var(--border-dim);
+  background: rgba(8, 7, 10, 0.92);
+  padding: 10px 16px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.pile-inspect-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+.pile-inspect-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pile-chip {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 11px;
+  font-size: 0.78rem;
+  background: var(--panel-inset);
+}
+
+.type-chip-strike { border-left: 3px solid #8a3a30; }
+.type-chip-spell { border-left: 3px solid #3d5a8a; }
+.type-chip-guard { border-left: 3px solid #5c6068; }
+.type-chip-tactic { border-left: 3px solid #6d5a2e; }
+.type-chip-summon { border-left: 3px solid #4a7040; }
+
+/* --- Enemy phase indicator + input lock --- */
+.phase-indicator {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ember);
+  text-shadow: 0 0 12px rgba(179, 84, 30, 0.6);
+  animation: phasePulse 1.2s ease-in-out infinite;
+  z-index: 8;
+  pointer-events: none;
+}
+
+@keyframes phasePulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* --- Ghost card flying to its target --- */
+.card-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 52px;
+  height: 72px;
+  border-radius: 6px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, #1d1b24 0%, #121017 100%);
+  box-shadow: 0 0 16px rgba(201, 162, 39, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  pointer-events: none;
+  z-index: 30;
+  animation: ghostFly 0.38s cubic-bezier(0.3, 0.1, 0.4, 1) forwards;
+}
+
+@keyframes ghostFly {
+  0% {
+    transform: translate(calc(var(--fx) - 26px), calc(var(--fy) - 36px)) scale(1);
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(calc(var(--tx) - 26px), calc(var(--ty) - 36px)) scale(0.45);
+    opacity: 0;
+  }
+}
+
+/* --- Party minis get names now (permadeath makes them people) --- */
+.mini-name {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60px;
+}
+
+.party-mini .ko-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+}
+
+/* --- Upgraded cards --- */
+.playing-card.upgraded .card-name {
+  color: var(--gold-bright);
+  text-shadow: 0 0 8px rgba(201, 162, 39, 0.4);
+}
+
+/* --- Deck & Smith grids --- */
+.deck-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.deck-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  background: var(--gold-deep);
+  color: #0d0b06;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  border-radius: 10px;
+  padding: 1px 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* --- Legend overlays: the generated history LANDS --- */
+.legend-overlay {
+  background: rgba(4, 3, 5, 0.93);
+}
+
+.legend-overlay .panel {
+  border-color: var(--gold-deep);
+  box-shadow: 0 0 60px rgba(179, 84, 30, 0.15), var(--shadow-panel);
+}
+
+.legend-kicker {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.45em;
+  color: var(--ember);
+  text-shadow: 0 0 16px rgba(179, 84, 30, 0.7);
+  margin: 4px 0 10px;
+  animation: phasePulse 1.6s ease-in-out infinite;
+}
+
+.relic-kicker {
+  color: var(--gold-bright);
+  text-shadow: 0 0 16px rgba(201, 162, 39, 0.7);
+}
+
+.legend-art {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0;
+  animation: legendLoom 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes legendLoom {
+  from {
+    opacity: 0;
+    transform: scale(0.7) translateY(24px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.legend-name {
+  font-size: 1.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+}
+
+.legend-epithet {
+  font-size: 0.85rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  -webkit-text-fill-color: var(--text-dim);
+}
+
+.relic-glyph {
+  font-size: 3rem;
+  color: var(--gold-bright);
+  text-shadow: 0 0 30px rgba(201, 162, 39, 0.8);
+  animation: legendLoom 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  margin: 8px 0;
+}
+
+/* --- Environmental backdrops --- */
+.stage-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.battle-stage > *:not(.stage-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.town-panel {
+  position: relative;
+  overflow: hidden;
+  min-height: 480px;
+}
+
+.town-content {
+  position: relative;
+  z-index: 1;
+}
+
+.pile-cardback svg {
+  display: block;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+}
+.trait-line { color: var(--gold); font-style: italic; }
