@@ -5,6 +5,7 @@ import { startBattle, endTurn, energyFor, handSizeFor, effectAmount } from '../s
 import { traitsFor, talentsFor, TALENTS } from '../data/traits';
 import { bestowName } from '../systems/naming';
 import { SPECIES } from '../data/species';
+import { GATES } from '../data/gates';
 import { gameReducer, initialGameState, type GameState } from '../game';
 
 function createHero(
@@ -20,6 +21,35 @@ function tamedMonster(level = 6): MonsterInstance {
   const m = new MonsterInstance({ speciesId: Object.keys(SPECIES)[0], level });
   m.isTamed = true;
   return m;
+}
+
+function engageUnit(state: GameState): GameState {
+  const exp = state.expedition!;
+  let target = exp.units.find((u) => u.kind === 'enemy') ?? exp.units.find((u) => u.kind !== 'merchant');
+  if (!target) {
+    // Map has no live units (or none spawned) — inject one so the test is map-independent.
+    target = { id: 'test-enemy', kind: 'enemy', x: 0, y: 0, label: 'Test Prowler', speciesId: Object.keys(SPECIES)[0], level: 1, mov: 3 };
+    exp.units.push(target);
+  }
+  const floor = GATES[exp.gateId].floors[exp.floorIndex];
+  outer: for (let y = 1; y < floor.grid.length - 1; y++) {
+    for (let x = 1; x < floor.grid[y].length - 2; x++) {
+      const open =
+        floor.grid[y][x] !== '#' &&
+        floor.grid[y][x + 1] &&
+        floor.grid[y][x + 1] !== '#' &&
+        !exp.units.some((u) => u !== target && ((u.x === x && u.y === y) || (u.x === x + 1 && u.y === y)));
+      if (open) {
+        target.x = x + 1;
+        target.y = y;
+        exp.x = x;
+        exp.y = y;
+        break outer;
+      }
+    }
+  }
+  exp.movLeft = 99;
+  return gameReducer(state, { type: 'MOVE', dir: 'east' });
 }
 
 describe('v5: traits & talents', () => {
@@ -105,12 +135,8 @@ describe('v5: permadeath & naming', () => {
     state.party.push(companion);
     state = gameReducer(state, { type: 'GOTO', screen: 'gateSelect' });
     state = gameReducer(state, { type: 'ENTER_GATE', gateId: 'verdant' });
-    const dirs = ['north', 'east', 'south', 'west'] as const;
-    for (let i = 0; i < 300 && state.screen !== 'battle'; i++) {
-      state = gameReducer(state, { type: 'MOVE', dir: dirs[i % 4] });
-      if (state.screen === 'event') state = gameReducer(state, { type: 'EVENT_CHOICE', optionIndex: 0 });
-      if (state.pendingLegend) state = gameReducer(state, { type: 'LEGEND_SEEN' });
-    }
+    state = engageUnit(state);
+    if (state.pendingLegend) state = gameReducer(state, { type: 'LEGEND_SEEN' });
     expect(state.screen).toBe('battle');
     // Doom the companion: 1 HP, big guaranteed enemy hits (monsters soak first).
     const inParty = state.party.find((m) => m.uid === companion.uid)!;
@@ -154,16 +180,10 @@ describe('v5: permadeath & naming', () => {
 
   it('tamed monsters receive a personal name through the reducer', () => {
     let state = createHero();
-    const dirs = ['north', 'east', 'south', 'west'] as const;
-    for (let i = 0; i < 400 && state.screen !== 'battle'; i++) {
-      if (state.screen === 'town') {
-        state = gameReducer(state, { type: 'GOTO', screen: 'gateSelect' });
-        state = gameReducer(state, { type: 'ENTER_GATE', gateId: 'verdant' });
-      }
-      state = gameReducer(state, { type: 'MOVE', dir: dirs[i % 4] });
-      if (state.screen === 'event') state = gameReducer(state, { type: 'EVENT_CHOICE', optionIndex: 0 });
-      if (state.pendingLegend) state = gameReducer(state, { type: 'LEGEND_SEEN' });
-    }
+    state = gameReducer(state, { type: 'GOTO', screen: 'gateSelect' });
+    state = gameReducer(state, { type: 'ENTER_GATE', gateId: 'verdant' });
+    state = engageUnit(state);
+    if (state.pendingLegend) state = gameReducer(state, { type: 'LEGEND_SEEN' });
     expect(state.screen).toBe('battle');
     const target = state.battle!.enemies[0];
     target.hp = 1;

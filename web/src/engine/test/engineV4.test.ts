@@ -194,6 +194,35 @@ describe('reducer v4', () => {
     return gameReducer(state, { type: 'ENTER_GATE', gateId: 'verdant' });
   }
 
+  function engageUnit(state: GameState): GameState {
+    const exp = state.expedition!;
+    let target = exp.units.find((u) => u.kind === 'enemy') ?? exp.units.find((u) => u.kind !== 'merchant');
+    if (!target) {
+      // Map has no live units (or none spawned) — inject one so the test is map-independent.
+      target = { id: 'test-enemy', kind: 'enemy', x: 0, y: 0, label: 'Test Prowler', speciesId: Object.keys(SPECIES)[0], level: 1, mov: 3 };
+      exp.units.push(target);
+    }
+    const floor = GATES[exp.gateId].floors[exp.floorIndex];
+    outer: for (let y = 1; y < floor.grid.length - 1; y++) {
+      for (let x = 1; x < floor.grid[y].length - 2; x++) {
+        const open =
+          floor.grid[y][x] !== '#' &&
+          floor.grid[y][x + 1] &&
+          floor.grid[y][x + 1] !== '#' &&
+          !exp.units.some((u) => u !== target && ((u.x === x && u.y === y) || (u.x === x + 1 && u.y === y)));
+        if (open) {
+          target.x = x + 1;
+          target.y = y;
+          exp.x = x;
+          exp.y = y;
+          break outer;
+        }
+      }
+    }
+    exp.movLeft = 99;
+    return gameReducer(state, { type: 'MOVE', dir: 'east' });
+  }
+
   it('creates a world with the character and lands in town', () => {
     const state = createHero();
     expect(state.world).not.toBeNull();
@@ -205,12 +234,8 @@ describe('reducer v4', () => {
     let state = enterGate(createHero());
     state.player!.stats.STR += 80;
     state.player!.recomputeDerived();
-    const dirs = ['north', 'east', 'south', 'west'] as const;
-    for (let i = 0; i < 300 && state.screen !== 'battle'; i++) {
-      state = gameReducer(state, { type: 'MOVE', dir: dirs[i % 4] });
-      if (state.screen === 'event') state = gameReducer(state, { type: 'EVENT_CHOICE', optionIndex: 0 });
-      if (state.screen === 'cardReward') state = gameReducer(state, { type: 'CHOOSE_REWARD', cardId: null });
-    }
+    state = engageUnit(state);
+    if (state.pendingLegend) state = gameReducer(state, { type: 'LEGEND_SEEN' });
     expect(state.screen).toBe('battle');
 
     let guard = 0;
@@ -228,15 +253,66 @@ describe('reducer v4', () => {
       }
       if (state.player && state.screen === 'battle') state.player.hp = state.player.maxHp;
     }
-    expect(['cardReward', 'floor', 'town']).toContain(state.screen);
-    if (state.screen === 'cardReward') {
-      // Human "Adaptable" trait: Boons offer 4 choices.
-      expect(state.pendingReward).toHaveLength(state.player!.traits.rewardChoices);
-      const pick = state.pendingReward![0];
-      state = gameReducer(state, { type: 'CHOOSE_REWARD', cardId: pick });
-      expect(state.expeditionExtras).toContain(pick);
-      expect(state.screen).toBe('floor');
+    // v6: ordinary victories return you to the floor with NO card Boon.
+    expect(['floor', 'town', 'cardReward']).toContain(state.screen);
+    if (state.battle === null && state.screen === 'floor') {
+      expect(state.pendingReward).toBeNull();
     }
+  });
+
+  it('v6: minibosses grant a card Boon; ordinary units never do', () => {
+    let state = enterGate(createHero());
+    state.player!.stats.STR += 300;
+    state.player!.recomputeDerived();
+    const exp = state.expedition!;
+    // Inject a synthetic miniboss so the test is map-independent.
+    exp.units = [
+      {
+        id: 'test-mini',
+        kind: 'miniboss',
+        x: exp.x,
+        y: exp.y,
+        label: 'The Nameless Warden',
+        speciesId: Object.keys(SPECIES)[0],
+        level: 2,
+        mov: 2,
+      },
+    ];
+    const floor = GATES.verdant.floors[0];
+    outer: for (let y = 1; y < floor.grid.length - 1; y++) {
+      for (let x = 1; x < floor.grid[y].length - 1; x++) {
+        if (floor.grid[y][x] !== '#' && floor.grid[y][x + 1] && floor.grid[y][x + 1] !== '#') {
+          exp.units[0].x = x + 1;
+          exp.units[0].y = y;
+          exp.x = x;
+          exp.y = y;
+          break outer;
+        }
+      }
+    }
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    expect(state.screen).toBe('battle');
+    expect(state.battle!.unitKind).toBe('miniboss');
+    let guard = 0;
+    while (state.screen === 'battle' && guard++ < 200) {
+      const battle = state.battle!;
+      const target = battle.enemies.find((e) => e.isAlive());
+      const idx = battle.hand.findIndex((c) => {
+        const card = getCard(c.cardId);
+        return card && card.cost <= battle.energy && card.effects.some((e) => e.kind === 'damage');
+      });
+      if (idx >= 0 && target) state = gameReducer(state, { type: 'PLAY_CARD', handIndex: idx, targetUid: target.uid });
+      else state = gameReducer(state, { type: 'END_TURN' });
+      if (state.player && state.screen === 'battle') state.player.hp = state.player.maxHp;
+    }
+    expect(state.screen).toBe('cardReward');
+    expect(state.pendingReward).toHaveLength(state.player!.traits.rewardChoices);
+    expect(state.expedition!.minibossDown).toBe(true);
+    expect(state.expedition!.units).toHaveLength(0);
+    const pick = state.pendingReward![0];
+    state = gameReducer(state, { type: 'CHOOSE_REWARD', cardId: pick });
+    expect(state.expeditionExtras).toContain(pick);
   });
 
   it('leaving a gate clears expedition reward cards', () => {
@@ -281,37 +357,46 @@ describe('reducer v4', () => {
     expect(() => deserializeGameState({ version: 2, savedAt: '', state: {} })).toThrow(/older age/);
   });
 
-  it('famous beast substitution triggers on forced Rare spawns and records the kill', () => {
+  it('v6: a famous beast walks the map as a miniboss; slaying it writes the Chronicle', () => {
     let state = enterGate(createHero());
     const beast = state.world!.beasts.find((b) => b.gateId === 'verdant');
     if (!beast) return; // world rolled no verdant beast; acceptable
-    state.player!.stats.STR += 200;
+    state.player!.stats.STR += 300;
     state.player!.recomputeDerived();
-    // Force Rare encounters until the beast shows.
-    let found = false;
-    const dirs = ['north', 'east', 'south', 'west'] as const;
-    for (let tries = 0; tries < 600 && !found; tries++) {
-      if (state.screen === 'floor') {
-        state = gameReducer(state, { type: 'MOVE', dir: dirs[tries % 4] });
-      } else if (state.screen === 'event') {
-        state = gameReducer(state, { type: 'EVENT_CHOICE', optionIndex: 0 });
-      } else if (state.screen === 'cardReward') {
-        state = gameReducer(state, { type: 'CHOOSE_REWARD', cardId: null });
-      } else if (state.screen === 'battle') {
-        if (state.battle!.famousBeastId === beast.id) {
-          found = true;
-          break;
+    const exp = state.expedition!;
+    exp.units = [
+      {
+        id: 'test-beast',
+        kind: 'miniboss',
+        x: 0,
+        y: 0,
+        label: `${beast.name}, ${beast.epithet}`,
+        speciesId: beast.speciesId,
+        level: 3,
+        famousBeastId: beast.id,
+        mov: 2,
+      },
+    ];
+    const floor = GATES.verdant.floors[0];
+    outer: for (let y = 1; y < floor.grid.length - 1; y++) {
+      for (let x = 1; x < floor.grid[y].length - 1; x++) {
+        if (floor.grid[y][x] !== '#' && floor.grid[y][x + 1] && floor.grid[y][x + 1] !== '#') {
+          exp.units[0].x = x + 1;
+          exp.units[0].y = y;
+          exp.x = x;
+          exp.y = y;
+          break outer;
         }
-        // finish quickly: flee or fight out
-        state = gameReducer(state, { type: 'FLEE_BATTLE' });
-        if (state.player) state.player.hp = state.player.maxHp;
-      } else if (state.screen === 'town') {
-        state = enterGate(state);
       }
     }
-    if (!found) return; // rare-roll RNG didn't cooperate within budget; engine paths covered elsewhere
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    expect(state.screen).toBe('battle');
+    expect(state.battle!.famousBeastId).toBe(beast.id);
+    expect(state.pendingLegend).toEqual({ kind: 'beast', beastId: beast.id });
+    state = gameReducer(state, { type: 'LEGEND_SEEN' });
     let guard = 0;
-    while (state.screen === 'battle' && guard++ < 300) {
+    while (state.screen === 'battle' && guard++ < 200) {
       const battle = state.battle!;
       const target = battle.enemies.find((e) => e.isAlive());
       const idx = battle.hand.findIndex((c) => {
@@ -322,9 +407,8 @@ describe('reducer v4', () => {
       else state = gameReducer(state, { type: 'END_TURN' });
       if (state.player && state.screen === 'battle') state.player.hp = state.player.maxHp;
     }
-    if (state.chronicle.beastsSlain.includes(beast.id)) {
-      expect(state.chronicle.deeds.some((d) => d.text.includes(beast.name))).toBe(true);
-    }
+    expect(state.chronicle.beastsSlain).toContain(beast.id);
+    expect(state.chronicle.deeds.some((d) => d.text.includes(beast.name))).toBe(true);
   });
 });
 

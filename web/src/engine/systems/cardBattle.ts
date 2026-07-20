@@ -36,6 +36,11 @@ export interface BattleState {
   freeStrikeUsed?: boolean;
   /** First Light talent: first card this battle was free. */
   firstCardUsed?: boolean;
+  /** v6: the floor unit this battle came from, if any. */
+  unitId?: string;
+  unitKind?: 'enemy' | 'miniboss' | 'tamer';
+  /** Set for rival-tamer duels. */
+  tamerName?: string;
 }
 
 export interface BattleStepResult {
@@ -355,6 +360,9 @@ export function playCard(
             target.applyStatus(effect.status, effect.turns + (upgraded ? 1 : 0));
             fx.push({ fx: 'status', targetUid: target.uid, label: effect.status });
             log.push(`${target.displayName()} is ${effect.status}.`);
+          } else {
+            // Failed procs get visible feedback (PLAN4: status clarity).
+            fx.push({ fx: 'status', targetUid: target.uid, label: 'resisted' });
           }
         }
         break;
@@ -439,6 +447,9 @@ export function playCard(
 export function endTurn(hero: Character, party: MonsterInstance[], battle: BattleState): BattleStepResult {
   const log: string[] = [];
   const fx: FxEvent[] = [];
+  // Playtest finding: when the last monster fell mid-turn, the same turn's
+  // remaining hits landed full-force on the exposed hero. Brace instead.
+  let monsterFellThisTurn = false;
 
   // Discard hand.
   battle.discardPile.push(...battle.hand);
@@ -469,12 +480,15 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
             fx.push({ fx: 'hit', targetUid: target.uid, amount });
             log.push(`${enemy.displayName()} strikes ${target.displayName()} for ${amount}.`);
             if (!target.isAlive()) {
+              monsterFellThisTurn = true;
               fx.push({ fx: 'ko', targetUid: target.uid });
               log.push(`${target.displayName()} falls - and will not rise again. Its cards burn to ash.`);
               purgeMonsterCards(battle, target.uid);
             }
           } else {
             let amount = Math.round((intent.amount ?? 1) * frozenMult(hero));
+            const braced = monsterFellThisTurn;
+            if (braced) amount = Math.ceil(amount * 0.5);
             const absorbed = Math.min(battle.heroBlock, amount);
             if (absorbed > 0) {
               battle.heroBlock -= absorbed;
@@ -486,7 +500,9 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
               fx.push({ fx: 'hit', targetUid: 'hero', amount });
               if (amount >= Math.floor(hero.maxHp * 0.2)) fx.push({ fx: 'shake' });
             }
-            log.push(`${enemy.displayName()} strikes for ${amount + absorbed}${absorbed > 0 ? ` (${absorbed} warded)` : ''}.`);
+            log.push(
+              `${enemy.displayName()} strikes for ${amount + absorbed}${absorbed > 0 ? ` (${absorbed} warded)` : ''}${braced ? ' - you brace behind the loss, halving it' : ''}.`
+            );
           }
         }
         break;

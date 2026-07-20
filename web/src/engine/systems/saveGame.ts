@@ -2,7 +2,7 @@ import { Character } from '../entities/Character';
 import { MonsterInstance } from '../entities/MonsterInstance';
 import type { GameState } from '../game';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 /** Safe save points: town, or on a floor outside battle/events/rewards/story. */
 export function isSavable(state: GameState): boolean {
@@ -24,7 +24,7 @@ export interface SaveData {
 
 export function serializeGameState(state: GameState): SaveData | null {
   if (!isSavable(state)) return null;
-  const snapshot: GameState = { ...state, battle: null, lastFx: [], lastTalk: null, pendingReward: null, pendingLegend: null };
+  const snapshot: GameState = { ...state, battle: null, lastFx: [], lastTalk: null, pendingReward: null, pendingLegend: null, pendingMerchant: null };
   return {
     version: SAVE_VERSION,
     savedAt: new Date().toISOString(),
@@ -54,6 +54,7 @@ export function deserializeGameState(save: SaveData): GameState {
     pendingStory: null,
     pendingReward: null,
     pendingLegend: null,
+    pendingMerchant: null,
     lastTalk: null,
     lastFx: [],
   };

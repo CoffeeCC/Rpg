@@ -30,6 +30,8 @@ export interface TraitSet {
   protectorHero: boolean;
   /** The first strike-type card each battle costs 0. */
   firstStrikeFree: boolean;
+  /** Added to tactical MOV on floors (PLAN4). */
+  moveBonus: number;
 }
 
 const BASE: TraitSet = {
@@ -45,6 +47,7 @@ const BASE: TraitSet = {
   shopDiscount: 1,
   protectorHero: false,
   firstStrikeFree: false,
+  moveBonus: 0,
 };
 
 export interface TraitInfo {
@@ -89,8 +92,8 @@ export const CLASS_TRAITS: Record<ClassName, TraitInfo> = {
   },
   Thief: {
     name: 'Fleetfoot',
-    text: 'Fleeing never fails. Shops charge 20% less.',
-    mods: { fleeAlways: true, shopDiscount: 0.8 },
+    text: 'Fleeing never fails. Shops charge 20% less. +1 MOV on floors.',
+    mods: { fleeAlways: true, shopDiscount: 0.8, moveBonus: 1 },
   },
   Bard: {
     name: 'Chorusmaster',

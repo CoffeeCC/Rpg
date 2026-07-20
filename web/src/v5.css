@@ -306,3 +306,103 @@
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
 }
 .trait-line { color: var(--gold); font-style: italic; }
+
+/* ===== v6: tactical floors ===== */
+.mov-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.mov-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  color: var(--gold, #c8a24a);
+}
+.mov-pip {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid rgba(200, 162, 74, 0.6);
+  background: transparent;
+  transition: background 0.2s ease;
+}
+.mov-pip.full {
+  background: radial-gradient(circle at 35% 35%, #e8cd8a, #a37f2e);
+  box-shadow: 0 0 6px rgba(200, 162, 74, 0.45);
+}
+.mov-pip.spent {
+  opacity: 0.35;
+}
+.map-warning {
+  font-size: 0.78rem;
+  color: #caa;
+  margin: 0 0 8px;
+  max-width: 240px;
+  line-height: 1.35;
+}
+.map-cell .unit-token {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.unit-token.miniboss {
+  filter: drop-shadow(0 0 5px rgba(180, 60, 60, 0.8));
+}
+.unit-token.enemy {
+  filter: drop-shadow(0 0 3px rgba(150, 40, 40, 0.55));
+}
+.unit-crown {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.6rem;
+  pointer-events: none;
+}
+.map-cell.secret {
+  animation: secret-glint 1.6s ease-in-out infinite;
+}
+@keyframes secret-glint {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.merchant-mat {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(200, 162, 74, 0.35);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(40, 30, 18, 0.85), rgba(22, 18, 12, 0.92));
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.merchant-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.merchant-title {
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.08em;
+  color: var(--gold, #c8a24a);
+  flex: 1;
+}
+.tamer-banner {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  font-family: 'Cinzel', serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+  color: #d8c9a3;
+  padding: 4px 0 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+.danger-pill {
+  color: #d06a5a;
+  border-color: rgba(208, 106, 90, 0.5);
+}

@@ -11,6 +11,10 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
           const gate = GATES[id];
           const locked = state.orbs.length < gate.requiredOrbs;
           const cleared = state.defeatedBosses.includes(id);
+          const lowBand = gate.floors[0].spawn.levelBonus + 1;
+          const highBand = gate.floors[gate.floors.length - 1].spawn.levelBonus + 4;
+          const playerLevel = state.player?.level ?? 1;
+          const overreach = playerLevel < lowBand - 1;
           return (
             <button
               type="button"
@@ -25,7 +29,8 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
               </div>
               <div className="desc">{gate.description}</div>
               <div className="desc">
-                {gate.floors.length} floors · Warden: {cleared ? gate.bossName : '???'}
+                {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
+                {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
               </div>
             </button>
           );

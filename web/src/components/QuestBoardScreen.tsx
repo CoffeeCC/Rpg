@@ -1,4 +1,5 @@
 import type { GameAction, GameState } from '../engine/game';
+import { availableQuests } from '../engine/game';
 import { QUESTS } from '../engine/data/quests';
 import type { QuestDef } from '../engine/types';
 
@@ -25,12 +26,16 @@ function neededCount(quest: QuestDef): number {
 }
 
 export function QuestBoardScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  const unlocked = availableQuests(state);
+  const accepted = QUESTS.filter((q) => state.questLog.some((e) => e.id === q.id) && !unlocked.some((u) => u.id === q.id));
+  const posted = [...unlocked, ...accepted];
+  const lockedCount = QUESTS.length - posted.length;
   return (
     <div className="panel">
       <h1 className="title">📜 Quest Board</h1>
-      <p className="subtitle">The folk of Everdusk could use a hand.</p>
+      <p className="subtitle">The folk of Everdusk could use a hand. Finish work, and more will be pinned here.</p>
       <div className="option-list">
-        {QUESTS.map((quest) => {
+        {posted.map((quest) => {
           const entry = state.questLog.find((q) => q.id === quest.id);
           const reward = [
             `${quest.reward.gold}g`,
@@ -70,6 +75,11 @@ export function QuestBoardScreen({ state, dispatch }: { state: GameState; dispat
           );
         })}
       </div>
+      {lockedCount > 0 && (
+        <p className="subtitle" style={{ marginTop: 10 }}>
+          {lockedCount} more request{lockedCount === 1 ? '' : 's'} wait for a name people trust.
+        </p>
+      )}
       <div className="btn-row">
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'town' })}>
           Back

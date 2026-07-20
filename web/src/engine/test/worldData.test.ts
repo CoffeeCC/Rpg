@@ -6,8 +6,11 @@ import { STORY } from '../data/story';
 import type { GateId } from '../types';
 
 const GATE_IDS: GateId[] = ['verdant', 'hollow', 'sunken', 'storm', 'abyss'];
-const WALKABLE = new Set(['.', 'S', '>', 'B', 'C', 'H', 'E']);
-const LEGAL_CHARS = /^[#.S>BCHE]+$/;
+// Map contract v2 (PLAN4.md): '#' wall, '.' floor, 'S' entrance, '>' stairs
+// down, 'B' gate boss, 'M' miniboss, 'e' enemy spawn, 't' tamer, 'm'
+// merchant, 'b' breakable, 'C' chest, 'H' shrine, 'E' event, 's' secret.
+const WALKABLE = new Set(['.', 'S', '>', 'B', 'M', 'e', 't', 'm', 'b', 'C', 'H', 'E', 's']);
+const LEGAL_CHARS = /^[#.S>BMetmbCHEs]+$/;
 const ALLOWED_CONSUMABLES = [
   'Herb',
   'Potion',
@@ -23,7 +26,10 @@ function countChar(grid: string[], ch: string): number {
   return grid.reduce((n, row) => n + row.split('').filter((c) => c === ch).length, 0);
 }
 
-/** BFS from 'S' through 4-directional walkable tiles; returns unreachable walkable coords. */
+/**
+ * BFS from 'S' through 4-directional walkable tiles (breakables 'b' count as
+ * passable — they're smashed through); returns unreachable walkable coords.
+ */
 function unreachableTiles(grid: string[]): string[] {
   const h = grid.length;
   const w = grid[0].length;
@@ -91,10 +97,10 @@ describe('GATES', () => {
         const label = `${id} floor ${i + 1}`;
         const grid = floor.grid;
         const w = grid[0].length;
-        expect(grid.length, `${label} height`).toBeGreaterThanOrEqual(7);
-        expect(grid.length, `${label} height`).toBeLessThanOrEqual(11);
-        expect(w, `${label} width`).toBeGreaterThanOrEqual(9);
-        expect(w, `${label} width`).toBeLessThanOrEqual(15);
+        expect(grid.length, `${label} height`).toBeGreaterThanOrEqual(13);
+        expect(grid.length, `${label} height`).toBeLessThanOrEqual(17);
+        expect(w, `${label} width`).toBeGreaterThanOrEqual(17);
+        expect(w, `${label} width`).toBeLessThanOrEqual(25);
         for (const row of grid) {
           expect(row.length, `${label} rectangular`).toBe(w);
           expect(row, `${label} legal chars`).toMatch(LEGAL_CHARS);
@@ -122,15 +128,56 @@ describe('GATES', () => {
     }
   });
 
-  it('every floor has 1-3 chests, at most one shrine, at most two event tiles', () => {
+  it('every non-final floor has exactly one M within 3 tiles of the stairs; final floors have none', () => {
+    for (const id of GATE_IDS) {
+      const floors = GATES[id].floors;
+      floors.forEach((floor, i) => {
+        const label = `${id} floor ${i + 1}`;
+        const isFinal = i === floors.length - 1;
+        const mCount = countChar(floor.grid, 'M');
+        expect(mCount, `${label} miniboss count`).toBe(isFinal ? 0 : 1);
+        if (!isFinal) {
+          const grid = floor.grid;
+          let mPos: [number, number] | null = null;
+          let stairsPos: [number, number] | null = null;
+          for (let y = 0; y < grid.length; y++) {
+            for (let x = 0; x < grid[y].length; x++) {
+              if (grid[y][x] === 'M') mPos = [x, y];
+              if (grid[y][x] === '>') stairsPos = [x, y];
+            }
+          }
+          expect(mPos, `${label} miniboss position`).not.toBeNull();
+          expect(stairsPos, `${label} stairs position`).not.toBeNull();
+          if (mPos && stairsPos) {
+            const cheb = Math.max(Math.abs(mPos[0] - stairsPos[0]), Math.abs(mPos[1] - stairsPos[1]));
+            expect(cheb, `${label} miniboss Chebyshev distance to stairs`).toBeLessThanOrEqual(3);
+          }
+        }
+      });
+    }
+  });
+
+  it('every floor keeps tile counts within the map contract v2 ranges', () => {
     for (const id of GATE_IDS) {
       GATES[id].floors.forEach((floor, i) => {
         const label = `${id} floor ${i + 1}`;
-        const chests = countChar(floor.grid, 'C');
+        const grid = floor.grid;
+        const e = countChar(grid, 'e');
+        expect(e, `${label} enemy spawns`).toBeGreaterThanOrEqual(3);
+        expect(e, `${label} enemy spawns`).toBeLessThanOrEqual(6);
+        const b = countChar(grid, 'b');
+        expect(b, `${label} breakables`).toBeGreaterThanOrEqual(4);
+        expect(b, `${label} breakables`).toBeLessThanOrEqual(10);
+        const chests = countChar(grid, 'C');
         expect(chests, `${label} chests`).toBeGreaterThanOrEqual(1);
         expect(chests, `${label} chests`).toBeLessThanOrEqual(3);
-        expect(countChar(floor.grid, 'H'), `${label} shrines`).toBeLessThanOrEqual(1);
-        expect(countChar(floor.grid, 'E'), `${label} event tiles`).toBeLessThanOrEqual(2);
+        const s = countChar(grid, 's');
+        expect(s, `${label} secrets`).toBeGreaterThanOrEqual(1);
+        expect(s, `${label} secrets`).toBeLessThanOrEqual(2);
+        expect(countChar(grid, 'H'), `${label} shrines`).toBeLessThanOrEqual(1);
+        expect(countChar(grid, 'E'), `${label} event tiles`).toBeLessThanOrEqual(2);
+        expect(countChar(grid, 't'), `${label} tamer spawns`).toBeLessThanOrEqual(1);
+        expect(countChar(grid, 'm'), `${label} merchant spots`).toBeLessThanOrEqual(1);
       });
     }
   });

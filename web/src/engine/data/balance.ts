@@ -18,27 +18,27 @@ export const BALANCE = {
   artifactChestChance: 35, // % per chest on the right floor, 20-60
 
   // --- Wild spawns ---
-  rareSpawnPct: 3, // 1-6
-  alphaSpawnPct: 12, // 6-18 (rolled after rare)
-  packOf2Pct: 40, // % chance of a second enemy, 20-60
-  packOf3Pct: 12, // % chance of a third, 5-20
-  wildLevelJitter: 3, // randInt(this) added to level, 2-5
+  rareSpawnPct: 5, // 1-6
+  alphaSpawnPct: 17, // 6-18 (rolled after rare)
+  packOf2Pct: 42, // % chance of a second enemy, 20-60
+  packOf3Pct: 13, // % chance of a third, 5-20
+  wildLevelJitter: 5, // randInt(this) added to level, 2-5
 
   // --- Monster rarity multipliers ---
-  rarityStatMult: { Common: 1, Alpha: 1.4, Rare: 2.0 }, // Alpha 1.2-1.6, Rare 1.6-2.4
+  rarityStatMult: { Common: 1, Alpha: 1.6, Rare: 2.4 }, // Alpha 1.2-1.6, Rare 1.6-2.4
   rarityExpMult: { Common: 1, Alpha: 1.5, Rare: 2.5 },
   rarityTameMult: { Common: 1, Alpha: 0.6, Rare: 0.35 },
 
   // --- Enemy intents ---
-  intentSkillPowerMult: 1.6, // 1.2-2.2
-  intentSkillStatMult: 0.8, // 0.5-1.2
-  intentBasicMult: 1.25, // 0.9-1.6
+  intentSkillPowerMult: 2.2, // 1.2-2.2
+  intentSkillStatMult: 1.2, // 0.5-1.2
+  intentBasicMult: 1.6, // 0.9-1.6
   intentDoubleMult: 0.75, // per-hit mult on double swings
-  intentDefMitigation: 0.5, // hero defense factor subtracted, 0.3-0.8
-  doubleSwingPct: 18, // 10-30
-  defendIntentPct: 14, // 8-20
-  debuffIntentPct: 12, // rolled after defend, 6-18
-  skillIntentPct: 55, // 40-70
+  intentDefMitigation: 0.3, // hero defense factor subtracted, 0.3-0.8
+  doubleSwingPct: 30, // 10-30
+  defendIntentPct: 8, // 8-20
+  debuffIntentPct: 6, // rolled after defend, 6-18
+  skillIntentPct: 70, // 40-70
   monsterHitSplit: 30, // % of attacks aimed at party monsters, 20-40
   monsterDefFactor: 0.2, // party-monster defense factor vs intents
 
@@ -49,7 +49,7 @@ export const BALANCE = {
   upgradeMult: 1.5, // smith upgrade effect multiplier, 1.3-1.8
 
   // --- Taming ---
-  tameMissingHpBonus: 45, // 30-60
+  tameMissingHpBonus: 30, // 30-60
   tameMin: 2,
   tameMax: 90,
 
@@ -61,7 +61,7 @@ export const BALANCE = {
   // --- Spoils & defeat ---
   dropChanceCommon: 10, // % (PLAN3: gear is scarce)
   dropChanceAlpha: 35, // %
-  defeatGoldLossPct: 50, // 30-60
+  defeatGoldLossPct: 35, // 30-60
   maxDropsPerBattle: 1, // PLAN3: best-rarity single drop
   gearStockSize: 4, // shop slots, 3-6
   enemyExpBase: 8,

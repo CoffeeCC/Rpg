@@ -310,6 +310,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           <BattleBackdrop gateId={battle.gateId} />
         </div>
       )}
+      {battle.tamerName && <div className="tamer-banner">⚔️ {battle.tamerName} — a rival's beasts answer the whistle</div>}
       {boss && (
         <div className="boss-bar">
           <div className="boss-name">{boss.displayName()}</div>
@@ -370,7 +371,10 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         <div className="enemy-side">
           {battle.enemies.map((enemy) => {
             const intent = battle.intents[enemy.uid];
-            const iv = intentView(intent);
+            const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
+            const iv = staggered
+              ? { icon: '💫', label: 'STAGGERED', title: 'Staggered — it will lose its turn' }
+              : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
             const block = battle.enemyBlock[enemy.uid] ?? 0;

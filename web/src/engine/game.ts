@@ -24,7 +24,26 @@ import {
 import { breed, canBreed } from './systems/breeding';
 import { generateItem } from './systems/lootGen';
 import { generateWorld, forgeArtifactItem } from './systems/worldgen';
-import { newExpedition, descend, step, openKey, isOpened, TILE, type Direction, type Expedition } from './systems/floors';
+import {
+  newExpedition,
+  descend,
+  ascend,
+  openKey,
+  isOpened,
+  isBroken,
+  tileAt,
+  floorOf,
+  delta,
+  unitAt,
+  playerWalkable,
+  movFor,
+  advanceHostiles,
+  floorHasMiniboss,
+  TILE,
+  type Direction,
+  type Expedition,
+  type FloorUnit,
+} from './systems/floors';
 import { bestowName } from './systems/naming';
 import { GATES } from './data/gates';
 import { EVENTS } from './data/events';
@@ -59,8 +78,6 @@ export type Screen =
 
 export const MAX_ACTIVE_MONSTERS = 2;
 export const STABLE_CAP = 20;
-const ENCOUNTER_CHANCE = BALANCE.encounterChance;
-const EVENT_CHANCE = BALANCE.eventChance;
 const ARTIFACT_CHEST_CHANCE = BALANCE.artifactChestChance;
 const MAX_LOG_LINES = 80;
 const GEAR_STOCK_SIZE = BALANCE.gearStockSize;
@@ -84,6 +101,15 @@ export interface TavernLine {
 /** A generated-history moment big enough to stop the game and say so. */
 export type PendingLegend = { kind: 'beast'; beastId: string } | { kind: 'artifact'; artifactId: string };
 
+/** The traveling merchant's mat, unrolled on the floor you found them on. */
+export interface PendingMerchant {
+  unitId: string;
+  consumables: string[];
+  gear: ItemV2 | null;
+  cardId: string | null;
+  cardPrice: number;
+}
+
 export interface GameState {
   screen: Screen;
   player: Character | null;
@@ -98,6 +124,7 @@ export interface GameState {
   pendingEvent: PendingEvent | null;
   pendingStory: number | null;
   pendingLegend: PendingLegend | null;
+  pendingMerchant: PendingMerchant | null;
   storyChapter: number;
   orbs: GateId[];
   defeatedBosses: GateId[];
@@ -117,6 +144,9 @@ export type GameAction =
   | { type: 'GOTO'; screen: Screen }
   | { type: 'ENTER_GATE'; gateId: GateId }
   | { type: 'MOVE'; dir: Direction }
+  | { type: 'END_MAP_TURN' }
+  | { type: 'MERCHANT_BUY'; what: 'consumable' | 'gear' | 'card'; index: number }
+  | { type: 'MERCHANT_CLOSE' }
   | { type: 'LEAVE_GATE' }
   | { type: 'REST' }
   | { type: 'PLAY_CARD'; handIndex: number; targetUid?: string }
@@ -156,6 +186,7 @@ export function initialGameState(): GameState {
     pendingEvent: null,
     pendingStory: null,
     pendingLegend: null,
+    pendingMerchant: null,
     storyChapter: -1,
     orbs: [],
     defeatedBosses: [],
@@ -184,7 +215,14 @@ function cloneCore(state: GameState): GameState {
     player: state.player ? state.player.clone() : null,
     party: state.party.map((m) => m.clone()),
     stable: state.stable.map((m) => m.clone()),
-    expedition: state.expedition ? { ...state.expedition, opened: [...state.expedition.opened] } : null,
+    expedition: state.expedition
+      ? {
+          ...state.expedition,
+          opened: [...state.expedition.opened],
+          broken: [...state.expedition.broken],
+          units: state.expedition.units.map((u) => ({ ...u })),
+        }
+      : null,
     battle: state.battle
       ? {
           ...state.battle,
@@ -199,6 +237,7 @@ function cloneCore(state: GameState): GameState {
       : null,
     expeditionExtras: [...state.expeditionExtras],
     pendingReward: state.pendingReward ? [...state.pendingReward] : null,
+    pendingMerchant: state.pendingMerchant ? { ...state.pendingMerchant, consumables: [...state.pendingMerchant.consumables] } : null,
     orbs: [...state.orbs],
     defeatedBosses: [...state.defeatedBosses],
     questLog: state.questLog.map((q) => ({ ...q })),
@@ -356,6 +395,86 @@ function offerReward(state: GameState): void {
   state.screen = 'cardReward';
 }
 
+/** PLAN4 quest pacing: 3 to start, +1 per claimed quest, +2 per story chapter, easy first. */
+export function availableQuests(state: GameState) {
+  const claimed = state.questLog.filter((q) => q.claimed).length;
+  const count = 3 + claimed + Math.max(0, state.storyChapter) * 2;
+  return [...QUESTS].sort((a, b) => a.reward.gold - b.reward.gold).slice(0, count);
+}
+
+/** Start a battle against a tactical floor unit. */
+function beginUnitBattle(state: GameState, unit: FloorUnit, lines: string[]): void {
+  if (!state.player || !state.expedition) return;
+  const exp = state.expedition;
+  const floor = floorOf(exp);
+  let enemies: MonsterInstance[] = [];
+  let famousBeastId: string | undefined;
+
+  if (unit.kind === 'miniboss') {
+    enemies = [
+      new MonsterInstance({
+        speciesId: unit.speciesId!,
+        level: unit.level ?? 3,
+        rarity: 'Rare',
+        nickname: unit.label.split(',')[0],
+      }),
+    ];
+    famousBeastId = unit.famousBeastId;
+    if (unit.famousBeastId) state.pendingLegend = { kind: 'beast', beastId: unit.famousBeastId };
+    lines.push(`${unit.label} turns to face you.`);
+  } else if (unit.kind === 'tamer') {
+    const count = 2 + (randInt(100) < 40 ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+      const m = MonsterInstance.createWild(floor.spawn);
+      m.nickname = bestowName();
+      enemies.push(m);
+    }
+    lines.push(`${unit.label} whistles, and their beasts answer. "Show me yours."`);
+  } else {
+    enemies = [new MonsterInstance({ speciesId: unit.speciesId!, level: unit.level ?? 1 })];
+    if (randInt(100) < BALANCE.packOf2Pct) enemies.push(MonsterInstance.createWild(floor.spawn));
+    lines.push(`${unit.label} is upon you.`);
+  }
+
+  state.battle = startBattle(state.player, state.party, enemies, {
+    isBossFight: false,
+    gateId: exp.gateId,
+    expeditionExtras: state.expeditionExtras,
+    famousBeastId,
+  });
+  state.battle.unitId = unit.id;
+  if (unit.kind !== 'merchant') state.battle.unitKind = unit.kind;
+  if (unit.kind === 'tamer') state.battle.tamerName = unit.label;
+  state.screen = 'battle';
+}
+
+function openMerchant(state: GameState, unit: FloorUnit, lines: string[]): void {
+  if (state.pendingMerchant && state.pendingMerchant.unitId === unit.id) return;
+  const names = Object.keys(CONSUMABLES);
+  const picks: string[] = [];
+  while (picks.length < 3 && names.length) picks.push(names.splice(randInt(names.length), 1)[0]);
+  const pool = [...REWARD_POOLS.uncommon, ...REWARD_POOLS.rare];
+  state.pendingMerchant = {
+    unitId: unit.id,
+    consumables: picks,
+    gear: generateItem(state.player!.level + 1, state.player!.effectiveStat('LUCK'), 2),
+    cardId: pool[randInt(pool.length)],
+    cardPrice: 80 + randInt(41),
+  };
+  lines.push('The traveling merchant unrolls a mat of oddities. "For you? A fair price."');
+}
+
+/** Every hostile that can see you takes its move; contact starts a battle. */
+function runEnemyPhase(state: GameState, lines: string[]): void {
+  const exp = state.expedition!;
+  const contact = advanceHostiles(exp);
+  exp.movLeft = movFor(state.player!);
+  if (contact) {
+    lines.push(`${contact.label} closes the distance.`);
+    beginUnitBattle(state, contact, lines);
+  }
+}
+
 function handleVictory(state: GameState, log: string[]): void {
   const player = state.player!;
   const battle = state.battle!;
@@ -390,6 +509,9 @@ function handleVictory(state: GameState, log: string[]): void {
 
   const wasBoss = battle.isBossFight;
   const gateId = battle.gateId;
+  const unitId = battle.unitId;
+  const unitKind = battle.unitKind;
+  const tamerName = battle.tamerName;
   state.battle = null;
 
   if (wasBoss && gateId && state.expedition) {
@@ -414,11 +536,44 @@ function handleVictory(state: GameState, log: string[]): void {
       state.storyChapter = Math.max(state.storyChapter, chapter);
       log.push(`A Warden's Orb, warm as a kept promise. (${state.orbs.length}/4)`);
     }
+    // Gate bosses are one of the few deliberate sources of cards (PLAN4).
+    offerReward(state);
+    return;
+  }
+
+  // v6: tactical units die on the map when they die in battle.
+  if (unitId && state.expedition) {
+    const exp = state.expedition;
+    const idx = exp.units.findIndex((u) => u.id === unitId);
+    const unit = idx >= 0 ? exp.units[idx] : null;
+    if (idx >= 0) exp.units.splice(idx, 1);
+
+    if (unitKind === 'miniboss') {
+      exp.minibossDown = true;
+      log.push('Something releases its grip on the stairs. The way down is open.');
+      if (unit && unit.figureName && state.world) {
+        state.chronicle.deeds.push({
+          year: deedYear(state.world),
+          text: `${player.name} laid the Remnant of ${unit.figureName} to rest.`,
+        });
+      }
+      offerReward(state);
+      return;
+    }
+    if (unitKind === 'tamer') {
+      const purse = 30 + randInt(31);
+      player.addGold(purse);
+      log.push(`${tamerName ?? 'The tamer'} yields the wager (${purse}g) and studies your beasts with new respect.`);
+      offerReward(state);
+      return;
+    }
+    // Ordinary units grant no card Boon — cards are earned, not gifted (PLAN4).
     state.screen = 'floor';
     return;
   }
 
-  offerReward(state);
+  // Event-spawned and other unitless fights: no Boon either.
+  state.screen = 'floor';
 }
 
 function handleDefeat(state: GameState, log: string[]): void {
@@ -430,6 +585,7 @@ function handleDefeat(state: GameState, log: string[]): void {
   state.expedition = null;
   state.expeditionExtras = [];
   state.pendingReward = null;
+  state.pendingMerchant = null;
   state.screen = 'town';
   log.push(`You wake beneath the Great Tree. Someone carried you home — and took ${lost} gold for the trouble.`);
 }
@@ -530,7 +686,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const gate = GATES[action.gateId];
       if (state.orbs.length < gate.requiredOrbs) return state;
       const next = cloneCore(state);
-      next.expedition = newExpedition(action.gateId);
+      next.expedition = newExpedition(action.gateId, next.world, next.chronicle);
+      next.expedition.movLeft = movFor(next.player!);
       next.expeditionExtras = [];
       next.screen = 'floor';
       next.log = pushLog(state.log, `You step through the ${gate.name}.`);
@@ -539,28 +696,99 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'MOVE': {
-      if (!state.player || !state.expedition || state.screen !== 'floor') return state;
+      if (!state.player || !state.expedition || state.screen !== 'floor' || state.pendingMerchant) return state;
       const next = cloneCore(state);
       const exp = next.expedition!;
-      const result = step(exp, action.dir);
-      if (!result.moved) return state;
-      exp.x = result.x;
-      exp.y = result.y;
+      const { dx, dy } = delta(action.dir);
+      const tx = exp.x + dx;
+      const ty = exp.y + dy;
+      if (!playerWalkable(exp, tx, ty)) return state;
       const lines: string[] = [];
 
-      switch (result.tile) {
+      // Units first: bumping into one is the interaction.
+      const unit = unitAt(exp, tx, ty);
+      if (unit) {
+        if (unit.kind === 'merchant') openMerchant(next, unit, lines);
+        else beginUnitBattle(next, unit, lines);
+        next.log = pushLog(state.log, ...lines);
+        return next;
+      }
+
+      const floor = floorOf(exp);
+      const tile = tileAt(floor, tx, ty);
+
+      if (tile === TILE.BREAKABLE && !isBroken(exp, tx, ty)) {
+        exp.broken.push(openKey(exp, tx, ty));
+        const roll = randInt(100);
+        if (roll < 40) {
+          const gold = 5 + randInt(16);
+          next.player!.addGold(gold);
+          lines.push(`Smash. Inside: ${gold} gold.`);
+        } else if (roll < 62) {
+          const names = Object.keys(CONSUMABLES);
+          const name = names[randInt(names.length)];
+          next.player!.addConsumable(name);
+          lines.push(`Smash. Someone left ${name} behind.`);
+        } else if (roll < 70) {
+          lines.push('Smash. Under the splinters: a cache of cards.');
+        } else {
+          lines.push('Smash. Dust and splinters.');
+        }
+        exp.x = tx;
+        exp.y = ty;
+        exp.movLeft = Math.max(0, exp.movLeft - 1);
+        if (roll >= 62 && roll < 70) {
+          next.log = pushLog(state.log, ...lines);
+          offerReward(next);
+          return next;
+        }
+        if (exp.movLeft <= 0 && next.screen === 'floor') runEnemyPhase(next, lines);
+        next.log = pushLog(state.log, ...lines);
+        return next;
+      }
+
+      exp.x = tx;
+      exp.y = ty;
+      exp.movLeft = Math.max(0, exp.movLeft - 1);
+
+      switch (tile) {
         case TILE.STAIRS: {
-          next.expedition = descend(exp);
+          if (floorHasMiniboss(floor) && !exp.minibossDown) {
+            const guard = exp.units.find((u) => u.kind === 'miniboss');
+            lines.push(
+              guard
+                ? `The stairs are sealed. ${guard.label} still draws breath.`
+                : 'The stairs are sealed by something that no longer breathes.'
+            );
+            break;
+          }
+          next.expedition = descend(exp, next.world, next.chronicle);
+          next.expedition.movLeft = movFor(next.player!);
           const floorNumber = next.expedition.floorIndex + 1;
           lines.push(`Deeper. Floor ${floorNumber}.`);
           applyQuestEvent(next.questLog, { type: 'reachFloor', gate: exp.gateId, floor: floorNumber }, lines);
-          break;
+          next.log = pushLog(state.log, ...lines);
+          return next;
+        }
+        case TILE.START: {
+          if (exp.floorIndex > 0) {
+            next.expedition = ascend(exp, next.world, next.chronicle);
+            next.expedition.movLeft = movFor(next.player!);
+            lines.push(`You climb back up. Floor ${next.expedition.floorIndex + 1}.`);
+          } else {
+            next.expedition = null;
+            next.expeditionExtras = [];
+            next.pendingMerchant = null;
+            next.screen = 'town';
+            lines.push('You step back through the gate into Everdusk. The expedition cards fade like a dream on waking.');
+          }
+          next.log = pushLog(state.log, ...lines);
+          return next;
         }
         case TILE.CHEST: {
-          if (!isOpened(exp, result.x, result.y)) {
-            exp.opened.push(openKey(exp, result.x, result.y));
+          if (!isOpened(exp, tx, ty)) {
+            exp.opened.push(openKey(exp, tx, ty));
             const gate = GATES[exp.gateId];
-            const floor = gate.floors[exp.floorIndex];
             // Lost artifact check first (DF-style: real history, real loot).
             const artifact = next.world?.artifacts.find(
               (a) =>
@@ -584,17 +812,29 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           }
           break;
         }
+        case TILE.SECRET: {
+          if (!isOpened(exp, tx, ty)) {
+            exp.opened.push(openKey(exp, tx, ty));
+            const item = generateItem(next.player!.level + floor.spawn.levelBonus + 2, next.player!.effectiveStat('LUCK'), 2);
+            next.player!.addItem(item);
+            lines.push(`A hollow no map records. Inside: ${item.name} [${item.rarity}] — and a cache of cards.`);
+            next.log = pushLog(state.log, ...lines);
+            offerReward(next);
+            return next;
+          }
+          break;
+        }
         case TILE.SHRINE: {
-          if (!isOpened(exp, result.x, result.y)) {
-            exp.opened.push(openKey(exp, result.x, result.y));
+          if (!isOpened(exp, tx, ty)) {
+            exp.opened.push(openKey(exp, tx, ty));
             healParty(next.player!, next.party);
             lines.push('A cold flame that warms. The party is restored.');
           }
           break;
         }
         case TILE.EVENT: {
-          if (!isOpened(exp, result.x, result.y)) {
-            exp.opened.push(openKey(exp, result.x, result.y));
+          if (!isOpened(exp, tx, ty)) {
+            exp.opened.push(openKey(exp, tx, ty));
             const event = EVENTS[randInt(EVENTS.length)];
             next.pendingEvent = { eventId: event.id };
             next.screen = 'event';
@@ -608,21 +848,70 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
           }
           break;
         }
-        default: {
-          const roll = randInt(100);
-          if (roll < ENCOUNTER_CHANCE) {
-            beginBattle(next, lines);
-          } else if (roll < ENCOUNTER_CHANCE + EVENT_CHANCE) {
-            const event = EVENTS[randInt(EVENTS.length)];
-            next.pendingEvent = { eventId: event.id };
-            next.screen = 'event';
-            lines.push(`${event.emoji} ${event.name}`);
-          }
-        }
+        default:
+          break; // v6: no random encounters — every fight walks the map.
       }
 
+      if (next.screen === 'floor' && exp.movLeft <= 0) runEnemyPhase(next, lines);
       next.log = pushLog(state.log, ...lines);
       return next;
+    }
+
+    case 'END_MAP_TURN': {
+      if (!state.player || !state.expedition || state.screen !== 'floor' || state.pendingMerchant) return state;
+      const next = cloneCore(state);
+      const lines: string[] = ['You hold your ground.'];
+      runEnemyPhase(next, lines);
+      next.log = pushLog(state.log, ...lines);
+      return next;
+    }
+
+    case 'MERCHANT_BUY': {
+      if (!state.player || !state.pendingMerchant || state.screen !== 'floor') return state;
+      const next = cloneCore(state);
+      const mat = next.pendingMerchant!;
+      const discount = next.player!.traits.shopDiscount;
+      const lines: string[] = [];
+      if (action.what === 'consumable') {
+        const name = mat.consumables[action.index];
+        const def = name ? CONSUMABLES[name] : undefined;
+        if (!def) return state;
+        const price = Math.max(1, Math.ceil(def.price * 1.25 * discount));
+        if (!next.player!.spendGold(price)) {
+          next.log = pushLog(state.log, 'The merchant clicks their tongue. Not enough.');
+          return next;
+        }
+        next.player!.addConsumable(def.name);
+        mat.consumables.splice(action.index, 1);
+        lines.push(`Bought ${def.emoji} ${def.name} for ${price}g.`);
+      } else if (action.what === 'gear') {
+        if (!mat.gear) return state;
+        const price = Math.max(1, Math.ceil(mat.gear.value * 1.25 * discount));
+        if (!next.player!.spendGold(price)) {
+          next.log = pushLog(state.log, 'The merchant clicks their tongue. Not enough.');
+          return next;
+        }
+        next.player!.addItem(mat.gear);
+        lines.push(`Bought ${mat.gear.name} for ${price}g.`);
+        mat.gear = null;
+      } else {
+        if (!mat.cardId || !getCard(mat.cardId)) return state;
+        const price = Math.max(1, Math.ceil(mat.cardPrice * discount));
+        if (!next.player!.spendGold(price)) {
+          next.log = pushLog(state.log, 'The merchant clicks their tongue. Not enough.');
+          return next;
+        }
+        next.expeditionExtras.push(mat.cardId);
+        lines.push(`${getCard(mat.cardId)!.name} is yours for ${price}g — for as long as this expedition lasts.`);
+        mat.cardId = null;
+      }
+      next.log = pushLog(state.log, ...lines);
+      return next;
+    }
+
+    case 'MERCHANT_CLOSE': {
+      if (!state.pendingMerchant) return state;
+      return { ...state, pendingMerchant: null };
     }
 
     case 'LEAVE_GATE': {
@@ -631,6 +920,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         expedition: null,
         expeditionExtras: [],
+        pendingMerchant: null,
         screen: 'town',
         log: pushLog(state.log, 'You return to Everdusk. The reward cards fade like a dream on waking.'),
       };
@@ -662,6 +952,14 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         const species = result.tamed.species.name;
         result.tamed.nickname = bestowName();
         lines.push(`You give the ${species} a name: ${result.tamed.nickname}.`);
+        // Playtest finding: fresh tames died in 1-3 fights. Bring them within
+        // reach of the hero's danger band so adoption isn't a death sentence.
+        const levelFloor = next.player!.level - 2;
+        if (result.tamed.level < levelFloor) {
+          while (result.tamed.level < levelFloor) result.tamed.gainExp(result.tamed.expToNext() - result.tamed.exp);
+          result.tamed.hp = result.tamed.maxHp;
+          lines.push(`${result.tamed.nickname} learns quickly at your side (now Lv${result.tamed.level}).`);
+        }
         if (next.party.length < next.player!.traits.partyCap) {
           next.party.push(result.tamed);
           lines.push(`${result.tamed.nickname} walks beside you now. Its cards join your deck.`);
@@ -897,6 +1195,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'ACCEPT_QUEST': {
       if (!state.player || state.screen !== 'questBoard') return state;
       if (state.questLog.some((q) => q.id === action.questId)) return state;
+      if (!availableQuests(state).some((q) => q.id === action.questId)) return state;
       const quest = QUESTS.find((q) => q.id === action.questId);
       if (!quest) return state;
       const next = cloneCore(state);
