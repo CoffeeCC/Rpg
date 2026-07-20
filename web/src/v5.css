@@ -406,3 +406,10 @@
   color: #d06a5a;
   border-color: rgba(208, 106, 90, 0.5);
 }
+
+/* v6.1: FE danger zones */
+.map-cell.threat {
+  box-shadow: inset 0 0 0 999px rgba(190, 60, 50, 0.22);
+  outline: 1px solid rgba(190, 60, 50, 0.35);
+  outline-offset: -1px;
+}

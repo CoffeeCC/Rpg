@@ -3,7 +3,7 @@ import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
-import { isOpened, isBroken, unitAt, movFor, TILE, type FloorUnit } from '../engine/systems/floors';
+import { isOpened, isBroken, unitAt, movFor, threatTiles, TILE, type FloorUnit } from '../engine/systems/floors';
 import { MonsterArt } from '../art/monsterArt';
 
 const TILE_VIEW: Record<string, { emoji: string; cls: string }> = {
@@ -117,6 +117,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const gate = GATES[exp.gateId];
   const floor = gate.floors[exp.floorIndex];
   const mov = movFor(player);
+  const threat = threatTiles(exp);
   const hostiles = exp.units.filter((u) => u.kind !== 'merchant');
   const miniboss = exp.units.find((u) => u.kind === 'miniboss');
 
@@ -172,8 +173,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (tile === TILE.BOSS && state.defeatedBosses.includes(exp.gateId)) tile = TILE.FLOOR;
                 if ((tile === TILE.ENEMY || tile === TILE.MINIBOSS || tile === TILE.TAMER || tile === TILE.MERCHANT) && !unit) tile = TILE.FLOOR;
                 const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
+                const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                 return (
-                  <span key={x} className={`map-cell ${view.cls}`}>
+                  <span key={x} className={`map-cell ${view.cls}${danger ? ' threat' : ''}`} title={danger ? 'A hostile can reach this tile next turn' : undefined}>
                     {view.emoji}
                   </span>
                 );

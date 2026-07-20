@@ -320,3 +320,20 @@ export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle:
     minibossDown: true, // already earned the way down once
   };
 }
+
+/**
+ * Exact FE-style threat: every tile a hostile that can currently see the
+ * player could stand on after its next move (enemy AI is deterministic).
+ */
+export function threatTiles(exp: Expedition): Set<string> {
+  const threat = new Set<string>();
+  const fromPlayer = bfsFrom(exp, exp.x, exp.y, SIGHT_RANGE + 1);
+  for (const unit of exp.units) {
+    if (unit.kind === 'merchant') continue;
+    const seen = fromPlayer.get(`${unit.x},${unit.y}`);
+    if (seen === undefined || seen > SIGHT_RANGE) continue; // dormant: won't move
+    const reach = bfsFrom(exp, unit.x, unit.y, unit.mov);
+    for (const key of reach.keys()) threat.add(key);
+  }
+  return threat;
+}

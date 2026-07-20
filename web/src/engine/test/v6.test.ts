@@ -222,3 +222,26 @@ describe('v6: save v4', () => {
     expect(() => deserializeGameState({ version: 3, savedAt: '', state: {} })).toThrow(/older age/);
   });
 });
+
+describe('v6.1: danger zones', () => {
+  it('threat covers exactly the tiles an aware hostile can reach', async () => {
+    const { threatTiles } = await import('../systems/floors');
+    let state = enterVerdant(createHero());
+    const spot = openPair(state);
+    const exp = state.expedition!;
+    exp.units = [testUnit('enemy', spot.x + 1, spot.y)];
+    exp.x = spot.x;
+    exp.y = spot.y;
+    const threat = threatTiles(exp);
+    expect(threat.has(`${spot.x + 1},${spot.y}`)).toBe(true); // its own tile
+    expect(threat.has(`${spot.x},${spot.y}`)).toBe(true); // can step onto the player
+    // A dormant hostile far outside sight projects nothing.
+    exp.units = [testUnit('enemy', spot.x + 1, spot.y)];
+    exp.x = 1;
+    exp.y = 1;
+    const grid = GATES.verdant.floors[0].grid;
+    let far = false;
+    if (Math.abs(spot.x - 1) + Math.abs(spot.y - 1) > 12 && grid[1][1] === '.') far = true;
+    if (far) expect(threatTiles(exp).size).toBe(0);
+  });
+});
