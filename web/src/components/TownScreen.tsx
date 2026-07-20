@@ -1,11 +1,11 @@
 import type { GameAction, GameState } from '../engine/game';
-import { TownBackdrop } from '../art/backdrops';
+import { PAINTED_TOWN } from '../art/painted';
 
 export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   return (
     <div className="panel town-panel">
       <div className="stage-backdrop">
-        <TownBackdrop />
+        <img className="painted-scene" src={PAINTED_TOWN} alt="" />
       </div>
       <div className="town-content">
       <h1 className="title">🌳 Everdusk</h1>

@@ -7,6 +7,7 @@ import { CONSUMABLES } from '../engine/data/items';
 import { MonsterArt } from '../art/monsterArt';
 import { HeroArt } from '../art/heroArt';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
+import { PAINTED_BACKDROPS } from '../art/painted';
 import { CardView } from './CardView';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
@@ -307,7 +308,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     <div className={`panel battle-stage ${shaking ? 'stage-shake' : ''}`} ref={stageRef}>
       {battle.gateId && (
         <div className="stage-backdrop">
-          <BattleBackdrop gateId={battle.gateId} />
+          {PAINTED_BACKDROPS[battle.gateId] ? (
+            <img className="painted-scene" src={PAINTED_BACKDROPS[battle.gateId]} alt="" />
+          ) : (
+            <BattleBackdrop gateId={battle.gateId} />
+          )}
         </div>
       )}
       {battle.tamerName && <div className="tamer-banner">⚔️ {battle.tamerName} — a rival's beasts answer the whistle</div>}
