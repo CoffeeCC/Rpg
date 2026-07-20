@@ -426,6 +426,11 @@ export function playCard(
           target.tameBonus = 0;
           target.statusEffects = [];
           target.activeMods = [];
+          // Only the tamed creature leaves the field - its packmates fight on.
+          battle.enemies = battle.enemies.filter((e) => e.uid !== target.uid);
+          delete battle.intents[target.uid];
+          delete battle.enemyBlock[target.uid];
+          (card.exhaust ? battle.exhaustPile : battle.discardPile).push(cardInst);
           return { outcome: 'tamed', log, fx, tamed: target };
         }
         log.push(`${target.displayName()} refuses. (${chance}%)`);

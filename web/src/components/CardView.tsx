@@ -24,7 +24,7 @@ const TYPE_LABEL: Record<CardDef['type'], string> = {
   summon: 'Summon',
 };
 
-export function CardView({ card, hero, sourceMonster, width = 148, playable = true, selected = false, upgraded = false }: CardViewProps) {
+export function CardView({ card, hero, sourceMonster, width = 176, playable = true, selected = false, upgraded = false }: CardViewProps) {
   const height = Math.round(width * 1.4);
   const numbers = cardNumbers(card, hero, sourceMonster, upgraded);
   return (

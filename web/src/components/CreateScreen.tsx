@@ -40,7 +40,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
   }
 
   return (
-    <div className="panel" style={{ maxWidth: 640 }}>
+    <div className="panel create-panel">
       <h1 className="title">🌳 Everdusk</h1>
       <p className="subtitle">The light is failing. The gates are open. The notice board is hiring.</p>
 
@@ -75,6 +75,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
         <input id="hero-name" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter a name..." maxLength={24} />
       </div>
 
+      <div className="create-columns">
       <div className="field">
         <label>Race</label>
         <div className="option-list">
@@ -99,6 +100,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
             </button>
           ))}
         </div>
+      </div>
       </div>
 
       <button className="btn primary" disabled={!canBegin} onClick={() => dispatch({ type: 'CREATE_CHARACTER', name: name.trim(), race, className })}>

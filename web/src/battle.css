@@ -8,7 +8,7 @@
     'header'
     'main'
     'log';
-  max-width: 1080px;
+  max-width: 1460px;
 }
 
 .realm-name {
@@ -22,7 +22,7 @@
 .battle-stage {
   position: relative;
   overflow: hidden;
-  min-height: 560px;
+  min-height: 640px;
   display: flex;
   flex-direction: column;
   background:

@@ -245,3 +245,80 @@ describe('v6.1: danger zones', () => {
     if (far) expect(threatTiles(exp).size).toBe(0);
   });
 });
+
+describe('v6.2: taming fixes', () => {
+  async function tameFirstEnemy(state: GameState): Promise<GameState> {
+    const target = state.battle!.enemies[0];
+    target.hp = 1;
+    target.tameBonus = 500;
+    let guard = 0;
+    while (state.screen === 'battle' && guard++ < 80) {
+      const idx = state.battle!.hand.findIndex((c) => c.cardId === 'reachOut');
+      if (idx >= 0 && state.battle!.energy > 0) {
+        state = gameReducer(state, { type: 'PLAY_CARD', handIndex: idx, targetUid: target.uid });
+        if (target.isTamed) break;
+      } else {
+        state = gameReducer(state, { type: 'END_TURN' });
+      }
+      if (state.player && state.screen === 'battle') state.player.hp = state.player.maxHp;
+    }
+    return state;
+  }
+
+  it('taming the last enemy removes its unit from the map and ends the battle', async () => {
+    let state = enterVerdant(createHero());
+    const spot = openPair(state);
+    const exp = state.expedition!;
+    exp.units = [testUnit('enemy', spot.x + 1, spot.y)];
+    exp.x = spot.x;
+    exp.y = spot.y;
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    expect(state.screen).toBe('battle');
+    state.battle!.enemies = [state.battle!.enemies[0]];
+    state = await tameFirstEnemy(state);
+    expect([...state.party, ...state.stable].some((m) => m.isTamed)).toBe(true);
+    expect(state.battle).toBeNull();
+    expect(state.screen).toBe('floor');
+    expect(state.expedition!.units).toHaveLength(0); // Paul's bug: unit lingered
+  });
+
+  it('taming one of a pack keeps the battle going with the rest', async () => {
+    const { MonsterInstance } = await import('../entities/MonsterInstance');
+    let state = enterVerdant(createHero());
+    const spot = openPair(state);
+    const exp = state.expedition!;
+    exp.units = [testUnit('enemy', spot.x + 1, spot.y)];
+    exp.x = spot.x;
+    exp.y = spot.y;
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    expect(state.screen).toBe('battle');
+    const packmate = new MonsterInstance({ speciesId: Object.keys(SPECIES)[0], level: 3 });
+    state.battle!.enemies = [state.battle!.enemies[0], packmate];
+    state = await tameFirstEnemy(state);
+    // Paul's bug: battle declared over with a full-health enemy standing.
+    expect(state.screen).toBe('battle');
+    expect(state.battle).not.toBeNull();
+    expect(state.battle!.enemies.some((e) => e.isAlive())).toBe(true);
+  });
+
+  it('a tamed legend keeps its given name', async () => {
+    const { MonsterInstance } = await import('../entities/MonsterInstance');
+    let state = enterVerdant(createHero());
+    const spot = openPair(state);
+    const exp = state.expedition!;
+    exp.units = [testUnit('enemy', spot.x + 1, spot.y)];
+    exp.x = spot.x;
+    exp.y = spot.y;
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    const legend = new MonsterInstance({ speciesId: Object.keys(SPECIES)[0], level: 3, rarity: 'Rare', nickname: 'Vhalgrim' });
+    state.battle!.enemies = [legend];
+    state = await tameFirstEnemy(state);
+    const kept = [...state.party, ...state.stable].find((m) => m.uid === legend.uid);
+    expect(kept).toBeDefined();
+    expect(kept!.nickname).toBe('Vhalgrim');
+    expect(kept!.rarity).toBe('Rare');
+  });
+});

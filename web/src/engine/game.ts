@@ -950,8 +950,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (result.outcome === 'tamed' && result.tamed) {
         applyQuestEvent(next.questLog, { type: 'tame' }, lines);
         const species = result.tamed.species.name;
-        result.tamed.nickname = bestowName();
-        lines.push(`You give the ${species} a name: ${result.tamed.nickname}.`);
+        if (result.tamed.nickname === species) {
+          result.tamed.nickname = bestowName();
+          lines.push(`You give the ${species} a name: ${result.tamed.nickname}.`);
+        } else {
+          // Legends keep the name the world gave them.
+          lines.push(`${result.tamed.nickname} keeps its name. Some things are not yours to rename.`);
+        }
         // Playtest finding: fresh tames died in 1-3 fights. Bring them within
         // reach of the hero's danger band so adoption isn't a death sentence.
         const levelFloor = next.player!.level - 2;
@@ -969,8 +974,32 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         } else {
           lines.push(`The stable is full — ${result.tamed.nickname} watches you leave.`);
         }
-        next.battle = null;
-        next.screen = 'floor';
+        const b = next.battle!;
+        if (b.enemies.some((e) => e.isAlive())) {
+          // Packmates remain - the fight goes on without the newcomer.
+          lines.push('The rest close ranks. This is not over.');
+        } else {
+          if (b.unitId && next.expedition) {
+            const idx = next.expedition.units.findIndex((u) => u.id === b.unitId);
+            if (idx >= 0) next.expedition.units.splice(idx, 1);
+            if (b.unitKind === 'miniboss') {
+              next.expedition.minibossDown = true;
+              lines.push('The stairs release their keeper. The way down is open.');
+            }
+          }
+          if (b.famousBeastId && next.world && !next.chronicle.beastsSlain.includes(b.famousBeastId)) {
+            const beast = next.world.beasts.find((bb) => bb.id === b.famousBeastId);
+            if (beast) {
+              next.chronicle.beastsSlain.push(beast.id);
+              next.chronicle.deeds.push({
+                year: deedYear(next.world),
+                text: `${next.player!.name} did not slay ${beast.name} ${beast.epithet} - they walked out of the dark together. The Chronicle has no word for this.`,
+              });
+            }
+          }
+          next.battle = null;
+          next.screen = 'floor';
+        }
       } else if (result.outcome === 'victory') {
         handleVictory(next, lines);
       }

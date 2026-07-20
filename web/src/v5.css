@@ -413,3 +413,20 @@
   outline: 1px solid rgba(190, 60, 50, 0.35);
   outline-offset: -1px;
 }
+
+/* v6.2: desktop layout — create screen uses the width it has */
+.create-panel {
+  max-width: 1180px;
+  width: 100%;
+}
+.create-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .create-columns {
+    grid-template-columns: 1fr;
+  }
+}
