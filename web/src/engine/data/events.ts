@@ -170,7 +170,7 @@ export const EVENTS: EventDef[] = [
     id: 'crackedWardstone',
     name: 'The Cracked Wardstone',
     emoji: '🪨',
-    text: 'One of the old wardstones stands here, split down the middle, leaking a soft silver light. It is the same light the Great Tree makes, and it is going somewhere.',
+    text: 'One of the old wardstones stands here, split down the middle, leaking a soft silver light. It is the same light the Last Lantern makes, and it is going somewhere.',
     options: [
       {
         label: 'Pack the crack with gold leaf',

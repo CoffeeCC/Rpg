@@ -295,7 +295,7 @@ export const LORE: LoreBanks = {
       'In {year}, a dimness took the shrines. {figure} preached calm, and privately packed a bag.',
     ],
     wonder: [
-      'In {year}, the Great Tree dropped a silver leaf, and no one dared touch it.',
+      'In {year}, the Last Lantern guttered for the space of one breath, and the whole town held its own.',
       'In {year}, dawn came twice. The chronicles of {era} disagree only on which one to trust.',
       'In {year}, {figure} healed the market well with a word no one could afterward repeat.',
       'In {year}, lights walked the ramparts of the {gate} in procession, and harmed no one, and never came again.',

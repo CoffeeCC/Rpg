@@ -9,7 +9,7 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
       </div>
       <div className="town-content">
       <h1 className="title">🌳 Everdusk</h1>
-      <p className="subtitle">The Great Tree's light flickers over the square. {4 - state.orbs.length > 0 ? `${4 - state.orbs.length} orb(s) still missing.` : 'The Abyss awaits.'}</p>
+      <p className="subtitle">The Last Lantern burns low over the square. {4 - state.orbs.length > 0 ? `${4 - state.orbs.length} orb(s) still missing.` : 'The Abyss awaits.'}</p>
       <div className="menu-grid">
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}>
           🚪 The Gates

@@ -6,7 +6,7 @@ export function VictoryScreen({ state, dispatch }: { state: GameState; dispatch:
     <div className="panel center-text">
       <h1 className="title">🌅 Dawn over Everdusk</h1>
       <p className="story-paragraph">
-        The Hollow Sovereign is unmade. The Great Tree blazes like a green sun, and the town that hired a nobody has a hero to argue about statues for.
+        The Hollow Sovereign is unmade. The Last Lantern burns tall and unafraid for the first time in living memory, and the town that hired a nobody has a hero to argue about statues for.
       </p>
       {player && (
         <p className="subtitle">

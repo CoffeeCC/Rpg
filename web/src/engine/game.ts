@@ -427,6 +427,8 @@ function beginUnitBattle(state: GameState, unit: FloorUnit, lines: string[]): vo
     for (let i = 0; i < count; i++) {
       const m = MonsterInstance.createWild(floor.spawn);
       m.nickname = bestowName();
+      // Loyalty: a bonded beast does not yield to a stranger easily.
+      m.tameBonus = state.player.traits.charmedTongue ? -15 : -30;
       enemies.push(m);
     }
     lines.push(`${unit.label} whistles, and their beasts answer. "Show me yours."`);
@@ -587,7 +589,7 @@ function handleDefeat(state: GameState, log: string[]): void {
   state.pendingReward = null;
   state.pendingMerchant = null;
   state.screen = 'town';
-  log.push(`You wake beneath the Great Tree. Someone carried you home — and took ${lost} gold for the trouble.`);
+  log.push(`You wake beneath the Last Lantern. Someone carried you home — and took ${lost} gold for the trouble.`);
 }
 
 function applyEventOutcomes(state: GameState, outcomes: EventOutcome[], log: string[]) {
@@ -686,7 +688,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const gate = GATES[action.gateId];
       if (state.orbs.length < gate.requiredOrbs) return state;
       const next = cloneCore(state);
-      next.expedition = newExpedition(action.gateId, next.world, next.chronicle);
+      next.expedition = newExpedition(action.gateId, next.world, next.chronicle, next.party.length + next.stable.length > 0);
       next.expedition.movLeft = movFor(next.player!);
       next.expeditionExtras = [];
       next.screen = 'floor';
@@ -762,7 +764,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
             );
             break;
           }
-          next.expedition = descend(exp, next.world, next.chronicle);
+          next.expedition = descend(exp, next.world, next.chronicle, next.party.length + next.stable.length > 0);
           next.expedition.movLeft = movFor(next.player!);
           const floorNumber = next.expedition.floorIndex + 1;
           lines.push(`Deeper. Floor ${floorNumber}.`);
@@ -772,7 +774,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         }
         case TILE.START: {
           if (exp.floorIndex > 0) {
-            next.expedition = ascend(exp, next.world, next.chronicle);
+            next.expedition = ascend(exp, next.world, next.chronicle, next.party.length + next.stable.length > 0);
             next.expedition.movLeft = movFor(next.player!);
             lines.push(`You climb back up. Floor ${next.expedition.floorIndex + 1}.`);
           } else {

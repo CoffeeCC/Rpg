@@ -322,53 +322,22 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
       {locked && <div className="phase-indicator">the dark moves…</div>}
 
-      <div className="stage-row">
-        <div className="hero-side">
-          <div className={`combatant-figure ${flashing['hero'] ?? ''}`}>
-            <HeroArt className={player.className} size={140} />
+      <div className="stage-row ffrow">
+        <div className="party-column">
+          <div className={`combatant-figure hero-fig ${flashing['hero'] ?? ''}`}>
+            <HeroArt className={player.className} size={150} />
             {renderPopups('hero')}
           </div>
-          <div className="figure-plate">
-            <span className="figure-name">{player.name}</span>
-            {battle.heroBlock > 0 && <span className="block-badge">🛡 Ward {battle.heroBlock}</span>}
-            <div className="souls-track hp">
-              <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
+          {state.party.map((m: MonsterInstance) => (
+            <div key={m.uid} className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''}`}>
+              <MonsterArt speciesId={m.speciesId} size={86} />
+              {!m.isAlive() && <span className="ko-label">FALLEN</span>}
+              {renderPopups(m.uid)}
             </div>
-            <span className="figure-hp">
-              {player.hp}/{player.maxHp}
-            </span>
-            {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
-              <div className="status-tags">
-                {player.statusEffects.map((s) => (
-                  <span key={s.name} className="status-tag">
-                    {s.name}
-                  </span>
-                ))}
-                {player.activeMods.map((m, i) => (
-                  <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
-                    {m.stat}
-                    {m.amount > 0 ? '↑' : '↓'}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="party-minis">
-            {state.party.map((m: MonsterInstance) => (
-              <div key={m.uid} className={`party-mini ${m.isAlive() ? '' : 'ko'} ${flashing[m.uid] ?? ''}`}>
-                <MonsterArt speciesId={m.speciesId} size={54} />
-                <div className="mini-name">{m.nickname}</div>
-                <div className="mini-hp">
-                  <div className="mini-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
-                </div>
-                {!m.isAlive() && <span className="ko-label">FALLEN</span>}
-                {renderPopups(m.uid)}
-              </div>
-            ))}
-          </div>
+          ))}
         </div>
 
-        <div className="enemy-side">
+        <div className="enemy-column">
           {battle.enemies.map((enemy) => {
             const intent = battle.intents[enemy.uid];
             const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
@@ -377,15 +346,14 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-            const block = battle.enemyBlock[enemy.uid] ?? 0;
-            const size = enemy.isBoss ? 235 : enemy.rarity !== 'Common' ? 195 : 172;
+            const size = enemy.isBoss ? 220 : 150;
             return (
               <div
                 key={enemy.uid}
                 ref={(el) => {
                   if (el) enemyRefs.current.set(enemy.uid, el);
                 }}
-                className={`enemy-figure ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${flashing[enemy.uid] ?? ''}`}
+                className={`enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${flashing[enemy.uid] ?? ''}`}
                 onClick={() => targetable && playSelected(enemy.uid)}
                 onMouseEnter={() => {
                   if (targetable) {
@@ -402,40 +370,102 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 )}
                 <MonsterArt speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
                 {renderPopups(enemy.uid)}
-                <div className="figure-plate">
-                  <span className="figure-name">
-                    {enemy.displayName()} <span className="pill">Lv{enemy.level}</span>
-                    {block > 0 && <span className="block-badge">🛡 {block}</span>}
-                  </span>
-                  {!boss && (
-                    <div className="souls-track hp">
-                      <div className="souls-fill" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} />
-                    </div>
-                  )}
-                  <span className="figure-hp">
-                    {enemy.hp}/{enemy.maxHp}
-                    {!enemy.isBoss && enemy.isAlive() && <span className="pill">tame {enemy.tameChancePercent()}%</span>}
-                  </span>
-                  {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
-                    <div className="status-tags">
-                      {enemy.statusEffects.map((s) => (
-                        <span key={s.name} className="status-tag">
-                          {s.name}
-                        </span>
-                      ))}
-                      {enemy.activeMods.map((m, i) => (
-                        <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
-                          {m.stat}
-                          {m.amount > 0 ? '↑' : '↓'}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
             );
           })}
         </div>
+      </div>
+
+      <div className="ff-boxes">
+        <div className="ff-box ally">
+          <div className="ff-name">
+            {player.name}
+            {battle.heroBlock > 0 && <span className="block-badge">🛡 {battle.heroBlock}</span>}
+          </div>
+          <div className="souls-track hp">
+            <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
+          </div>
+          <div className="ff-hp-row">
+            <span>HP</span>
+            <span>
+              {player.hp}/{player.maxHp}
+            </span>
+          </div>
+          {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
+            <div className="status-tags">
+              {player.statusEffects.map((st) => (
+                <span key={st.name} className="status-tag">
+                  {st.name}
+                </span>
+              ))}
+              {player.activeMods.map((m, i) => (
+                <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                  {m.stat}
+                  {m.amount > 0 ? '↑' : '↓'}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        {state.party.map((m: MonsterInstance) => (
+          <div key={m.uid} className={`ff-box ally ${m.isAlive() ? '' : 'dead'}`} title={m.aspect ? `${m.aspect.name} — ${m.aspect.blurb}` : undefined}>
+            <div className="ff-name">{m.nickname}</div>
+            <div className="souls-track hp">
+              <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
+            </div>
+            <div className="ff-hp-row">
+              <span>{m.isAlive() ? 'HP' : 'FALLEN'}</span>
+              <span>
+                {m.hp}/{m.maxHp}
+              </span>
+            </div>
+          </div>
+        ))}
+        <div className="ff-gap" />
+        {battle.enemies.map((enemy) => {
+          const targetable = needsTarget && enemy.isAlive() && !locked;
+          const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
+          const block = battle.enemyBlock[enemy.uid] ?? 0;
+          return (
+            <div
+              key={enemy.uid}
+              className={`ff-box foe ${enemy.isAlive() ? '' : 'dead'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''}`}
+              title={enemy.aspect ? `${enemy.aspect.name} — ${enemy.aspect.blurb}` : undefined}
+              onClick={() => targetable && playSelected(enemy.uid)}
+            >
+              <div className="ff-name">
+                {enemy.displayName()} <span className="pill">Lv{enemy.level}</span>
+                {block > 0 && <span className="block-badge">🛡 {block}</span>}
+              </div>
+              {!enemy.isBoss && (
+                <div className="souls-track hp">
+                  <div className="souls-fill" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} />
+                </div>
+              )}
+              <div className="ff-hp-row">
+                <span>
+                  {enemy.hp}/{enemy.maxHp}
+                </span>
+                {!enemy.isBoss && enemy.isAlive() && <span className="pill">tame {enemy.tameChancePercent()}%</span>}
+              </div>
+              {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
+                <div className="status-tags">
+                  {enemy.statusEffects.map((st) => (
+                    <span key={st.name} className="status-tag">
+                      {st.name}
+                    </span>
+                  ))}
+                  {enemy.activeMods.map((m, i) => (
+                    <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                      {m.stat}
+                      {m.amount > 0 ? '↑' : '↓'}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {needsTarget && !locked && <p className="target-hint">Choose a target — click a foe, or ◀ ▶ then Enter</p>}

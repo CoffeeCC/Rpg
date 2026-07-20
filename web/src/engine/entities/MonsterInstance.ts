@@ -1,5 +1,6 @@
 import type { ActiveMod, MonsterFamily, MonsterRarity, SpawnTable, Stat, StatBlock, StatusEffect } from '../types';
 import { SPECIES, speciesById, speciesMatching } from '../data/species';
+import { ASPECTS, pickAspect, type AspectDef } from '../data/aspects';
 import { BALANCE } from '../data/balance';
 import { randInt } from '../random';
 
@@ -10,6 +11,7 @@ export const RARITY_TAME_MULT: Record<MonsterRarity, number> = BALANCE.rarityTam
 const EXP_PER_LEVEL = 8;
 const PLUS_GROWTH_BONUS = 0.04;
 const EMPTY_STATS: StatBlock = { STR: 0, DEF: 0, DEX: 0, MANA: 0, MAGDEF: 0, INT: 0, LUCK: 0 };
+const ASPECT_BY_ID = new Map(ASPECTS.map((a) => [a.id, a]));
 
 let uidCounter = 0;
 export function freshUid(prefix: string): string {
@@ -38,6 +40,8 @@ export class MonsterInstance {
   knownSkills: string[];
   isTamed = false;
   isBoss = false;
+  /** Named aspect for uncommon spawns ("Ironhide", "Duskborn"...); replaces the bare rarity tag. */
+  aspectId: string | null;
 
   stats: StatBlock = { ...EMPTY_STATS };
   maxHp = 1;
@@ -60,6 +64,7 @@ export class MonsterInstance {
     nickname?: string;
     knownSkills?: string[];
     customSkills?: boolean;
+    aspectId?: string | null;
   }) {
     const species = speciesById(init.speciesId);
     if (!species) throw new Error(`Unknown species: ${init.speciesId}`);
@@ -72,6 +77,7 @@ export class MonsterInstance {
     this.bonusStats = init.bonusStats ? { ...init.bonusStats } : { ...EMPTY_STATS };
     this.customSkills = init.customSkills ?? false;
     this.knownSkills = init.knownSkills ? [...init.knownSkills] : [];
+    this.aspectId = init.aspectId ?? null;
     this.deriveStats();
     this.hp = this.maxHp;
     this.mp = this.maxMp;
@@ -90,10 +96,17 @@ export class MonsterInstance {
     return this.species.family;
   }
 
+  get aspect(): AspectDef | null {
+    return this.aspectId ? ASPECT_BY_ID.get(this.aspectId) ?? null : null;
+  }
+
   displayName(): string {
     if (this.isBoss) return this.nickname;
-    const tag = this.rarity === 'Common' ? '' : ` [${this.rarity}]`;
-    return `${this.nickname}${tag}`;
+    const a = this.aspect;
+    // Wilds wear their aspect as a title; tamed monsters go by their given name.
+    if (a && !this.isTamed) return `${a.name} ${this.nickname}`;
+    if (!a && this.rarity !== 'Common' && !this.isTamed) return `${this.nickname} [${this.rarity}]`;
+    return this.nickname;
   }
 
   private growthMult(): number {
@@ -116,6 +129,12 @@ export class MonsterInstance {
     }
     this.maxHp = Math.max(5, Math.floor((s.baseHp + s.hpGrowth * levels * this.growthMult() + this.bonusStats.STR) * mult));
     this.maxMp = Math.max(0, Math.floor(s.baseMp + s.mpGrowth * levels * this.growthMult() + this.bonusStats.MANA));
+    const a = this.aspect;
+    if (a) {
+      if (a.mods.strMult) this.stats.STR = Math.max(1, Math.floor(this.stats.STR * a.mods.strMult));
+      if (a.mods.defMult) this.stats.DEF = Math.max(1, Math.floor(this.stats.DEF * a.mods.defMult));
+      if (a.mods.hpMult) this.maxHp = Math.max(5, Math.floor(this.maxHp * a.mods.hpMult));
+    }
   }
 
   effectiveStat(stat: Stat): number {
@@ -205,7 +224,7 @@ export class MonsterInstance {
   /** Tame chance right now, as a percent (2-90). */
   tameChancePercent(): number {
     const missingHpBonus = (1 - this.hp / this.maxHp) * BALANCE.tameMissingHpBonus;
-    const raw = (this.species.tameBase + missingHpBonus + this.tameBonus) * RARITY_TAME_MULT[this.rarity];
+    const raw = (this.species.tameBase + missingHpBonus + this.tameBonus) * RARITY_TAME_MULT[this.rarity] * (this.aspect?.mods.tameMult ?? 1);
     if (this.isBoss) return 0; // bosses cannot be tamed
     return Math.max(BALANCE.tameMin, Math.min(BALANCE.tameMax, Math.round(raw)));
   }
@@ -250,7 +269,8 @@ export class MonsterInstance {
       if (roll < BALANCE.rareSpawnPct) rarity = 'Rare';
       else if (roll < BALANCE.rareSpawnPct + BALANCE.alphaSpawnPct) rarity = 'Alpha';
     }
-    return new MonsterInstance({ speciesId: species.id, level, rarity });
+    const aspectId = pickAspect(rarity, randInt(10000))?.id ?? null;
+    return new MonsterInstance({ speciesId: species.id, level, rarity, aspectId });
   }
 
   /** Spawn a gate boss: highest-tier species of the boss family within reach. */

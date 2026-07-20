@@ -32,6 +32,8 @@ export interface TraitSet {
   firstStrikeFree: boolean;
   /** Added to tactical MOV on floors (PLAN4). */
   moveBonus: number;
+  /** Halves the loyalty penalty when taming a rival tamer's beasts. */
+  charmedTongue: boolean;
 }
 
 const BASE: TraitSet = {
@@ -48,6 +50,7 @@ const BASE: TraitSet = {
   protectorHero: false,
   firstStrikeFree: false,
   moveBonus: 0,
+  charmedTongue: false,
 };
 
 export interface TraitInfo {
@@ -97,8 +100,8 @@ export const CLASS_TRAITS: Record<ClassName, TraitInfo> = {
   },
   Bard: {
     name: 'Chorusmaster',
-    text: 'Three monsters may walk beside you. Your card damage ×0.85.',
-    mods: { partyCap: 3, damageMult: 0.85 },
+    text: 'Three monsters may walk beside you. Rival beasts half-remember your song. Your card damage ×0.85.',
+    mods: { partyCap: 3, damageMult: 0.85, charmedTongue: true },
   },
   Knight: {
     name: 'Oathshield',

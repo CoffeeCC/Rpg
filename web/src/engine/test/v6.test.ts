@@ -109,7 +109,7 @@ describe('v6: minibosses & history', () => {
     const beast = state.world!.beasts.find((b) => b.gateId === 'verdant');
     const floorIdx = GATES.verdant.floors.findIndex((f) => floorHasMiniboss(f));
     if (floorIdx === -1 || !beast) return; // map or world rolled none; other tests cover the rest
-    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle);
+    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle, false);
     const mini = units.find((u) => u.kind === 'miniboss');
     expect(mini).toBeDefined();
     expect(mini!.famousBeastId).toBe(beast.id);
@@ -121,7 +121,7 @@ describe('v6: minibosses & history', () => {
     const floorIdx = GATES.verdant.floors.findIndex((f) => floorHasMiniboss(f));
     if (floorIdx === -1) return;
     for (const b of state.world!.beasts) state.chronicle.beastsSlain.push(b.id);
-    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle);
+    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle, false);
     const mini = units.find((u) => u.kind === 'miniboss');
     expect(mini).toBeDefined();
     expect(mini!.famousBeastId).toBeUndefined();
@@ -320,5 +320,37 @@ describe('v6.2: taming fixes', () => {
     expect(kept).toBeDefined();
     expect(kept!.nickname).toBe('Vhalgrim');
     expect(kept!.rarity).toBe('Rare');
+  });
+});
+
+describe('v7: tamer gating & loyalty', () => {
+  it('no rival tamers spawn until the player has tamed something', () => {
+    const state = createHero();
+    const tFloor = GATES.verdant.floors.findIndex((f) => f.grid.some((r) => r.includes('t')));
+    if (tFloor === -1) return;
+    for (let i = 0; i < 30; i++) {
+      const units = spawnFloorUnits('verdant', tFloor, state.world, state.chronicle, false);
+      expect(units.some((u) => u.kind === 'tamer')).toBe(false);
+    }
+    let seen = false;
+    for (let i = 0; i < 40 && !seen; i++) {
+      seen = spawnFloorUnits('verdant', tFloor, state.world, state.chronicle, true).some((u) => u.kind === 'tamer');
+    }
+    expect(seen).toBe(true);
+  });
+
+  it("a tamer's bonded beasts carry a loyalty penalty to taming", () => {
+    let state = enterVerdant(createHero());
+    const spot = openPair(state);
+    const exp = state.expedition!;
+    exp.units = [testUnit('tamer', spot.x + 1, spot.y)];
+    exp.x = spot.x;
+    exp.y = spot.y;
+    exp.movLeft = 99;
+    state = gameReducer(state, { type: 'MOVE', dir: 'east' });
+    expect(state.screen).toBe('battle');
+    for (const e of state.battle!.enemies) {
+      expect(e.tameBonus).toBe(-30); // Warrior has no charm affinity
+    }
   });
 });

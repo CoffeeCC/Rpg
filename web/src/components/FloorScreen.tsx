@@ -5,6 +5,7 @@ import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
 import { isOpened, isBroken, unitAt, movFor, threatTiles, TILE, type FloorUnit } from '../engine/systems/floors';
 import { MonsterArt } from '../art/monsterArt';
+import { TileFill } from '../art/tileArt';
 
 const TILE_VIEW: Record<string, { emoji: string; cls: string }> = {
   [TILE.WALL]: { emoji: '', cls: 'wall' },
@@ -141,7 +142,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (x === exp.x && y === exp.y) {
                   return (
                     <span key={x} className="map-cell player">
-                      🧝
+                      <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
+                      <span className="cell-top">🧝</span>
                     </span>
                   );
                 }
@@ -149,6 +151,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (unit) {
                   return (
                     <span key={x} className="map-cell floor-tile">
+                      <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
                       <UnitToken unit={unit} />
                     </span>
                   );
@@ -166,7 +169,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (tile === TILE.SECRET) {
                   return (
                     <span key={x} className="map-cell special secret" title="Something behind the stone...">
-                      ✨
+                      <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={36} />
+                      <span className="cell-top">✨</span>
                     </span>
                   );
                 }
@@ -176,7 +180,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                 return (
                   <span key={x} className={`map-cell ${view.cls}${danger ? ' threat' : ''}`} title={danger ? 'A hostile can reach this tile next turn' : undefined}>
-                    {view.emoji}
+                    <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={36} />
+                    {view.emoji && <span className="cell-top">{view.emoji}</span>}
                   </span>
                 );
               })}

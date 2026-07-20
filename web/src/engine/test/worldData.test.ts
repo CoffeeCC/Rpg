@@ -3,6 +3,7 @@ import { GATES, GATE_ORDER } from '../data/gates';
 import { EVENTS } from '../data/events';
 import { QUESTS } from '../data/quests';
 import { STORY } from '../data/story';
+import { generateWorld } from '../systems/worldgen';
 import type { GateId } from '../types';
 
 const GATE_IDS: GateId[] = ['verdant', 'hollow', 'sunken', 'storm', 'abyss'];
@@ -346,5 +347,79 @@ describe('STORY', () => {
     }
     expect(STORY[5].paragraphs.length).toBeGreaterThanOrEqual(3);
     expect(STORY[5].paragraphs.length).toBeLessThanOrEqual(5);
+  });
+});
+
+// Regression coverage for the Chronicle repeating itself: the same
+// figure-description or history-event line showing up multiple times in one
+// era, and relics being listed twice (once hidden on a floor, once held by a
+// famous beast). See worldgen.ts's TemplateBag for the fix.
+describe('generateWorld (Chronicle dedup)', () => {
+  const SEEDS = [1, 42, 1234, 9999, 555555];
+
+  it('never repeats a history-event text within a single era', () => {
+    for (const seed of SEEDS) {
+      const world = generateWorld(seed);
+      for (const era of world.eras) {
+        const textsInEra = world.events.filter((e) => e.year >= era.startYear && e.year <= era.endYear).map((e) => e.text);
+        const unique = new Set(textsInEra);
+        expect(unique.size, `seed ${seed} era "${era.name}" duplicate event text`).toBe(textsInEra.length);
+      }
+    }
+  });
+
+  it('never reuses the same figure fate/description twice within a single era', () => {
+    for (const seed of SEEDS) {
+      const world = generateWorld(seed);
+      for (const era of world.eras) {
+        const fatesInEra = world.figures.filter((f) => f.bornYear >= era.startYear && f.bornYear <= era.endYear).map((f) => f.fate);
+        const unique = new Set(fatesInEra);
+        expect(unique.size, `seed ${seed} era "${era.name}" duplicate figure fate`).toBe(fatesInEra.length);
+      }
+    }
+  });
+
+  it('gives every artifact and beast a unique name, and each artifact is claimed by at most one beast', () => {
+    for (const seed of SEEDS) {
+      const world = generateWorld(seed);
+
+      const artifactNames = world.artifacts.map((a) => a.name);
+      expect(new Set(artifactNames).size, `seed ${seed} artifact name uniqueness`).toBe(artifactNames.length);
+
+      const beastNames = world.beasts.map((b) => b.name);
+      expect(new Set(beastNames).size, `seed ${seed} beast name uniqueness`).toBe(beastNames.length);
+
+      const figureFullNames = world.figures.map((f) => `${f.name} ${f.title}`);
+      expect(new Set(figureFullNames).size, `seed ${seed} figure full-name uniqueness`).toBe(figureFullNames.length);
+
+      // Each artifact id may be claimed by at most one beast (no relic handed
+      // to two hoards), and every claimed id must refer to a real artifact.
+      const claims = world.beasts.map((b) => b.holdsArtifactId).filter((id): id is string => id !== undefined);
+      expect(new Set(claims).size, `seed ${seed} artifact claimed by >1 beast`).toBe(claims.length);
+      const artifactIds = new Set(world.artifacts.map((a) => a.id));
+      for (const id of claims) {
+        expect(artifactIds.has(id), `seed ${seed} beast holds unknown artifact id ${id}`).toBe(true);
+      }
+    }
+  });
+
+  it('is fully deterministic: generateWorld(seed) called twice deep-equals itself', () => {
+    for (const seed of SEEDS) {
+      const a = generateWorld(seed);
+      const b = generateWorld(seed);
+      expect(b).toEqual(a);
+    }
+  });
+
+  it('never leaks an unfilled {slot} placeholder into any generated string', () => {
+    const placeholder = /\{\w+\}/;
+    for (const seed of SEEDS) {
+      const world = generateWorld(seed);
+      for (const e of world.events) expect(e.text, `seed ${seed} event text`).not.toMatch(placeholder);
+      for (const f of world.figures) expect(f.fate, `seed ${seed} figure fate`).not.toMatch(placeholder);
+      for (const b of world.beasts) expect(b.legend, `seed ${seed} beast legend`).not.toMatch(placeholder);
+      for (const a of world.artifacts) expect(a.description, `seed ${seed} artifact description`).not.toMatch(placeholder);
+      expect(world.name, `seed ${seed} realm name`).not.toMatch(placeholder);
+    }
   });
 });

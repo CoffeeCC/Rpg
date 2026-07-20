@@ -687,3 +687,113 @@
 .portrait {
   overflow: hidden;
 }
+
+/* ===== v7: FF-style stage — fixed slots, status boxes ===== */
+.stage-row.ffrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 20px;
+  flex: 1;
+  min-height: 360px;
+  padding: 34px 26px 6px;
+  position: relative;
+  z-index: 1;
+}
+.party-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 8px;
+}
+.ally-fig {
+  margin-left: 42px;
+}
+.enemy-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 6px;
+}
+.enemy-slot {
+  width: 250px;
+  height: 168px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  position: relative;
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+.enemy-slot.boss {
+  width: 300px;
+  height: 248px;
+}
+.enemy-slot.felled {
+  opacity: 0.25;
+  filter: grayscale(0.9);
+  pointer-events: none;
+}
+.enemy-slot.targetable {
+  cursor: crosshair;
+}
+.enemy-slot.kb-target {
+  filter: drop-shadow(0 0 14px rgba(200, 162, 74, 0.85));
+}
+.ff-boxes {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 2;
+  padding: 4px 6px 8px;
+}
+.ff-gap {
+  flex: 1;
+}
+.ff-box {
+  min-width: 172px;
+  max-width: 230px;
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(26, 22, 15, 0.94), rgba(12, 10, 7, 0.96));
+  padding: 7px 10px 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.3s ease;
+}
+.ff-box .ff-name {
+  font-family: var(--font-display);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  color: #ddd5c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+.ff-hp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 3px;
+  gap: 6px;
+}
+.ff-box.foe.targetable {
+  cursor: crosshair;
+}
+.ff-box.foe.kb-target {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(200, 162, 74, 0.5);
+}
+.ff-box.dead {
+  opacity: 0.45;
+}
+
+/* Hand cards glide instead of snapping when the fan re-lays */
+.hand-slot {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}

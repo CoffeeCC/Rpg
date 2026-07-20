@@ -308,7 +308,7 @@ function abyssScene(gid: string): ReactElement {
     <>
       <rect x="0" y="0" width="1200" height="600" fill={`url(#${gid}-sky)`} />
       <ellipse cx="600" cy="80" rx="520" ry="220" fill={`url(#${gid}-glow)`} />
-      {/* the Great Tree's roots descending from above */}
+      {/* the dark's hanging roots descending from above */}
       <path
         d="M420 0 C 400 90 360 150 300 200 C 340 190 380 160 410 120 C 400 190 360 250 300 300 C 350 286 400 250 430 200 C 424 260 400 320 360 370"
         stroke="#1c1626"
@@ -402,19 +402,17 @@ export function TownBackdrop(): ReactElement {
   const content = (
     <>
       <rect x="0" y="0" width="1200" height="600" fill={`url(#${gid}-sky)`} />
-      <ellipse cx="600" cy="180" rx="420" ry="240" fill={`url(#${gid}-treeglow)`} />
-      {/* the Great Tree dominating the sky */}
-      <path
-        d="M600 600 C 592 460 596 360 600 300 C 500 320 400 280 340 190 C 410 220 490 224 560 200 C 470 176 400 118 380 40 C 450 100 530 130 600 128 C 560 60 566 -10 610 -60 C 630 20 634 96 610 150 C 660 130 700 78 720 10 C 716 90 680 160 620 202 C 690 216 760 200 810 160 C 780 236 700 268 622 254 C 640 320 640 420 630 600 Z"
-        fill="#0e0c14"
-        opacity="0.94"
-      />
-      {/* faint silver-green glow veins through the canopy */}
-      <g stroke="#9ec4a8" strokeWidth="1.4" opacity="0.28" fill="none" strokeLinecap="round">
-        <path d="M600 300 C 560 250 520 210 470 190" />
-        <path d="M600 260 C 630 210 660 170 700 150" />
-        <path d="M600 200 C 590 150 592 100 610 60" />
-        <path d="M560 200 C 520 190 480 168 452 138" />
+      {/* the Last Lantern: an iron cage taller than a man, one patient flame */}
+      <ellipse cx="600" cy="205" rx="300" ry="210" fill={`url(#${gid}-win)`} opacity="0.55" />
+      <g>
+        <path d="M588 600 L591 268 L609 268 L612 600 Z" fill="#0e0c14" opacity="0.96" />
+        <path d="M566 268 L634 268 L624 148 L576 148 Z" fill="#0e0c14" opacity="0.96" />
+        <path d="M576 148 L600 112 L624 148 Z" fill="#0e0c14" opacity="0.96" />
+        <path d="M580 262 L585 158 M600 264 L600 154 M620 262 L615 158" stroke="#2a2433" strokeWidth="3.2" />
+        <ellipse cx="600" cy="205" rx="64" ry="74" fill={`url(#${gid}-win)`} />
+        <path d="M600 232 C 588 218 590 200 600 184 C 610 200 612 218 600 232 Z" fill={EMBER} opacity="0.95" />
+        <path d="M600 224 C 595 216 596 206 600 198 C 604 206 605 216 600 224 Z" fill="#f6e29b" opacity="0.9" />
+        <circle cx="600" cy="126" r="3.6" fill={GOLD} opacity="0.6" />
       </g>
       {/* low rooftop skyline */}
       <path
@@ -486,13 +484,14 @@ export function CardBack({ width }: { width: number }): ReactElement {
         <path d={CORNER} transform="translate(100 140) scale(-1 -1)" />
       </g>
 
-      {/* central emblem: the Great Tree as minimal gold linework */}
+      {/* central emblem: the Last Lantern as minimal gold linework */}
       <g transform="translate(50 76)" stroke={GOLD} strokeWidth="1" fill="none" opacity="0.85" strokeLinecap="round">
-        <path d="M0 32 L0 4" />
-        <path d="M0 24 L-13 11 M0 24 L13 11 M0 15 L-9 2 M0 15 L9 2 M0 6 L-5 -6 M0 6 L5 -6" />
-        <circle cx="0" cy="-9" r="2.6" fill={GOLD} opacity="0.9" />
-        <circle cx="-11" cy="6" r="1.6" fill={GOLD} opacity="0.55" />
-        <circle cx="11" cy="6" r="1.6" fill={GOLD} opacity="0.55" />
+        <path d="M0 32 L0 20" />
+        <path d="M-8 20 L8 20 L6 -8 L-6 -8 Z" />
+        <path d="M-6 -8 L0 -16 L6 -8" />
+        <path d="M-3.5 16 L-2.5 -4 M3.5 16 L2.5 -4" opacity="0.6" />
+        <path d="M0 10 C -2.6 6 -2 1.5 0 -2 C 2 1.5 2.6 6 0 10 Z" fill={GOLD} opacity="0.9" />
+        <circle cx="0" cy="-19" r="1.6" fill={GOLD} opacity="0.7" />
         <circle cx="-6" cy="-3" r="1.3" fill={GOLD} opacity="0.5" />
         <circle cx="6" cy="-3" r="1.3" fill={GOLD} opacity="0.5" />
       </g>

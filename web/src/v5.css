@@ -430,3 +430,52 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* v7: layered map cells (tile art under, icon above) */
+.map-cell {
+  overflow: hidden;
+}
+.cell-top {
+  position: relative;
+  z-index: 2;
+}
+.map-cell .unit-token {
+  z-index: 2;
+}
+.map-cell.threat::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(190, 60, 50, 0.24);
+  outline: 1px solid rgba(190, 60, 50, 0.4);
+  outline-offset: -1px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* v7: tavern portrait slide-in */
+.tavern-speech.with-portrait {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  border-left: 3px solid var(--npc-accent, #c8a24a);
+}
+.tavern-portrait {
+  flex: 0 0 auto;
+  animation: portraitIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.6));
+}
+@keyframes portraitIn {
+  from {
+    opacity: 0;
+    transform: translateX(-26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tavern-speech-body {
+  flex: 1;
+  min-width: 0;
+}

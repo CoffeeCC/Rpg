@@ -208,7 +208,8 @@ export function spawnFloorUnits(
   gateId: GateId,
   floorIndex: number,
   world: GeneratedWorld | null,
-  chronicle: ChronicleState
+  chronicle: ChronicleState,
+  hasTamed: boolean
 ): FloorUnit[] {
   const gate = GATES[gateId];
   const floor = gate.floors[floorIndex];
@@ -262,7 +263,7 @@ export function spawnFloorUnits(
             mov: MINIBOSS_MOV,
           });
         }
-      } else if (ch === TILE.TAMER && randInt(100) < 40) {
+      } else if (ch === TILE.TAMER && hasTamed && randInt(100) < 40) {
         units.push({
           id: `u${++unitSeq}`,
           kind: 'tamer',
@@ -280,7 +281,7 @@ export function spawnFloorUnits(
   return units;
 }
 
-export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chronicle: ChronicleState): Expedition {
+export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const start = findStart(GATES[gateId].floors[0]);
   return {
     gateId,
@@ -289,13 +290,13 @@ export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chro
     y: start.y,
     opened: [],
     broken: [],
-    units: spawnFloorUnits(gateId, 0, world, chronicle),
+    units: spawnFloorUnits(gateId, 0, world, chronicle, hasTamed),
     movLeft: 4,
     minibossDown: false,
   };
 }
 
-export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState): Expedition {
+export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const nextIndex = Math.min(exp.floorIndex + 1, GATES[exp.gateId].floors.length - 1);
   const start = findStart(GATES[exp.gateId].floors[nextIndex]);
   return {
@@ -303,12 +304,12 @@ export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle
     floorIndex: nextIndex,
     x: start.x,
     y: start.y,
-    units: spawnFloorUnits(exp.gateId, nextIndex, world, chronicle),
+    units: spawnFloorUnits(exp.gateId, nextIndex, world, chronicle, hasTamed),
     minibossDown: false,
   };
 }
 
-export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState): Expedition {
+export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const prevIndex = Math.max(0, exp.floorIndex - 1);
   const start = findStart(GATES[exp.gateId].floors[prevIndex]);
   return {
@@ -316,7 +317,7 @@ export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle:
     floorIndex: prevIndex,
     x: start.x,
     y: start.y,
-    units: spawnFloorUnits(exp.gateId, prevIndex, world, chronicle),
+    units: spawnFloorUnits(exp.gateId, prevIndex, world, chronicle, hasTamed),
     minibossDown: true, // already earned the way down once
   };
 }
