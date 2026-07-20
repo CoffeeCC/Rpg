@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { speciesById } from '../engine/data/species';
-import { MonsterArt } from '../art/monsterArt';
+import { MonsterImage } from '../art/MonsterImage';
 
 type Tab = 'timeline' | 'figures' | 'beasts' | 'artifacts' | 'deeds';
 
@@ -70,7 +70,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
             return (
               <div className="chronicle-entry beast-entry" key={b.id}>
                 <div className="beast-portrait">
-                  <MonsterArt speciesId={b.speciesId} size={84} rarity="Rare" />
+                  <MonsterImage speciesId={b.speciesId} size={84} rarity="Rare" />
                 </div>
                 <div>
                   <b>{b.name}, {b.epithet}</b> {slain && <span className="pill slain-pill">SLAIN</span>}

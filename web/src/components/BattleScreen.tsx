@@ -4,8 +4,7 @@ import type { CardDef, CardInstance, FxEvent, Intent } from '../engine/types';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
 import { CONSUMABLES } from '../engine/data/items';
-import { MonsterArt } from '../art/monsterArt';
-import { HeroArt } from '../art/heroArt';
+import { MonsterImage, HeroImage } from '../art/MonsterImage';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { CardView } from './CardView';
@@ -209,14 +208,37 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     [battle, locked, selectedIdx, playSelected]
   );
 
+  const discardHandGhosts = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage || !battle) return;
+    const stageRect = stage.getBoundingClientRect();
+    const pileEl = stage.querySelector('.pile-discard');
+    const pileRect = pileEl ? pileEl.getBoundingClientRect() : stageRect;
+    battle.hand.forEach((inst, i) => {
+      const el = slotRefs.current.get(i);
+      const card = getCard(inst.cardId);
+      if (!el || !card) return;
+      const r = el.getBoundingClientRect();
+      const ghost: Ghost = {
+        id: ++ghostSeq,
+        card,
+        from: { x: r.left - stageRect.left + r.width / 2, y: r.top - stageRect.top },
+        to: { x: pileRect.left - stageRect.left + pileRect.width / 2, y: pileRect.top - stageRect.top },
+      };
+      setGhosts((prev) => [...prev, ghost]);
+      setTimeout(() => setGhosts((prev) => prev.filter((g) => g.id !== ghost.id)), 400);
+    });
+  }, [battle]);
+
   const endTurn = useCallback(() => {
     if (locked) return;
     sfx('endTurn');
     setSelectedIdx(null);
     setShowItems(false);
     setPileView(null);
+    discardHandGhosts();
     dispatch({ type: 'END_TURN' });
-  }, [dispatch, locked]);
+  }, [dispatch, locked, discardHandGhosts]);
 
   // --- Keyboard ---
   useEffect(() => {
@@ -327,15 +349,33 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
       {locked && <div className="phase-indicator">the dark moves…</div>}
 
+      {battle.mercy && !locked && (
+        <div className="mercy-overlay">
+          <div className="mercy-box">
+            <p className="mercy-text">
+              It stops fighting. It lowers its head, bares its neck, and waits — for the blow, or for your hand.
+            </p>
+            <div className="btn-row" style={{ justifyContent: 'center' }}>
+              <button className="btn primary" onClick={() => dispatch({ type: 'MERCY_SPARE' })}>
+                🤲 Spare it
+              </button>
+              <button className="btn danger" onClick={() => dispatch({ type: 'MERCY_FINISH' })}>
+                🗡️ Finish it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="stage-row ffrow">
         <div className="party-column">
           <div className={`combatant-figure hero-fig ${flashing['hero'] ?? ''}`}>
-            <HeroArt className={player.className} size={150} />
+            <HeroImage className={player.className} size={150} />
             {renderPopups('hero')}
           </div>
           {state.party.map((m: MonsterInstance) => (
             <div key={m.uid} className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''}`}>
-              <MonsterArt speciesId={m.speciesId} size={86} />
+              <MonsterImage speciesId={m.speciesId} size={86} facing="right" />
               {!m.isAlive() && <span className="ko-label">FALLEN</span>}
               {renderPopups(m.uid)}
             </div>
@@ -373,7 +413,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                     {iv.label && <span className="intent-num">{iv.label}</span>}
                   </div>
                 )}
-                <MonsterArt speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
+                <MonsterImage speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
                 {renderPopups(enemy.uid)}
               </div>
             );
@@ -549,7 +589,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           {pileWidget('draw')}
         </div>
 
-        <div className="hand-fan" style={{ ['--n' as string]: battle.hand.length }}>
+        <div className="hand-fan" key={battle.turn ?? battle.drawPile.length + battle.discardPile.length} style={{ ['--n' as string]: battle.hand.length }}>
           {battle.hand.map((inst, i) => {
             const card = getCard(inst.cardId);
             if (!card) return null;

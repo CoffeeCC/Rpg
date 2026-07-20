@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
@@ -112,6 +112,63 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
 
 export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [showItems, setShowItems] = useState(false);
+  const merchantOpen = !!state.pendingMerchant;
+
+  // PLAN5 #56: keyboard drives the floor.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (merchantOpen) {
+        if (e.key === 'Escape') dispatch({ type: 'MERCHANT_CLOSE' });
+        return;
+      }
+      const dirs: Record<string, 'north' | 'south' | 'east' | 'west'> = {
+        ArrowUp: 'north',
+        ArrowDown: 'south',
+        ArrowLeft: 'west',
+        ArrowRight: 'east',
+        w: 'north',
+        s: 'south',
+        a: 'west',
+        d: 'east',
+      };
+      const dir = dirs[e.key];
+      if (dir) {
+        e.preventDefault();
+        dispatch({ type: 'MOVE', dir });
+      } else if (e.key === ' ' || e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        dispatch({ type: 'END_MAP_TURN' });
+      } else if (e.key === 'i' || e.key === 'I') {
+        setShowItems((v) => !v);
+      } else if (e.key === 'Escape') {
+        setShowItems(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dispatch, merchantOpen]);
+
+  // Gamepad: dpad moves, A holds ground.
+  const padPrev = useRef<boolean[]>([]);
+  useEffect(() => {
+    let raf = 0;
+    const poll = () => {
+      raf = requestAnimationFrame(poll);
+      const pad = navigator.getGamepads?.()[0];
+      if (!pad) return;
+      const pressed = pad.buttons.map((b) => b.pressed);
+      const was = padPrev.current;
+      const edge = (i: number) => pressed[i] && !was[i];
+      if (edge(12)) dispatch({ type: 'MOVE', dir: 'north' });
+      if (edge(13)) dispatch({ type: 'MOVE', dir: 'south' });
+      if (edge(14)) dispatch({ type: 'MOVE', dir: 'west' });
+      if (edge(15)) dispatch({ type: 'MOVE', dir: 'east' });
+      if (edge(0)) dispatch({ type: 'END_MAP_TURN' });
+      padPrev.current = pressed;
+    };
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
+  }, [dispatch]);
   const exp = state.expedition;
   const player = state.player;
   if (!exp || !player) return null;

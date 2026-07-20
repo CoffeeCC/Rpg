@@ -2,7 +2,7 @@ import { Character } from '../entities/Character';
 import { MonsterInstance } from '../entities/MonsterInstance';
 import type { GameState } from '../game';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 /** Safe save points: town, or on a floor outside battle/events/rewards/story. */
 export function isSavable(state: GameState): boolean {
@@ -43,7 +43,12 @@ export function deserializeGameState(save: SaveData): GameState {
   const raw = save.state as GameState;
   const player = raw.player ? revive<Character>(Character, raw.player) : null;
   // Fields added after the first v3 saves shipped get safe defaults.
-  if (player && !Array.isArray(player.upgradedCards)) player.upgradedCards = [];
+  if (player && typeof player.upgradedCounts !== 'object') player.upgradedCounts = {};
+  if (player) {
+    for (const key of ['ring2', 'amulet', 'pendant'] as const) {
+      if (!(key in player.equipment)) (player.equipment as Record<string, unknown>)[key] = null;
+    }
+  }
   return {
     ...raw,
     player,

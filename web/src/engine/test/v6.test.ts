@@ -206,9 +206,9 @@ describe('v6: merchant & town return', () => {
   });
 });
 
-describe('v6: save v4', () => {
+describe('v6: save format', () => {
   it('round-trips tactical expedition state and rejects v3 saves', () => {
-    expect(SAVE_VERSION).toBe(4);
+    expect(SAVE_VERSION).toBe(5);
     let state = enterVerdant(createHero());
     const spot = openPair(state);
     state.expedition!.units = [testUnit('enemy', spot.x, spot.y)];

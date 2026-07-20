@@ -24,7 +24,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
           const source = sourceUid ? state.party.find((m) => m.uid === sourceUid) : undefined;
           return (
             <div key={id} className="deck-cell">
-              <CardView card={card} hero={player} sourceMonster={source} width={128} upgraded={player.upgradedCards.includes(id)} />
+              <CardView card={card} hero={player} sourceMonster={source} width={128} upgraded={(player.upgradedCounts[id] ?? 0) > 0} />
               {count > 1 && <span className="deck-count">×{count}</span>}
             </div>
           );

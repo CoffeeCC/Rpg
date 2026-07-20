@@ -1,6 +1,6 @@
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
-import { MonsterArt } from '../art/monsterArt';
+import { MonsterImage } from '../art/MonsterImage';
 import { play as sfx } from '../platform/sfx';
 
 /**
@@ -20,7 +20,7 @@ export function LegendOverlay({ state, dispatch }: { state: GameState; dispatch:
         <div className="panel center-text">
           <p className="legend-kicker">A LEGEND WAKES</p>
           <div className="legend-art">
-            <MonsterArt speciesId={beast.speciesId} size={220} rarity="Rare" boss />
+            <MonsterImage speciesId={beast.speciesId} size={220} rarity="Rare" boss />
           </div>
           <h1 className="title legend-name">
             {beast.name}

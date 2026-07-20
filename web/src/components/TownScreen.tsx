@@ -1,7 +1,11 @@
 import type { GameAction, GameState } from '../engine/game';
+import { availableQuests } from '../engine/game';
 import { PAINTED_TOWN } from '../art/painted';
 
 export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  const questsNew = availableQuests(state).length > state.seen.questCount;
+  const questsClaimable = state.questLog.some((q) => q.complete && !q.claimed);
+  const tavernNew = state.storyChapter > state.seen.tavernChapter;
   return (
     <div className="panel town-panel">
       <div className="stage-backdrop">
@@ -31,15 +35,17 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'questBoard' })}>
           📜 Quest Board
+          {(questsNew || questsClaimable) && <span className="badge-dot" title={questsClaimable ? 'Rewards to claim' : 'New requests posted'} />}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'tavern' })}>
           🕯️ Tavern
+          {tavernNew && <span className="badge-dot" title="People have new things to say" />}
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'deck' })}>
           🃏 Deck
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'smith' })}>
-          🔥 Smith{state.player && state.player.upgradedCards.length > 0 ? ` (${state.player.upgradedCards.length})` : ''}
+          🔥 Smith
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'chronicle' })}>
           📖 Chronicle

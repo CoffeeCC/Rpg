@@ -38,6 +38,9 @@ export const ITEM_TYPES: Record<ItemTypeName, ItemTypeDef> = {
   Glove: { slot: 'gloves', primaryStat: 'Defense', materials: ['Cloth', 'Leather', 'Carapace', 'Iron', 'Steel', 'Mithril', 'DragonScale'], baseValue: 10 },
   Boot: { slot: 'boots', primaryStat: 'Defense', materials: ['Cloth', 'Leather', 'Carapace', 'Iron', 'Steel', 'Mithril', 'DragonScale'], baseValue: 10 },
   Ring: { slot: 'ring', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 30 },
+  Amulet: { slot: 'amulet', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 34 },
+  Pendant: { slot: 'pendant', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 34 },
+  Charm: { slot: 'charm', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 44 },
 };
 
 // --- Consumables ---

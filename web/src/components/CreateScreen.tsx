@@ -5,6 +5,7 @@ import { RACE_TRAITS, CLASS_TRAITS } from '../engine/data/traits';
 import type { GameAction } from '../engine/game';
 import type { RaceName, ClassName } from '../engine/types';
 import { SLOT_COUNT, getSlotSummary, loadFromSlot, importSaveFromFile } from '../platform/browserSave';
+import { loadTellings } from '../platform/tellings';
 
 export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }) {
   const [name, setName] = useState('');
@@ -41,8 +42,13 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
 
   return (
     <div className="panel create-panel">
-      <h1 className="title">🌳 Everdusk</h1>
-      <p className="subtitle">The light is failing. The gates are open. The notice board is hiring.</p>
+      <h1 className="title">🏮 Everdusk</h1>
+      <p className="subtitle">
+        The light is failing. The gates are open. The notice board is hiring.
+        {loadTellings().telling > 1 && (
+          <span className="telling-line"> The Chronicler calls this the telling number {loadTellings().telling}. You do not remember the others. The town might.</span>
+        )}
+      </p>
 
       {saves.length > 0 && (
         <div className="field">

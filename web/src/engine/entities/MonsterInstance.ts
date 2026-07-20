@@ -1,6 +1,7 @@
-import type { ActiveMod, MonsterFamily, MonsterRarity, SpawnTable, Stat, StatBlock, StatusEffect } from '../types';
+import type { ActiveMod, ItemV2, MonsterFamily, MonsterRarity, SpawnTable, Stat, StatBlock, StatusEffect } from '../types';
 import { SPECIES, speciesById, speciesMatching } from '../data/species';
 import { ASPECTS, pickAspect, type AspectDef } from '../data/aspects';
+import { PERSONALITIES, personalityById, type PersonalityDef } from '../data/personalities';
 import { BALANCE } from '../data/balance';
 import { randInt } from '../random';
 
@@ -42,6 +43,12 @@ export class MonsterInstance {
   isBoss = false;
   /** Named aspect for uncommon spawns ("Ironhide", "Duskborn"...); replaces the bare rarity tag. */
   aspectId: string | null;
+  /** DQM-style temperament (PLAN5 #48): growth bias + battle instinct. */
+  personalityId: string;
+  /** Battles survived at the player's side; instincts strengthen with bond. */
+  bond = 0;
+  /** Forged charm worn by this monster (its one equipment slot). */
+  charm: ItemV2 | null = null;
 
   stats: StatBlock = { ...EMPTY_STATS };
   maxHp = 1;
@@ -65,6 +72,7 @@ export class MonsterInstance {
     knownSkills?: string[];
     customSkills?: boolean;
     aspectId?: string | null;
+    personalityId?: string;
   }) {
     const species = speciesById(init.speciesId);
     if (!species) throw new Error(`Unknown species: ${init.speciesId}`);
@@ -78,6 +86,7 @@ export class MonsterInstance {
     this.customSkills = init.customSkills ?? false;
     this.knownSkills = init.knownSkills ? [...init.knownSkills] : [];
     this.aspectId = init.aspectId ?? null;
+    this.personalityId = init.personalityId ?? PERSONALITIES[randInt(PERSONALITIES.length)].id;
     this.deriveStats();
     this.hp = this.maxHp;
     this.mp = this.maxMp;
@@ -98,6 +107,10 @@ export class MonsterInstance {
 
   get aspect(): AspectDef | null {
     return this.aspectId ? ASPECT_BY_ID.get(this.aspectId) ?? null : null;
+  }
+
+  get personality(): PersonalityDef | null {
+    return personalityById(this.personalityId);
   }
 
   displayName(): string {
@@ -134,6 +147,22 @@ export class MonsterInstance {
       if (a.mods.strMult) this.stats.STR = Math.max(1, Math.floor(this.stats.STR * a.mods.strMult));
       if (a.mods.defMult) this.stats.DEF = Math.max(1, Math.floor(this.stats.DEF * a.mods.defMult));
       if (a.mods.hpMult) this.maxHp = Math.max(5, Math.floor(this.maxHp * a.mods.hpMult));
+    }
+    const p = this.personality;
+    if (p) {
+      for (const stat of Object.keys(EMPTY_STATS) as Stat[]) {
+        const g = p.growth[stat];
+        if (g) this.stats[stat] = Math.max(1, Math.floor(this.stats[stat] * g));
+      }
+    }
+    if (this.charm) {
+      for (const affix of this.charm.affixes) {
+        if (affix.target in EMPTY_STATS) {
+          this.stats[affix.target as Stat] += affix.amount;
+        } else if (affix.target === 'HP') {
+          this.maxHp += affix.amount;
+        }
+      }
     }
   }
 
@@ -251,6 +280,7 @@ export class MonsterInstance {
       stats: { ...this.stats },
       statusEffects: this.statusEffects.map((s) => ({ ...s })),
       activeMods: this.activeMods.map((m) => ({ ...m })),
+      charm: this.charm ? { ...this.charm, affixes: this.charm.affixes.map((a) => ({ ...a })) } : null,
     });
     return copy;
   }

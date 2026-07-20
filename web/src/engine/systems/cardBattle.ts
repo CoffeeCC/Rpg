@@ -9,6 +9,7 @@ import { BALANCE } from '../data/balance';
 import { talentsFor } from '../data/traits';
 import { generateItem } from './lootGen';
 import { randInt } from '../random';
+import { INSTINCT_MP_COST, bondPowerMult } from '../data/personalities';
 
 export const HAND_SIZE = BALANCE.handSize;
 export const MAX_HAND = BALANCE.maxHand;
@@ -41,6 +42,8 @@ export interface BattleState {
   unitKind?: 'enemy' | 'miniboss' | 'tamer';
   /** Set for rival-tamer duels. */
   tamerName?: string;
+  /** PLAN5 #55: a beaten monster is begging for its life. */
+  mercy?: { uid: string };
 }
 
 export interface BattleStepResult {
@@ -61,7 +64,11 @@ function instance(cardId: string, sourceMonsterUid?: string): CardInstance {
 /** Class base + race signature + tame card + living party monsters' cards + expedition extras. */
 export function buildDeck(hero: Character, party: MonsterInstance[], expeditionExtras: string[]): CardInstance[] {
   const deck: CardInstance[] = [];
-  const upgraded = (id: string) => hero.upgradedCards.includes(id) || undefined;
+  const used: Record<string, number> = {};
+  const upgraded = (id: string) => {
+    used[id] = (used[id] ?? 0) + 1;
+    return used[id] <= (hero.upgradedCounts[id] ?? 0) || undefined;
+  };
   for (const id of CLASS_DECKS[hero.className]) deck.push({ ...instance(id), upgraded: upgraded(id) });
   for (const id of RACE_CARDS[hero.race]) deck.push({ ...instance(id), upgraded: upgraded(id) });
   deck.push({ ...instance(TAME_CARD_ID), upgraded: upgraded(TAME_CARD_ID) });
@@ -443,6 +450,19 @@ export function playCard(
   (card.exhaust && !tameFailed ? battle.exhaustPile : battle.discardPile).push(cardInst);
 
   if (battle.enemies.every((e) => !e.isAlive())) {
+    // PLAN5 #55: rarely, the last blow does not land — the creature submits.
+    if (!battle.isBossFight && !battle.tamerName && !battle.mercy && randInt(100) < 7) {
+      const supplicant = battle.enemies.find((e) => !e.isBoss);
+      if (supplicant) {
+        supplicant.hp = 1;
+        supplicant.statusEffects = [];
+        supplicant.activeMods = [];
+        battle.mercy = { uid: supplicant.uid };
+        fx.push({ fx: 'status', targetUid: supplicant.uid, label: 'MERCY' });
+        log.push(`${supplicant.displayName()} stops fighting. It lowers its head, bares its neck, and waits for what you decide.`);
+        return { outcome: 'ongoing', log, fx };
+      }
+    }
     return { outcome: 'victory', log, fx };
   }
   return { outcome: 'ongoing', log, fx };
@@ -459,6 +479,86 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
   // Discard hand.
   battle.discardPile.push(...battle.hand);
   battle.hand = [];
+
+  // PLAN5 #48: tamed companions act on their own instincts (fueled by MP).
+  for (const ally of party) {
+    if (!ally.isAlive() || !ally.isTamed) continue;
+    const p = ally.personality;
+    if (!p || ally.mp < INSTINCT_MP_COST) continue;
+    const living = battle.enemies.filter((e) => e.isAlive());
+    if (living.length === 0) break;
+    ally.mp -= INSTINCT_MP_COST;
+    const power = bondPowerMult(ally.bond);
+    const strongest = [...living].sort((a, b) => b.getAttack() - a.getAttack())[0];
+    switch (p.instinct) {
+      case 'strike':
+      case 'maul': {
+        const target = p.instinct === 'maul' ? living[randInt(living.length)] : strongest;
+        let amount = Math.max(1, Math.round(ally.getAttack() * (p.instinct === 'maul' ? 0.55 : 0.45) * power));
+        const blocked = Math.min(battle.enemyBlock[target.uid] ?? 0, amount);
+        if (blocked > 0) {
+          battle.enemyBlock[target.uid] = (battle.enemyBlock[target.uid] ?? 0) - blocked;
+          amount -= blocked;
+        }
+        target.takeDamage(amount);
+        fx.push({ fx: 'hit', targetUid: target.uid, amount });
+        log.push(`${ally.nickname} acts on instinct — ${target.displayName()} takes ${amount}.`);
+        if (!target.isAlive()) {
+          fx.push({ fx: 'ko', targetUid: target.uid });
+          log.push(`${target.displayName()} falls to ${ally.nickname}.`);
+        }
+        break;
+      }
+      case 'mend': {
+        const allies = [hero as { hp: number; maxHp: number }, ...party.filter((m) => m.isAlive())];
+        const wounded = allies.sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+        const healed = Math.max(1, Math.round(ally.effectiveStat('INT') * 0.5 * power));
+        const isHero = wounded === (hero as unknown);
+        const before = wounded.hp;
+        wounded.hp = Math.min(wounded.maxHp, wounded.hp + healed);
+        const gained = wounded.hp - before;
+        if (gained > 0) {
+          fx.push({ fx: 'heal', targetUid: isHero ? 'hero' : (wounded as MonsterInstance).uid, amount: gained });
+          log.push(`${ally.nickname} fusses over ${isHero ? hero.name : (wounded as MonsterInstance).nickname} (+${gained}).`);
+        }
+        break;
+      }
+      case 'wardHero':
+      case 'cower': {
+        const amount = Math.max(1, Math.round(ally.getDefense() * (p.instinct === 'wardHero' ? 0.4 : 0.25) * power));
+        battle.heroBlock += amount;
+        fx.push({ fx: 'block', targetUid: 'hero', amount });
+        log.push(`${ally.nickname} ${p.instinct === 'wardHero' ? 'stands over you' : 'shows you where to hide'} (+${amount} Ward).`);
+        break;
+      }
+      case 'hex': {
+        strongest.addMod({ stat: 'STR', amount: -Math.max(1, Math.round(ally.effectiveStat('INT') * 0.2 * power)), turns: 2 });
+        fx.push({ fx: 'status', targetUid: strongest.uid, label: 'STR↓' });
+        log.push(`${ally.nickname} unpicks ${strongest.displayName()}'s strength.`);
+        break;
+      }
+      case 'rally': {
+        hero.addMod({ stat: 'STR', amount: Math.max(1, Math.round(ally.effectiveStat('LUCK') * 0.2 * power)), turns: 2 });
+        fx.push({ fx: 'status', targetUid: 'hero', label: 'STR↑' });
+        log.push(`${ally.nickname} believes in you, loudly.`);
+        break;
+      }
+      case 'venom': {
+        const target = living[randInt(living.length)];
+        if (randInt(100) < 60) {
+          target.applyStatus('Poisoned', 2);
+          fx.push({ fx: 'status', targetUid: target.uid, label: 'Poisoned' });
+          log.push(`${ally.nickname}'s bitterness seeps into ${target.displayName()}.`);
+        } else {
+          fx.push({ fx: 'status', targetUid: target.uid, label: 'resisted' });
+        }
+        break;
+      }
+    }
+  }
+  if (battle.enemies.every((e) => !e.isAlive())) {
+    return { outcome: 'victory', log, fx };
+  }
 
   // Enemies act on their telegraphed intents.
   for (const enemy of battle.enemies) {
@@ -631,6 +731,7 @@ export interface Spoils {
 }
 
 export function collectSpoils(hero: Character, party: MonsterInstance[], battle: BattleState): Spoils {
+  for (const m of party) if (m.isAlive() && m.isTamed) m.bond++;
   let exp = 0;
   const trained: Partial<Record<Stat, number>> = {};
   const drops: ItemV2[] = [];

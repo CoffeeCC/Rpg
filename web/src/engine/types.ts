@@ -11,7 +11,7 @@ export type StatBlock = Record<Stat, number>;
 export type RaceName = 'Human' | 'Elf' | 'Dwarf' | 'Orc';
 export type ClassName = 'Warrior' | 'Mage' | 'Thief' | 'Bard' | 'Knight';
 
-export type EquipmentSlot = 'weapon' | 'armor' | 'headpiece' | 'gloves' | 'boots' | 'ring';
+export type EquipmentSlot = 'weapon' | 'armor' | 'headpiece' | 'gloves' | 'boots' | 'ring' | 'amulet' | 'pendant' | 'charm';
 
 // --- Elements & status ---
 export type Element = 'None' | 'Fire' | 'Ice' | 'Bolt' | 'Dark' | 'Holy';
@@ -111,7 +111,7 @@ export interface BreedingPairOverride {
 
 // --- Items ---
 export type ItemRarity = 'Normal' | 'Magic' | 'Rare' | 'Legendary';
-export type ItemTypeName = 'Sword' | 'Staff' | 'Armor' | 'Headpiece' | 'Glove' | 'Boot' | 'Ring';
+export type ItemTypeName = 'Sword' | 'Staff' | 'Armor' | 'Headpiece' | 'Glove' | 'Boot' | 'Ring' | 'Amulet' | 'Pendant' | 'Charm';
 
 /** What an affix can modify: a core stat, resource maxima, or implicit combat values. */
 export type AffixTarget = Stat | 'HP' | 'MP' | 'Attack' | 'Magic' | 'Defense';

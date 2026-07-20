@@ -94,6 +94,28 @@ function buildLegendary(ilvl: number): ItemV2 | null {
   };
 }
 
+/** Smith-forged monster charm: always Magic+ with 2 guaranteed affixes. */
+export function forgeCharm(ilvl: number, luck = 0): ItemV2 {
+  const level = Math.max(1, ilvl);
+  const material = materialForIlvl('Charm', level);
+  const affixes = rollAffixes(level, 2 + (randInt(100) < 20 + luck ? 1 : 0));
+  const rarity: ItemRarity = affixes.length >= 3 ? 'Rare' : 'Magic';
+  return {
+    uid: freshUid('item'),
+    baseType: 'Charm',
+    slot: 'charm',
+    material,
+    ilvl: level,
+    rarity,
+    name: buildName(`${material} Charm`, rarity, affixes),
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 0,
+    affixes,
+    value: computeValue('Charm', material, level, rarity, affixes.length),
+  };
+}
+
 /** Generate one item. ilvl drives material, implicits, and affix tiers. */
 export function generateItem(ilvl: number, luck = 0, bias = 0): ItemV2 {
   const level = Math.max(1, ilvl);
@@ -106,7 +128,7 @@ export function generateItem(ilvl: number, luck = 0, bias = 0): ItemV2 {
   }
   const effectiveRarity: ItemRarity = rarity === 'Legendary' ? 'Rare' : rarity;
 
-  const typeNames = Object.keys(ITEM_TYPES) as ItemTypeName[];
+  const typeNames = (Object.keys(ITEM_TYPES) as ItemTypeName[]).filter((t) => t !== 'Charm');
   const baseType = typeNames[randInt(typeNames.length)];
   const typeInfo = ITEM_TYPES[baseType];
   const material = materialForIlvl(baseType, level);

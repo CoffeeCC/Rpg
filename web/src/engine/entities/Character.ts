@@ -7,9 +7,11 @@ import { traitsFor, type TraitSet } from '../data/traits';
 import { makeStartingItem } from '../systems/lootGen';
 
 const BASE_STATS: StatBlock = { STR: 3, DEF: 3, DEX: 3, MANA: 3, MAGDEF: 3, INT: 3, LUCK: 3 };
-const EQUIPMENT_SLOTS: EquipmentSlot[] = ['weapon', 'armor', 'headpiece', 'gloves', 'boots', 'ring'];
+/** Hero-wearable equipment keys (charms belong to monsters; rings come in pairs). */
+export type EquipKey = Exclude<EquipmentSlot, 'charm'> | 'ring2';
+const EQUIPMENT_SLOTS: EquipKey[] = ['weapon', 'armor', 'headpiece', 'gloves', 'boots', 'ring', 'ring2', 'amulet', 'pendant'];
 
-export type Equipment = Record<EquipmentSlot, ItemV2 | null>;
+export type Equipment = Record<EquipKey, ItemV2 | null>;
 
 export class Character {
   readonly uid = 'hero';
@@ -30,8 +32,8 @@ export class Character {
   items: ItemV2[] = [];
   /** Consumables by name. */
   inventory: string[] = ['Herb', 'Jerky', 'Jerky'];
-  /** Card ids permanently upgraded at the smith. */
-  upgradedCards: string[] = [];
+  /** Per-copy smith upgrades: card id -> number of copies reforged. */
+  upgradedCounts: Record<string, number> = {};
 
   statusEffects: StatusEffect[] = [];
   activeMods: ActiveMod[] = [];
@@ -61,6 +63,9 @@ export class Character {
       gloves: null,
       boots: null,
       ring: null,
+      ring2: null,
+      amulet: null,
+      pendant: null,
     };
 
     this.refreshKnownSkills();
@@ -204,8 +209,11 @@ export class Character {
 
   /** Equip from bag; previous item (if any) returns to the bag. */
   equip(item: ItemV2): ItemV2 | null {
-    const previous = this.equipment[item.slot];
-    this.equipment[item.slot] = item;
+    if (item.slot === 'charm') return null; // charms are worn by monsters
+    // Rings pair up: fill the empty finger first.
+    const key: EquipKey = item.slot === 'ring' && this.equipment.ring && !this.equipment.ring2 ? 'ring2' : (item.slot as EquipKey);
+    const previous = this.equipment[key];
+    this.equipment[key] = item;
     const idx = this.items.findIndex((i) => i.uid === item.uid);
     if (idx !== -1) this.items.splice(idx, 1);
     if (previous) this.items.push(previous);
@@ -262,7 +270,7 @@ export class Character {
       knownSkills: [...this.knownSkills],
       items: this.items.map((item) => ({ ...item, affixes: item.affixes.map((a) => ({ ...a })) })),
       inventory: [...this.inventory],
-      upgradedCards: [...this.upgradedCards],
+      upgradedCounts: { ...this.upgradedCounts },
       statusEffects: this.statusEffects.map((s) => ({ ...s })),
       activeMods: this.activeMods.map((m) => ({ ...m })),
     });

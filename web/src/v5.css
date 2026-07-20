@@ -479,3 +479,126 @@
   flex: 1;
   min-width: 0;
 }
+
+/* ===== v8: badges, compare, mercy, fallen, chronicler, instincts ===== */
+.badge-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f0c87a, #b8860b);
+  box-shadow: 0 0 8px rgba(240, 200, 122, 0.8);
+  animation: badge-pulse 1.6s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+.compare-panel {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  background: rgba(18, 15, 10, 0.92);
+}
+.compare-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.compare-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.compare-metric.up b { color: #8ec87a; }
+.compare-metric.down b { color: #d06a5a; }
+.equip-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 22px;
+}
+.stat-help {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  font-style: italic;
+  max-width: 380px;
+}
+.personality-pill {
+  color: #b8a0e0;
+  border-color: rgba(184, 160, 224, 0.45);
+}
+.mercy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 4, 2, 0.72);
+  animation: overlayIn 0.4s ease both;
+}
+.mercy-box {
+  max-width: 460px;
+  padding: 22px 26px;
+  border: 1px solid var(--gold-deep, #8a6d2f);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(28, 23, 15, 0.97), rgba(14, 11, 7, 0.98));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
+  text-align: center;
+}
+.mercy-text {
+  font-family: var(--font-body, serif);
+  font-style: italic;
+  color: #ddd5c2;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.fallen-panel {
+  max-width: 620px;
+  margin: 0 auto;
+}
+.fallen-title {
+  color: #d06a5a;
+  letter-spacing: 0.12em;
+}
+.fallen-summary {
+  margin: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+.verses-row span:last-child {
+  color: var(--gold-bright, #f0c87a);
+  font-weight: 600;
+}
+.chronicler-desk {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(184, 160, 224, 0.3);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(24, 20, 30, 0.6), rgba(12, 10, 16, 0.7));
+}
+.telling-line {
+  color: #b8a0e0;
+  font-style: italic;
+}
+
+/* v8 #60: cards deal into the hand with a stagger */
+.hand-fan .hand-slot {
+  animation: deal-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i) * 70ms);
+}
+@keyframes deal-in {
+  from {
+    opacity: 0;
+    transform: translateX(-120px) translateY(30px) rotate(-8deg);
+  }
+}

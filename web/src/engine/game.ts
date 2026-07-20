@@ -22,7 +22,7 @@ import {
   type BattleState,
 } from './systems/cardBattle';
 import { breed, canBreed } from './systems/breeding';
-import { generateItem } from './systems/lootGen';
+import { generateItem, forgeCharm } from './systems/lootGen';
 import { generateWorld, forgeArtifactItem } from './systems/worldgen';
 import {
   newExpedition,
@@ -53,6 +53,7 @@ import { CLASS_DECKS, RACE_CARDS, REWARD_POOLS, TAME_CARD_ID, getCard } from './
 import { BALANCE } from './data/balance';
 import { NPCS } from './data/npcs';
 import { randInt } from './random';
+import { bankFall, loadTellings } from '../platform/tellings';
 
 export type Screen =
   | 'create'
@@ -74,7 +75,8 @@ export type Screen =
   | 'characterSheet'
   | 'equipment'
   | 'saveLoad'
-  | 'victory';
+  | 'victory'
+  | 'fallen';
 
 export const MAX_ACTIVE_MONSTERS = 2;
 export const STABLE_CAP = 20;
@@ -133,6 +135,12 @@ export interface GameState {
   world: GeneratedWorld | null;
   chronicle: ChronicleState;
   lastTalk: TavernLine | null;
+  /** Badge bookkeeping: what the player has already seen in town (PLAN5 #52). */
+  seen: { questCount: number; tavernChapter: number };
+  /** Unique per run — used to bank Tellings verses exactly once on death. */
+  runId: string;
+  /** Set when the run ends (PLAN5 #49): the Fallen screen's summary. */
+  fallenSummary: { verses: number; level: number; orbs: number; beasts: number } | null;
   /** Transient FX from the last battle action — consumed by the UI, never saved. */
   lastFx: FxEvent[];
   log: string[];
@@ -147,6 +155,10 @@ export type GameAction =
   | { type: 'END_MAP_TURN' }
   | { type: 'MERCHANT_BUY'; what: 'consumable' | 'gear' | 'card'; index: number }
   | { type: 'MERCHANT_CLOSE' }
+  | { type: 'FORGE_CHARM' }
+  | { type: 'MONSTER_CHARM'; monsterUid: string; itemUid: string }
+  | { type: 'MERCY_SPARE' }
+  | { type: 'MERCY_FINISH' }
   | { type: 'LEAVE_GATE' }
   | { type: 'REST' }
   | { type: 'PLAY_CARD'; handIndex: number; targetUid?: string }
@@ -195,6 +207,9 @@ export function initialGameState(): GameState {
     world: null,
     chronicle: { beastsSlain: [], artifactsFound: [], deeds: [] },
     lastTalk: null,
+    seen: { questCount: 0, tavernChapter: 0 },
+    runId: 'run0',
+    fallenSummary: null,
     lastFx: [],
     log: [],
   };
@@ -247,6 +262,7 @@ function cloneCore(state: GameState): GameState {
       artifactsFound: [...state.chronicle.artifactsFound],
       deeds: [...state.chronicle.deeds],
     },
+    seen: { ...state.seen },
     lastFx: [],
     log: state.log,
   };
@@ -578,18 +594,81 @@ function handleVictory(state: GameState, log: string[]): void {
   state.screen = 'floor';
 }
 
+
+/** Shared adoption path for taming and spared mercy monsters (PLAN5 #55). */
+function adoptMonster(state: GameState, tamed: MonsterInstance, lines: string[]): void {
+  applyQuestEvent(state.questLog, { type: 'tame' }, lines);
+  const species = tamed.species.name;
+  if (tamed.nickname === species) {
+    tamed.nickname = bestowName();
+    lines.push(`You give the ${species} a name: ${tamed.nickname}.`);
+  } else {
+    lines.push(`${tamed.nickname} keeps its name. Some things are not yours to rename.`);
+  }
+  const levelFloor = state.player!.level - 2;
+  if (tamed.level < levelFloor) {
+    while (tamed.level < levelFloor) tamed.gainExp(tamed.expToNext() - tamed.exp);
+    tamed.hp = tamed.maxHp;
+    lines.push(`${tamed.nickname} learns quickly at your side (now Lv${tamed.level}).`);
+  }
+  if (state.party.length < state.player!.traits.partyCap) {
+    state.party.push(tamed);
+    lines.push(`${tamed.nickname} walks beside you now. Its cards join your deck.`);
+  } else if (state.stable.length < STABLE_CAP) {
+    state.stable.push(tamed);
+    lines.push(`${tamed.nickname} is sent to the stable.`);
+  } else {
+    lines.push(`The stable is full — ${tamed.nickname} watches you leave.`);
+  }
+}
+
+/** End a battle that concluded without a kill (tame or mercy): units die on the map anyway. */
+function endBattlePeacefully(state: GameState, lines: string[]): void {
+  const b = state.battle!;
+  if (b.unitId && state.expedition) {
+    const idx = state.expedition.units.findIndex((u) => u.id === b.unitId);
+    if (idx >= 0) state.expedition.units.splice(idx, 1);
+    if (b.unitKind === 'miniboss') {
+      state.expedition.minibossDown = true;
+      lines.push('The stairs release their keeper. The way down is open.');
+    }
+  }
+  if (b.famousBeastId && state.world && !state.chronicle.beastsSlain.includes(b.famousBeastId)) {
+    const beast = state.world.beasts.find((bb) => bb.id === b.famousBeastId);
+    if (beast) {
+      state.chronicle.beastsSlain.push(beast.id);
+      state.chronicle.deeds.push({
+        year: deedYear(state.world),
+        text: `${state.player!.name} did not slay ${beast.name} ${beast.epithet} - they walked out of the dark together. The Chronicle has no word for this.`,
+      });
+    }
+  }
+  state.battle = null;
+  state.screen = 'floor';
+}
+
 function handleDefeat(state: GameState, log: string[]): void {
+  // PLAN5 #49: death is real now. The run ends; the Chronicler banks Verses.
   const player = state.player!;
-  const lost = Math.floor((player.gold * BALANCE.defeatGoldLossPct) / 100);
-  player.gold -= lost;
-  healParty(player, state.party);
+  const verses =
+    player.level +
+    state.orbs.length * 2 +
+    state.chronicle.beastsSlain.length +
+    state.questLog.filter((q) => q.claimed).length;
+  bankFall(state.runId, verses);
+  state.fallenSummary = {
+    verses,
+    level: player.level,
+    orbs: state.orbs.length,
+    beasts: state.chronicle.beastsSlain.length,
+  };
   state.battle = null;
   state.expedition = null;
   state.expeditionExtras = [];
   state.pendingReward = null;
   state.pendingMerchant = null;
-  state.screen = 'town';
-  log.push(`You wake beneath the Last Lantern. Someone carried you home — and took ${lost} gold for the trouble.`);
+  state.screen = 'fallen';
+  log.push('The dark takes what it is owed. Somewhere in Everdusk, the Chronicler dips a quill.');
 }
 
 function applyEventOutcomes(state: GameState, outcomes: EventOutcome[], log: string[]) {
@@ -659,7 +738,23 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'CREATE_CHARACTER': {
       const player = new Character(action.name, action.race, action.className);
+      // The Chronicler remembers previous tellings (PLAN5 #49).
+      const meta = loadTellings();
+      if (meta.purchased.includes('provisioned')) player.gold += 40;
+      if (meta.purchased.includes('cellar')) {
+        player.addConsumable('Herb', 2);
+        player.addConsumable('Jerky', 1);
+      }
+      if (meta.purchased.includes('scars')) {
+        player.stats.STR += 2;
+        player.stats.DEF += 2;
+      }
+      if (meta.purchased.includes('oil')) player.stats.DEX += 4;
+      if (meta.purchased.includes('lantern-luck')) player.stats.LUCK += 4;
+      player.recomputeDerived();
+      player.hp = player.maxHp;
       const next = initialGameState();
+      next.runId = `run-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6)}`;
       const seed = (Date.now() ^ (Math.random() * 0x7fffffff)) >>> 0;
       next.world = generateWorld(seed);
       next.player = player;
@@ -680,7 +775,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'GOTO': {
       if (!state.player) return state;
       if (state.screen === 'battle' || state.screen === 'event' || state.screen === 'cardReward') return state;
-      return { ...state, screen: action.screen, lastTalk: null };
+      const seen = { ...state.seen };
+      if (action.screen === 'questBoard') seen.questCount = availableQuests(state).length;
+      if (action.screen === 'tavern') seen.tavernChapter = Math.max(seen.tavernChapter, state.storyChapter);
+      return { ...state, screen: action.screen, lastTalk: null, seen };
     }
 
     case 'ENTER_GATE': {
@@ -916,6 +1014,73 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, pendingMerchant: null };
     }
 
+    case 'FORGE_CHARM': {
+      if (!state.player || state.screen !== 'smith') return state;
+      const cost = 90 + state.player.level * 10;
+      const next = cloneCore(state);
+      if (!next.player!.spendGold(cost)) {
+        next.log = pushLog(state.log, 'The smith names a price your purse cannot argue with.');
+        return next;
+      }
+      const charm = forgeCharm(next.player!.level, next.player!.effectiveStat('LUCK'));
+      next.player!.addItem(charm);
+      next.log = pushLog(state.log, `The smith works in silence, then hands you ${charm.name}. "For one of yours. Not for you."`);
+      return next;
+    }
+
+    case 'MONSTER_CHARM': {
+      if (!state.player || state.screen !== 'stable') return state;
+      const next = cloneCore(state);
+      const monster = [...next.party, ...next.stable].find((m) => m.uid === action.monsterUid);
+      const idx = next.player!.items.findIndex((i) => i.uid === action.itemUid && i.slot === 'charm');
+      if (!monster || idx === -1) return state;
+      const [charm] = next.player!.items.splice(idx, 1);
+      if (monster.charm) next.player!.items.push(monster.charm);
+      monster.charm = charm;
+      monster.deriveStats();
+      monster.hp = Math.min(monster.hp, monster.maxHp);
+      next.log = pushLog(state.log, `${monster.nickname} wears ${charm.name} now. It seems pleased, in its way.`);
+      return next;
+    }
+
+    case 'MERCY_SPARE': {
+      if (!state.player || !state.battle || !state.battle.mercy || state.screen !== 'battle') return state;
+      const next = cloneCore(state);
+      const b = next.battle!;
+      const monster = b.enemies.find((e) => e.uid === b.mercy!.uid);
+      if (!monster) return state;
+      const lines: string[] = [`You lower your hand. ${monster.displayName()} rises, changed.`];
+      monster.isTamed = true;
+      monster.tameBonus = 0;
+      monster.hp = Math.max(1, Math.floor(monster.maxHp * 0.3));
+      b.enemies = b.enemies.filter((e) => e.uid !== monster.uid);
+      delete b.intents[monster.uid];
+      delete b.enemyBlock[monster.uid];
+      b.mercy = undefined;
+      adoptMonster(next, monster, lines);
+      if (b.enemies.some((e) => e.isAlive())) {
+        lines.push('The rest close ranks. This is not over.');
+      } else {
+        endBattlePeacefully(next, lines);
+      }
+      next.log = pushLog(state.log, ...lines);
+      return next;
+    }
+
+    case 'MERCY_FINISH': {
+      if (!state.player || !state.battle || !state.battle.mercy || state.screen !== 'battle') return state;
+      const next = cloneCore(state);
+      const b = next.battle!;
+      const monster = b.enemies.find((e) => e.uid === b.mercy!.uid);
+      if (!monster) return state;
+      const lines: string[] = [`You finish it. ${monster.displayName()} does not look away. The dark keeps its accounts.`];
+      monster.hp = 0;
+      b.mercy = undefined;
+      handleVictory(next, lines);
+      next.log = pushLog(state.log, ...lines);
+      return next;
+    }
+
     case 'LEAVE_GATE': {
       if (state.screen !== 'floor') return state;
       return {
@@ -950,57 +1115,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
 
       reapFallen(next, lines);
       if (result.outcome === 'tamed' && result.tamed) {
-        applyQuestEvent(next.questLog, { type: 'tame' }, lines);
-        const species = result.tamed.species.name;
-        if (result.tamed.nickname === species) {
-          result.tamed.nickname = bestowName();
-          lines.push(`You give the ${species} a name: ${result.tamed.nickname}.`);
-        } else {
-          // Legends keep the name the world gave them.
-          lines.push(`${result.tamed.nickname} keeps its name. Some things are not yours to rename.`);
-        }
-        // Playtest finding: fresh tames died in 1-3 fights. Bring them within
-        // reach of the hero's danger band so adoption isn't a death sentence.
-        const levelFloor = next.player!.level - 2;
-        if (result.tamed.level < levelFloor) {
-          while (result.tamed.level < levelFloor) result.tamed.gainExp(result.tamed.expToNext() - result.tamed.exp);
-          result.tamed.hp = result.tamed.maxHp;
-          lines.push(`${result.tamed.nickname} learns quickly at your side (now Lv${result.tamed.level}).`);
-        }
-        if (next.party.length < next.player!.traits.partyCap) {
-          next.party.push(result.tamed);
-          lines.push(`${result.tamed.nickname} walks beside you now. Its cards join your deck.`);
-        } else if (next.stable.length < STABLE_CAP) {
-          next.stable.push(result.tamed);
-          lines.push(`${result.tamed.nickname} is sent to the stable.`);
-        } else {
-          lines.push(`The stable is full — ${result.tamed.nickname} watches you leave.`);
-        }
-        const b = next.battle!;
-        if (b.enemies.some((e) => e.isAlive())) {
-          // Packmates remain - the fight goes on without the newcomer.
+        adoptMonster(next, result.tamed, lines);
+        if (next.battle!.enemies.some((e) => e.isAlive())) {
           lines.push('The rest close ranks. This is not over.');
         } else {
-          if (b.unitId && next.expedition) {
-            const idx = next.expedition.units.findIndex((u) => u.id === b.unitId);
-            if (idx >= 0) next.expedition.units.splice(idx, 1);
-            if (b.unitKind === 'miniboss') {
-              next.expedition.minibossDown = true;
-              lines.push('The stairs release their keeper. The way down is open.');
-            }
-          }
-          if (b.famousBeastId && next.world && !next.chronicle.beastsSlain.includes(b.famousBeastId)) {
-            const beast = next.world.beasts.find((bb) => bb.id === b.famousBeastId);
-            if (beast) {
-              next.chronicle.beastsSlain.push(beast.id);
-              next.chronicle.deeds.push({
-                year: deedYear(next.world),
-                text: `${next.player!.name} did not slay ${beast.name} ${beast.epithet} - they walked out of the dark together. The Chronicle has no word for this.`,
-              });
-            }
-          }
-          next.battle = null;
-          next.screen = 'floor';
+          endBattlePeacefully(next, lines);
         }
       } else if (result.outcome === 'victory') {
         handleVictory(next, lines);
@@ -1266,15 +1385,20 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const persistent = new Set([...CLASS_DECKS[player.className], ...RACE_CARDS[player.race], TAME_CARD_ID]);
       const card = getCard(action.cardId);
       if (!card || !persistent.has(action.cardId)) return state;
-      if (player.upgradedCards.includes(action.cardId)) return state;
+      const copies =
+        CLASS_DECKS[player.className].filter((id) => id === action.cardId).length +
+        RACE_CARDS[player.race].filter((id) => id === action.cardId).length +
+        (action.cardId === TAME_CARD_ID ? 1 : 0);
+      const done = player.upgradedCounts[action.cardId] ?? 0;
+      if (done >= copies) return state;
       const cost = BALANCE.upgradeCosts[card.rarity] ?? 100;
       const next = cloneCore(state);
       if (!next.player!.spendGold(cost)) {
         next.log = pushLog(state.log, 'The smith names a price your purse cannot argue with.');
         return next;
       }
-      next.player!.upgradedCards.push(action.cardId);
-      next.log = pushLog(state.log, `${card.name} is reforged. Every copy in your deck now bears the +.`);
+      next.player!.upgradedCounts[action.cardId] = done + 1;
+      next.log = pushLog(state.log, `One copy of ${card.name} is reforged (${done + 1}/${copies}).`);
       return next;
     }
 

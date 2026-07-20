@@ -4,6 +4,16 @@ import { RACE_TRAITS, CLASS_TRAITS, TALENTS, unlockedTalents } from '../engine/d
 
 const STATS: Stat[] = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'];
 
+const STAT_HELP: Record<string, string> = {
+  STR: 'Strength - physical card damage, and it pads your maximum HP.',
+  DEF: 'Defense - shrinks incoming hits; feeds Ward-granting instincts.',
+  DEX: 'Dexterity - +1 MOV on floors per 15 DEX. Quickness in all things.',
+  MANA: 'Mana - raises max MP; MP fuels your monsters\u2019 instincts.',
+  MAGDEF: 'Magic Defense - shrinks incoming magical damage.',
+  INT: 'Intellect - magical card damage and the strength of mending.',
+  LUCK: 'Luck - better loot rarity, better shop finds, kinder rolls.',
+};
+
 export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: GameState; backScreen: Screen; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
   return (
@@ -17,8 +27,11 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
       {player.attributePoints > 0 && <p className="subtitle">✨ {player.attributePoints} attribute points to spend</p>}
 
       {STATS.map((stat) => (
-        <div className="stat-row" key={stat}>
-          <span>{stat}</span>
+        <div className="stat-row" key={stat} title={STAT_HELP[stat]}>
+          <span>
+            {stat}
+            <span className="stat-help">{STAT_HELP[stat]}</span>
+          </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {player.effectiveStat(stat)}
             {player.attributePoints > 0 && (

@@ -24,6 +24,7 @@ import { LegendOverlay } from './components/LegendOverlay';
 import { SaveLoadScreen } from './components/SaveLoadScreen';
 import { VictoryScreen } from './components/VictoryScreen';
 import { StoryOverlay } from './components/StoryOverlay';
+import { FallenScreen } from './components/FallenScreen';
 import { PartySidebar } from './components/PartySidebar';
 import { LogPanel } from './components/LogPanel';
 import { play as sfx, setMuted, isMuted } from './platform/sfx';
@@ -123,6 +124,7 @@ function App() {
         {state.screen === 'equipment' && <EquipmentScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}
+        {state.screen === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
       </main>
 
       {!inBattle && (

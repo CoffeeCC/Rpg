@@ -3,8 +3,10 @@ import { STABLE_CAP } from '../engine/game';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
+import { ItemLine } from './ItemLine';
 
-function MonsterRow({ monster, actions }: { monster: MonsterInstance; actions: React.ReactNode }) {
+function MonsterRow({ monster, charms, onCharm, actions }: { monster: MonsterInstance; charms: { uid: string; name: string }[]; onCharm: (itemUid: string) => void; actions: React.ReactNode }) {
+  const p = monster.personality;
   return (
     <div className="item-row">
       <div className="item-desc">
@@ -14,9 +16,25 @@ function MonsterRow({ monster, actions }: { monster: MonsterInstance; actions: R
         <span className="pill">
           {FAMILY_INFO[monster.family].emoji} {monster.family}
         </span>
+        {p && (
+          <span className="pill personality-pill" title={`${p.blurb} Instinct: ${p.instinctText}`}>
+            {p.name}
+          </span>
+        )}
+        <span className="pill" title="Bond grows with every battle survived. Instincts strengthen at 10 and 25.">
+          🤝 {monster.bond}
+        </span>
         <div className="affix-line">
           {monster.species.name} · HP {monster.hp}/{monster.maxHp} · STR {monster.stats.STR} DEF {monster.stats.DEF} DEX {monster.stats.DEX} INT{' '}
           {monster.stats.INT} · {monster.knownSkills.map((id) => getSkill(id)?.name ?? id).join(', ') || 'no skills'}
+        </div>
+        <div className="affix-line">
+          🧿 {monster.charm ? <ItemLine item={monster.charm} /> : 'no charm'}
+          {charms.map((c) => (
+            <button key={c.uid} className="btn small" style={{ marginLeft: 6 }} onClick={() => onCharm(c.uid)}>
+              fit {c.name}
+            </button>
+          ))}
         </div>
       </div>
       {actions}
@@ -25,6 +43,7 @@ function MonsterRow({ monster, actions }: { monster: MonsterInstance; actions: R
 }
 
 export function StableScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  const charms = state.player!.items.filter((i) => i.slot === 'charm').map((i) => ({ uid: i.uid, name: i.name }));
   return (
     <div className="panel">
       <h1 className="title">🐴 The Stable</h1>
@@ -41,6 +60,8 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterRow
             key={m.uid}
             monster={m}
+            charms={charms}
+            onCharm={(itemUid) => dispatch({ type: 'MONSTER_CHARM', monsterUid: m.uid, itemUid })}
             actions={
               <button className="btn small" onClick={() => dispatch({ type: 'PARTY_REMOVE', uid: m.uid })}>
                 To stable
@@ -59,6 +80,8 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterRow
             key={m.uid}
             monster={m}
+            charms={charms}
+            onCharm={(itemUid) => dispatch({ type: 'MONSTER_CHARM', monsterUid: m.uid, itemUid })}
             actions={
               <>
                 <button
