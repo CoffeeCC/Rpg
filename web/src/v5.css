@@ -293,7 +293,26 @@
 .town-panel {
   position: relative;
   overflow: hidden;
-  min-height: 480px;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.town-panel .town-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.town-panel .menu-grid {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.town-panel .menu-grid .btn {
+  padding: 15px 18px;
+  font-size: 1.02rem;
 }
 
 .town-content {
