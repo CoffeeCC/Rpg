@@ -225,7 +225,7 @@ export const SPECIES: Record<string, SpeciesDef> = {
     description: 'A walking wildfire that considers castles to be kindling.',
   },
 
-  // ------------------------------------------------------------ Beast (5)
+  // ------------------------------------------------------------ Beast (6)
   fangPup: {
     id: 'fangPup',
     name: 'Fang Pup',
@@ -241,6 +241,22 @@ export const SPECIES: Record<string, SpeciesDef> = {
     innateSkills: ['pounce'],
     tameBase: 38,
     description: 'All teeth and enthusiasm, mostly enthusiasm.',
+  },
+  duskhound: {
+    id: 'duskhound',
+    name: 'Duskhound',
+    emoji: '🐕',
+    family: 'Beast',
+    tier: 2,
+    baseStats: { STR: 9, DEF: 6, DEX: 8, MANA: 3, MAGDEF: 4, INT: 3, LUCK: 6 },
+    growth: { STR: 1.7, DEF: 1.2, DEX: 1.6, MANA: 0.6, MAGDEF: 0.9, INT: 0.6, LUCK: 1.2 },
+    baseHp: 31,
+    hpGrowth: 8,
+    baseMp: 5,
+    mpGrowth: 1,
+    innateSkills: ['pounce', 'decelerate'],
+    tameBase: 29,
+    description: 'A lean wolf that hunts in the hour between dusk and true dark, tireless and quiet.',
   },
   bristleBoar: {
     id: 'bristleBoar',
@@ -307,7 +323,7 @@ export const SPECIES: Record<string, SpeciesDef> = {
     description: 'A mountain that decided walking looked fun.',
   },
 
-  // ------------------------------------------------------------ Bird (5)
+  // ------------------------------------------------------------ Bird (6)
   peckerel: {
     id: 'peckerel',
     name: 'Peckerel',
@@ -388,8 +404,24 @@ export const SPECIES: Record<string, SpeciesDef> = {
     tameBase: 12,
     description: 'A young firebird still learning which deaths count.',
   },
+  ashcrestVulture: {
+    id: 'ashcrestVulture',
+    name: 'Ashcrest Vulture',
+    emoji: '🪶',
+    family: 'Bird',
+    tier: 4,
+    baseStats: { STR: 10, DEF: 8, DEX: 13, MANA: 7, MAGDEF: 8, INT: 8, LUCK: 5 },
+    growth: { STR: 1.6, DEF: 1.3, DEX: 2, MANA: 1.2, MAGDEF: 1.3, INT: 1.4, LUCK: 1 },
+    baseHp: 44,
+    hpGrowth: 9,
+    baseMp: 12,
+    mpGrowth: 3,
+    innateSkills: ['talonDive', 'sap'],
+    tameBase: 13,
+    description: 'It circles battlefields before the fighting starts, patient about which side loses.',
+  },
 
-  // ------------------------------------------------------------ Plant (5)
+  // ------------------------------------------------------------ Plant (6)
   sproutling: {
     id: 'sproutling',
     name: 'Sproutling',
@@ -438,6 +470,22 @@ export const SPECIES: Record<string, SpeciesDef> = {
     tameBase: 27,
     description: 'A melancholy fungus that saps more than moods.',
   },
+  widowsBloom: {
+    id: 'widowsBloom',
+    name: "Widow's Bloom",
+    emoji: '🥀',
+    family: 'Plant',
+    tier: 2,
+    baseStats: { STR: 5, DEF: 5, DEX: 5, MANA: 8, MAGDEF: 6, INT: 7, LUCK: 4 },
+    growth: { STR: 0.9, DEF: 1, DEX: 0.9, MANA: 1.5, MAGDEF: 1.2, INT: 1.4, LUCK: 0.8 },
+    baseHp: 29,
+    hpGrowth: 7,
+    baseMp: 11,
+    mpGrowth: 2,
+    innateSkills: ['venomFang', 'leech'],
+    tameBase: 28,
+    description: 'Petals sweet enough to draw prey close, roots patient enough to wait for the poison to work.',
+  },
   elderTreant: {
     id: 'elderTreant',
     name: 'Elder Treant',
@@ -471,7 +519,7 @@ export const SPECIES: Record<string, SpeciesDef> = {
     description: 'A petal fallen from the world-tree, still dreaming of spring.',
   },
 
-  // ------------------------------------------------------------ Bug (5)
+  // ------------------------------------------------------------ Bug (6)
   skitterling: {
     id: 'skitterling',
     name: 'Skitterling',
@@ -487,6 +535,22 @@ export const SPECIES: Record<string, SpeciesDef> = {
     innateSkills: ['venomFang'],
     tameBase: 42,
     description: 'A beetle the size of a shield with the courage of one.',
+  },
+  cinderScorpion: {
+    id: 'cinderScorpion',
+    name: 'Cinder Scorpion',
+    emoji: '🦂',
+    family: 'Bug',
+    tier: 1,
+    baseStats: { STR: 5, DEF: 4, DEX: 7, MANA: 3, MAGDEF: 3, INT: 3, LUCK: 5 },
+    growth: { STR: 1.1, DEF: 0.9, DEX: 1.6, MANA: 0.7, MAGDEF: 0.8, INT: 0.7, LUCK: 1.1 },
+    baseHp: 21,
+    hpGrowth: 5,
+    baseMp: 5,
+    mpGrowth: 1,
+    innateSkills: ['venomFang'],
+    tameBase: 41,
+    description: 'A coal-black scorpion that scuttles through cooling ash, its sting laced with slow poison.',
   },
   dartWasp: {
     id: 'dartWasp',
@@ -553,7 +617,7 @@ export const SPECIES: Record<string, SpeciesDef> = {
     description: 'Ten thousand loyal subjects, and every one of them armed.',
   },
 
-  // ------------------------------------------------------------ Devil (5)
+  // ------------------------------------------------------------ Devil (6)
   impling: {
     id: 'impling',
     name: 'Impling',
@@ -601,6 +665,22 @@ export const SPECIES: Record<string, SpeciesDef> = {
     innateSkills: ['gloomburst'],
     tameBase: 19,
     description: 'It arrives with the last light and negotiates in regret.',
+  },
+  hollowMarionette: {
+    id: 'hollowMarionette',
+    name: 'Hollow Marionette',
+    emoji: '🎭',
+    family: 'Devil',
+    tier: 3,
+    baseStats: { STR: 8, DEF: 7, DEX: 9, MANA: 7, MAGDEF: 7, INT: 9, LUCK: 4 },
+    growth: { STR: 1.3, DEF: 1.2, DEX: 1.5, MANA: 1.3, MAGDEF: 1.3, INT: 1.7, LUCK: 0.8 },
+    baseHp: 36,
+    hpGrowth: 8,
+    baseMp: 13,
+    mpGrowth: 3,
+    innateSkills: ['shade', 'blunt'],
+    tameBase: 19,
+    description: 'Strings long since rotted away; something smaller and crueler pulls from inside now.',
   },
   nightTerror: {
     id: 'nightTerror',
@@ -717,7 +797,7 @@ export const SPECIES: Record<string, SpeciesDef> = {
     description: 'It solved death and considers that merely a first draft.',
   },
 
-  // ------------------------------------------------------------ Material (5)
+  // ------------------------------------------------------------ Material (6)
   pebblit: {
     id: 'pebblit',
     name: 'Pebblit',
@@ -797,6 +877,22 @@ export const SPECIES: Record<string, SpeciesDef> = {
     innateSkills: ['gigaCleave', 'quakeSlam', 'ironWill'],
     tameBase: 8,
     description: 'A siege engine that outlived every army that built it.',
+  },
+  obsidianWarden: {
+    id: 'obsidianWarden',
+    name: 'Obsidian Warden',
+    emoji: '🌑',
+    family: 'Material',
+    tier: 5,
+    baseStats: { STR: 11, DEF: 15, DEX: 4, MANA: 8, MAGDEF: 13, INT: 8, LUCK: 5 },
+    growth: { STR: 1.7, DEF: 2.1, DEX: 0.6, MANA: 1.1, MAGDEF: 1.7, INT: 1.3, LUCK: 0.9 },
+    baseHp: 66,
+    hpGrowth: 11,
+    baseMp: 10,
+    mpGrowth: 2,
+    innateSkills: ['quakeSlam', 'ironWill', 'magicBarrier'],
+    tameBase: 8,
+    description: 'Carved to guard a vault that crumbled centuries ago; it has not yet been told to stop.',
   },
 };
 

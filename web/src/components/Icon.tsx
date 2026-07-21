@@ -1,9 +1,8 @@
 import { ICON_ART } from '../art/iconArt';
 
 /**
- * Painted icon with emoji fallback. Icons are painted on pure black and
- * composite via mix-blend-mode: screen (same trick as the character art),
- * so they sit cleanly on any dark surface.
+ * Painted icon with emoji fallback. Icons are transparent PNGs (black keyed
+ * out), so they composite cleanly on any dark surface.
  */
 export function Icon({ name, emoji, size = 20 }: { name: string; emoji: string; size?: number }) {
   const src = ICON_ART[name];

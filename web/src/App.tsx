@@ -25,6 +25,7 @@ import { SaveLoadScreen } from './components/SaveLoadScreen';
 import { VictoryScreen } from './components/VictoryScreen';
 import { StoryOverlay } from './components/StoryOverlay';
 import { FallenScreen } from './components/FallenScreen';
+import { MonsterSheetScreen } from './components/MonsterSheetScreen';
 import { PartySidebar } from './components/PartySidebar';
 import { LogPanel } from './components/LogPanel';
 import { play as sfx, setMuted, isMuted } from './platform/sfx';
@@ -121,6 +122,7 @@ function App() {
         {state.screen === 'deck' && <DeckScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
         {state.screen === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {state.screen === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}
         {state.screen === 'equipment' && <EquipmentScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}

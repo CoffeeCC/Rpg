@@ -5,7 +5,7 @@ import { isMuted } from '../platform/sfx';
 
 /** Chapters with recorded narration (served from /public/audio). */
 const NARRATION: Record<number, string> = {
-  0: '/audio/narration_intro.mp3',
+  0: 'audio/narration_intro.mp3',
 };
 
 export function StoryOverlay({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {

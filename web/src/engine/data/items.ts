@@ -41,6 +41,7 @@ export const ITEM_TYPES: Record<ItemTypeName, ItemTypeDef> = {
   Amulet: { slot: 'amulet', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 34 },
   Pendant: { slot: 'pendant', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 34 },
   Charm: { slot: 'charm', primaryStat: null, materials: ['Stone', 'Bronze', 'Iron', 'Steel', 'Glass', 'Mithril'], baseValue: 44 },
+  Trinket: { slot: 'trinket', primaryStat: null, materials: ['Bone', 'Bronze', 'Iron', 'Silver', 'Glass', 'Mithril'], baseValue: 40 },
 };
 
 // --- Consumables ---

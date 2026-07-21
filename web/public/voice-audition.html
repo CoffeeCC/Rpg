@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Everdusk — NPC Voice Audition</title>
+  <style>
+    body { background:#0b0a08; color:#e8dcc0; font-family:system-ui,sans-serif; margin:0; padding:28px; }
+    h1 { font-size:1.3rem; letter-spacing:.06em; color:#c8a24a; }
+    p { color:#9a8f78; margin:.2rem 0 1.4rem; max-width:720px; }
+    .npc { border:1px solid #3a3020; border-radius:9px; padding:14px 16px; margin-bottom:12px; background:#141009; max-width:720px; }
+    .npc h2 { margin:0 0 4px; font-size:1.05rem; color:#e8dcc0; }
+    .npc .desc { color:#9a8f78; font-size:.85rem; margin-bottom:10px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    button { background:#1a160f; color:#e8dcc0; border:1px solid #3a3020; border-radius:7px; padding:10px 16px; font-size:.95rem; cursor:pointer; }
+    button:hover { border-color:#c8a24a; background:#231d12; }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Everdusk — Custom NPC Voice Audition</h1>
+  <p>Each townsfolk has a bespoke ElevenLabs voice, rendered with the eleven_v3 model. The big button is their voice speaking a real line. The small buttons are the 3 original design takes if you want to compare. Tell Claude which NPCs to re-roll. The narrator stays Deckard.</p>
+  <div id="list"></div>
+  <script>
+    const npcs = [
+      ['dovey','Dovey — warm, gravel-edged innkeeper'],
+      ['bram','Bram — gruff, clipped watch captain'],
+      ['maribel','Maribel — soft, grief-worn elderly widow'],
+      ['ott','Ott — slow, earthy stablemaster'],
+      ['kess','Kess — quick, cocky rival tamer'],
+      ['casque','Casque — hushed, reverent friar'],
+      ['rowan','Rowan — ancient, slow village elder'],
+      ['fennick','Fennick — dry, deadpan gravedigger'],
+      ['sess','Sess — bright, hopeful lamplighter'],
+    ];
+    const list = document.getElementById('list');
+    const a = new Audio();
+    const play = (src) => { a.src=src; a.play(); };
+    for (const [id,label] of npcs){
+      const div = document.createElement('div'); div.className='npc';
+      const parts = label.split(' — ');
+      div.innerHTML = '<h2>'+parts[0]+'</h2><div class="desc">'+parts[1]+'</div>';
+      const row = document.createElement('div'); row.className='row';
+      const main=document.createElement('button');
+      main.textContent = '▶ Hear ' + parts[0] + ' (v3)';
+      main.style.borderColor = '#c8a24a';
+      main.onclick = () => play('audio/voices/'+id+'_v3.mp3');
+      row.appendChild(main);
+      for (let t=1;t<=3;t++){
+        const b=document.createElement('button');
+        b.textContent = 'take '+t;
+        b.style.fontSize='.8rem'; b.style.opacity='.7';
+        b.onclick = () => play('audio/voices/'+id+'_'+t+'.mp3');
+        row.appendChild(b);
+      }
+      div.appendChild(row); list.appendChild(div);
+    }
+  </script>
+</body>
+</html>

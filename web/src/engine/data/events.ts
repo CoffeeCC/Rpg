@@ -764,4 +764,188 @@ export const EVENTS: EventDef[] = [
       },
     ],
   },
+  {
+    id: 'weighingStone',
+    name: 'The Weighing Stone',
+    emoji: '⚖️',
+    text: 'A slab of black stone squats at the crossway, an old brass scale bolted to its face. One pan sits empty. The other holds a heart-shaped stone that has clearly been sitting there since before names were a thing people had.',
+    options: [
+      {
+        label: 'Balance the scale with gold',
+        resultText: 'The pans level out with a soft click, like a held breath finally let go. Something about the fairness of it settles in your bones.',
+        outcomes: [{ kind: 'goldLoss', amount: 45 }, { kind: 'statBoost', stat: 'DEF', amount: 2 }],
+      },
+      {
+        label: 'Take the heart-stone',
+        resultText: 'It comes free lighter than it looks and heavier than it should feel. The scale does not forgive an empty pan quietly.',
+        outcomes: [{ kind: 'item', ilvlBonus: 2 }, { kind: 'damagePct', pct: 10 }],
+      },
+      {
+        label: 'Leave the scale be',
+        resultText: 'Some things are balanced on purpose. You let it keep weighing whatever it is weighing.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
+  {
+    id: 'sleeplessMiller',
+    name: 'The Sleepless Miller',
+    emoji: '⚙️',
+    text: 'A mill wheel turns without a river to drive it, grinding something pale in the hopper below. The miller has not looked up in longer than that. Flour dust has settled over him in the shape of a man who forgot how to stop.',
+    options: [
+      {
+        label: 'Ask what he\'s grinding',
+        resultText: '"Regrets," he says, not unkindly, and hands you a fistful to taste. It tastes like clarity, and costs about as much.',
+        outcomes: [{ kind: 'statBoost', stat: 'INT', amount: 1 }, { kind: 'damagePct', pct: 5 }],
+      },
+      {
+        label: 'Fill a sack while he\'s distracted',
+        resultText: 'The flour sells strangely well to the right buyer, no questions asked. The wheel creaks once, like it noticed.',
+        outcomes: [{ kind: 'gold', amount: 70 }, { kind: 'fight', rarity: 'Common' }],
+      },
+      {
+        label: 'Oil the wheel and go',
+        resultText: 'It turns quieter now. Somewhere under all that dust, you could swear the miller sighs in relief.',
+        outcomes: [{ kind: 'goldLoss', amount: 15 }],
+      },
+    ],
+  },
+  {
+    id: 'orphanedTorch',
+    name: 'The Orphaned Torch',
+    emoji: '🪔',
+    text: 'A torch burns in an iron sconce, but the wall around it is bare stone — no bracket, no soot trail, nothing holding it up but the burning itself. It has clearly been alight since before the corridor existed.',
+    options: [
+      {
+        label: 'Carry the flame onward',
+        resultText: 'It leaves the sconce without protest, warm and weightless in your hand, and settles into your pack like it had been waiting for a reason to travel.',
+        outcomes: [{ kind: 'consumable', name: 'Ether', count: 1 }, { kind: 'statBoost', stat: 'MAGDEF', amount: 1 }],
+      },
+      {
+        label: 'Douse it in the name of the dark',
+        resultText: 'The flame goes out with a sound like a held-in scream. The dark that rushes in was not asked for and does not care.',
+        outcomes: [{ kind: 'fight', rarity: 'Rare' }],
+      },
+      {
+        label: 'Leave it burning and walk past',
+        resultText: 'Whatever keeps it lit is none of your business tonight. You give it a wide, respectful berth.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
+  {
+    id: 'beastInWall',
+    name: 'The Beast in the Wall',
+    emoji: '🧱',
+    text: 'Something breathes on the other side of the stone, slow and enormous, in rhythm with a heartbeat you can feel through your boots. There is no door. There has never needed to be a door.',
+    options: [
+      {
+        label: 'Break through',
+        resultText: 'The stone gives all at once, and so does whatever was keeping it company on the other side. It was guarding something worth the trouble.',
+        outcomes: [{ kind: 'fight', rarity: 'Rare' }, { kind: 'item', ilvlBonus: 2 }],
+      },
+      {
+        label: 'Press your palm to the stone',
+        resultText: 'The heartbeat syncs with yours for three long beats before the wall goes cold again. You come away stronger, and a little worse for the introduction.',
+        outcomes: [{ kind: 'statBoost', stat: 'STR', amount: 2 }, { kind: 'damagePct', pct: 8 }],
+      },
+      {
+        label: 'Back away quietly',
+        resultText: 'You match your footsteps to the silence between heartbeats, all the way to the corner. It never notices, or it is very patient.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
+  {
+    id: 'coinlessFerryman',
+    name: 'The Coinless Ferryman',
+    emoji: '🛶',
+    text: 'An underground river runs black and silent, and a ferryman waits at its edge with an empty hand outstretched. He has been waiting so long the boat has grown roots into the bank.',
+    options: [
+      {
+        label: 'Pay his fare (50g)',
+        resultText: 'He nods once, like a debt finally settled, and poles you across without a word. On the far bank, someone else\'s fare was never collected.',
+        outcomes: [{ kind: 'goldLoss', amount: 50 }, { kind: 'item', ilvlBonus: 1 }],
+      },
+      {
+        label: 'Try to cross without paying',
+        resultText: 'The water was never the obstacle. The ferryman was. He remembers how to be one.',
+        outcomes: [{ kind: 'fight', rarity: 'Alpha' }],
+      },
+      {
+        label: 'Turn back the way you came',
+        resultText: 'Some rivers are not worth the toll. He watches you go with what might, in a kinder light, be approval.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
+  {
+    id: 'widowsLoom',
+    name: 'The Widow\'s Loom',
+    emoji: '🧵',
+    text: 'A loom clacks alone in an alcove, weaving a tapestry that keeps updating itself. It appears to be finishing a picture of exactly this corridor, and exactly you, standing here reading this.',
+    options: [
+      {
+        label: 'Watch it finish',
+        resultText: 'The last thread pulls tight and the picture holds still. You did not enjoy what you saw, but you understand yourself a little better for it.',
+        outcomes: [{ kind: 'statBoost', stat: 'INT', amount: 1 }, { kind: 'damagePct', pct: 5 }],
+      },
+      {
+        label: 'Cut the thread',
+        resultText: 'The loom shrieks like a thing losing an argument with its own purpose, and comes at you with every needle it has left.',
+        outcomes: [{ kind: 'fight', rarity: 'Common' }, { kind: 'statBoost', stat: 'LUCK', amount: 2 }],
+      },
+      {
+        label: 'Steal the finished corner',
+        resultText: 'You tear off the one part of the tapestry that had already happened. It feels, absurdly, like getting away with something.',
+        outcomes: [{ kind: 'item', ilvlBonus: 1 }],
+      },
+    ],
+  },
+  {
+    id: 'starvingShrine',
+    name: 'The Starving Shrine',
+    emoji: '🍽️',
+    text: 'A shrine shaped like an open mouth waits at the corridor\'s end, its stone tongue worn smooth by a thousand offerings that were apparently not enough. It is, unmistakably, still hungry.',
+    options: [
+      {
+        label: 'Feed it gold',
+        resultText: 'The coins vanish down its stone throat without a sound. It settles, briefly satisfied, and lends you a fraction of its old patience.',
+        outcomes: [{ kind: 'goldLoss', amount: 80 }, { kind: 'statBoost', stat: 'MAGDEF', amount: 2 }],
+      },
+      {
+        label: 'Feed it a memory instead',
+        resultText: 'You give it something you had not looked at in years. It takes that too, and leaves you sharper for the vacancy.',
+        outcomes: [{ kind: 'damagePct', pct: 12 }, { kind: 'statBoost', stat: 'INT', amount: 2 }],
+      },
+      {
+        label: 'Refuse and back away',
+        resultText: 'You have nothing it wants badly enough to chase. It watches you go, still hungry, endlessly patient about it.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
+  {
+    id: 'moltingColossus',
+    name: 'The Molting Colossus',
+    emoji: '🦴',
+    text: 'A shed carapace the size of a wagon lies half-buried in silt, still faintly warm, a hundred molted scales scattered like fallen coins. Whatever wore this walked out of this corridor bigger than it walked in.',
+    options: [
+      {
+        label: 'Gather the scales',
+        resultText: 'They ring like coins when they clatter into your pack. Somewhere close, the thing that grew out of them notices the sound.',
+        outcomes: [{ kind: 'item', ilvlBonus: 2 }, { kind: 'fight', rarity: 'Alpha' }],
+      },
+      {
+        label: 'Grind a scale into powder and drink it',
+        resultText: 'It goes down like ground glass and old thunder. Whatever it does to you, it is not subtle about doing it.',
+        outcomes: [{ kind: 'statBoost', stat: 'STR', amount: 2 }, { kind: 'damagePct', pct: 10 }],
+      },
+      {
+        label: 'Leave the molt undisturbed',
+        resultText: 'Something that outgrows a corridor this size does not need your opinion on its leftovers. You agree, silently, and move on.',
+        outcomes: [{ kind: 'nothing' }],
+      },
+    ],
+  },
 ];

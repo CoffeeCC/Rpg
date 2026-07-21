@@ -9,6 +9,7 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
   const all = [...CLASS_DECKS[player.className], ...RACE_CARDS[player.race], TAME_CARD_ID];
   const ids = [...new Set(all)];
   const charmCost = 90 + player.level * 10;
+  const trinketCost = 110 + player.level * 12;
 
   return (
     <div className="panel">
@@ -31,6 +32,22 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
           }}
         >
           {charmCost}g
+        </button>
+      </div>
+
+      <div className="item-row" style={{ marginBottom: 12 }}>
+        <div className="item-desc">
+          🧿 <b>Forge a trinket</b> — a monster's second accessory. Two blessings or three, if the metal is willing.
+        </div>
+        <button
+          className="btn small primary"
+          disabled={player.gold < trinketCost}
+          onClick={() => {
+            sfx('gold');
+            dispatch({ type: 'FORGE_TRINKET' });
+          }}
+        >
+          {trinketCost}g
         </button>
       </div>
 

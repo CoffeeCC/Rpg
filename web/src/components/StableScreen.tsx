@@ -2,15 +2,17 @@ import type { GameAction, GameState } from '../engine/game';
 import { STABLE_CAP } from '../engine/game';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { FAMILY_INFO } from '../engine/data/species';
-import { getSkill } from '../engine/data/skills';
-import { ItemLine } from './ItemLine';
+import { MonsterImage } from '../art/MonsterImage';
 
-function MonsterRow({ monster, charms, onCharm, actions }: { monster: MonsterInstance; charms: { uid: string; name: string }[]; onCharm: (itemUid: string) => void; actions: React.ReactNode }) {
+function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; actions: React.ReactNode; onView: () => void }) {
   const p = monster.personality;
   return (
-    <div className="item-row">
-      <div className="item-desc">
-        {monster.species.emoji} <b>{monster.nickname}</b>
+    <div className="item-row monster-row">
+      <button className="monster-row-view" onClick={onView} title="Open character sheet">
+        <MonsterImage speciesId={monster.speciesId} size={54} rarity={monster.rarity} />
+      </button>
+      <div className="item-desc" style={{ flex: 1 }}>
+        <b>{monster.nickname}</b>
         {monster.plus > 0 && <span className="pill">+{monster.plus}</span>}
         <span className="pill">Lv{monster.level}</span>
         <span className="pill">
@@ -21,34 +23,30 @@ function MonsterRow({ monster, charms, onCharm, actions }: { monster: MonsterIns
             {p.name}
           </span>
         )}
-        <span className="pill" title="Bond grows with every battle survived. Instincts strengthen at 10 and 25.">
+        <span className="pill" title="Bond grows with every battle survived.">
           🤝 {monster.bond}
         </span>
         <div className="affix-line">
-          {monster.species.name} · HP {monster.hp}/{monster.maxHp} · STR {monster.stats.STR} DEF {monster.stats.DEF} DEX {monster.stats.DEX} INT{' '}
-          {monster.stats.INT} · {monster.knownSkills.map((id) => getSkill(id)?.name ?? id).join(', ') || 'no skills'}
-        </div>
-        <div className="affix-line">
-          🧿 {monster.charm ? <ItemLine item={monster.charm} /> : 'no charm'}
-          {charms.map((c) => (
-            <button key={c.uid} className="btn small" style={{ marginLeft: 6 }} onClick={() => onCharm(c.uid)}>
-              fit {c.name}
-            </button>
-          ))}
+          HP {monster.hp}/{monster.maxHp} · STR {monster.stats.STR} DEF {monster.stats.DEF} DEX {monster.stats.DEX} INT {monster.stats.INT}
+          {(monster.charm || monster.trinket) && <span> · 🧿 {[monster.charm, monster.trinket].filter(Boolean).length} worn</span>}
         </div>
       </div>
-      {actions}
+      <div className="monster-row-actions">
+        <button className="btn small" onClick={onView}>
+          View ▸
+        </button>
+        {actions}
+      </div>
     </div>
   );
 }
 
 export function StableScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
-  const charms = state.player!.items.filter((i) => i.slot === 'charm').map((i) => ({ uid: i.uid, name: i.name }));
   return (
     <div className="panel">
       <h1 className="title">🐴 The Stable</h1>
       <p className="subtitle">
-        Active party {state.party.length}/{state.player!.traits.partyCap} · Stable {state.stable.length}/{STABLE_CAP}
+        Active party {state.party.length}/{state.player!.traits.partyCap} · Stable {state.stable.length}/{STABLE_CAP} · click a companion to open its page
       </p>
 
       <h2 className="title" style={{ fontSize: '1rem' }}>
@@ -60,8 +58,7 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterRow
             key={m.uid}
             monster={m}
-            charms={charms}
-            onCharm={(itemUid) => dispatch({ type: 'MONSTER_CHARM', monsterUid: m.uid, itemUid })}
+            onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
             actions={
               <button className="btn small" onClick={() => dispatch({ type: 'PARTY_REMOVE', uid: m.uid })}>
                 To stable
@@ -80,8 +77,7 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterRow
             key={m.uid}
             monster={m}
-            charms={charms}
-            onCharm={(itemUid) => dispatch({ type: 'MONSTER_CHARM', monsterUid: m.uid, itemUid })}
+            onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
             actions={
               <>
                 <button

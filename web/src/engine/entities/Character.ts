@@ -8,7 +8,7 @@ import { makeStartingItem } from '../systems/lootGen';
 
 const BASE_STATS: StatBlock = { STR: 3, DEF: 3, DEX: 3, MANA: 3, MAGDEF: 3, INT: 3, LUCK: 3 };
 /** Hero-wearable equipment keys (charms belong to monsters; rings come in pairs). */
-export type EquipKey = Exclude<EquipmentSlot, 'charm'> | 'ring2';
+export type EquipKey = Exclude<EquipmentSlot, 'charm' | 'trinket'> | 'ring2';
 const EQUIPMENT_SLOTS: EquipKey[] = ['weapon', 'armor', 'headpiece', 'gloves', 'boots', 'ring', 'ring2', 'amulet', 'pendant'];
 
 export type Equipment = Record<EquipKey, ItemV2 | null>;

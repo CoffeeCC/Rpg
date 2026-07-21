@@ -47,8 +47,9 @@ export class MonsterInstance {
   personalityId: string;
   /** Battles survived at the player's side; instincts strengthen with bond. */
   bond = 0;
-  /** Forged charm worn by this monster (its one equipment slot). */
+  /** Accessories worn by this monster: a charm and a trinket. */
   charm: ItemV2 | null = null;
+  trinket: ItemV2 | null = null;
 
   stats: StatBlock = { ...EMPTY_STATS };
   maxHp = 1;
@@ -155,8 +156,9 @@ export class MonsterInstance {
         if (g) this.stats[stat] = Math.max(1, Math.floor(this.stats[stat] * g));
       }
     }
-    if (this.charm) {
-      for (const affix of this.charm.affixes) {
+    for (const acc of [this.charm, this.trinket]) {
+      if (!acc) continue;
+      for (const affix of acc.affixes) {
         if (affix.target in EMPTY_STATS) {
           this.stats[affix.target as Stat] += affix.amount;
         } else if (affix.target === 'HP') {
@@ -281,6 +283,7 @@ export class MonsterInstance {
       statusEffects: this.statusEffects.map((s) => ({ ...s })),
       activeMods: this.activeMods.map((m) => ({ ...m })),
       charm: this.charm ? { ...this.charm, affixes: this.charm.affixes.map((a) => ({ ...a })) } : null,
+      trinket: this.trinket ? { ...this.trinket, affixes: this.trinket.affixes.map((a) => ({ ...a })) } : null,
     });
     return copy;
   }

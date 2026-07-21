@@ -22,7 +22,7 @@ import {
   type BattleState,
 } from './systems/cardBattle';
 import { breed, canBreed } from './systems/breeding';
-import { generateItem, forgeCharm } from './systems/lootGen';
+import { generateItem, forgeCharm, forgeTrinket } from './systems/lootGen';
 import { generateWorld, forgeArtifactItem } from './systems/worldgen';
 import {
   newExpedition,
@@ -73,6 +73,7 @@ export type Screen =
   | 'deck'
   | 'smith'
   | 'characterSheet'
+  | 'monsterSheet'
   | 'equipment'
   | 'saveLoad'
   | 'victory'
@@ -139,6 +140,8 @@ export interface GameState {
   seen: { questCount: number; tavernChapter: number };
   /** Unique per run — used to bank Tellings verses exactly once on death. */
   runId: string;
+  /** Which party/stable monster the monster sheet is showing. */
+  selectedMonsterUid: string | null;
   /** Set when the run ends (PLAN5 #49): the Fallen screen's summary. */
   fallenSummary: { verses: number; level: number; orbs: number; beasts: number } | null;
   /** Transient FX from the last battle action — consumed by the UI, never saved. */
@@ -156,7 +159,10 @@ export type GameAction =
   | { type: 'MERCHANT_BUY'; what: 'consumable' | 'gear' | 'card'; index: number }
   | { type: 'MERCHANT_CLOSE' }
   | { type: 'FORGE_CHARM' }
-  | { type: 'MONSTER_CHARM'; monsterUid: string; itemUid: string }
+  | { type: 'FORGE_TRINKET' }
+  | { type: 'OPEN_MONSTER'; uid: string }
+  | { type: 'MONSTER_EQUIP'; monsterUid: string; itemUid: string }
+  | { type: 'MONSTER_UNEQUIP'; monsterUid: string; slot: 'charm' | 'trinket' }
   | { type: 'MERCY_SPARE' }
   | { type: 'MERCY_FINISH' }
   | { type: 'LEAVE_GATE' }
@@ -209,6 +215,7 @@ export function initialGameState(): GameState {
     lastTalk: null,
     seen: { questCount: 0, tavernChapter: 0 },
     runId: 'run0',
+    selectedMonsterUid: null,
     fallenSummary: null,
     lastFx: [],
     log: [],
@@ -1028,18 +1035,56 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return next;
     }
 
-    case 'MONSTER_CHARM': {
-      if (!state.player || state.screen !== 'stable') return state;
+    case 'FORGE_TRINKET': {
+      if (!state.player || state.screen !== 'smith') return state;
+      const cost = 110 + state.player.level * 12;
+      const next = cloneCore(state);
+      if (!next.player!.spendGold(cost)) {
+        next.log = pushLog(state.log, 'The smith names a price your purse cannot argue with.');
+        return next;
+      }
+      const trinket = forgeTrinket(next.player!.level, next.player!.effectiveStat('LUCK'));
+      next.player!.addItem(trinket);
+      next.log = pushLog(state.log, `The smith threads ${trinket.name} onto a cord. "A small kindness for a small companion."`);
+      return next;
+    }
+
+    case 'OPEN_MONSTER': {
+      if (!state.player) return state;
+      if (![...state.party, ...state.stable].some((m) => m.uid === action.uid)) return state;
+      return { ...state, selectedMonsterUid: action.uid, screen: 'monsterSheet' };
+    }
+
+    case 'MONSTER_EQUIP': {
+      if (!state.player || (state.screen !== 'stable' && state.screen !== 'monsterSheet')) return state;
       const next = cloneCore(state);
       const monster = [...next.party, ...next.stable].find((m) => m.uid === action.monsterUid);
-      const idx = next.player!.items.findIndex((i) => i.uid === action.itemUid && i.slot === 'charm');
+      const idx = next.player!.items.findIndex((i) => i.uid === action.itemUid && (i.slot === 'charm' || i.slot === 'trinket'));
       if (!monster || idx === -1) return state;
-      const [charm] = next.player!.items.splice(idx, 1);
-      if (monster.charm) next.player!.items.push(monster.charm);
-      monster.charm = charm;
+      const [acc] = next.player!.items.splice(idx, 1);
+      const prev = acc.slot === 'trinket' ? monster.trinket : monster.charm;
+      if (prev) next.player!.items.push(prev);
+      if (acc.slot === 'trinket') monster.trinket = acc;
+      else monster.charm = acc;
       monster.deriveStats();
       monster.hp = Math.min(monster.hp, monster.maxHp);
-      next.log = pushLog(state.log, `${monster.nickname} wears ${charm.name} now. It seems pleased, in its way.`);
+      next.log = pushLog(state.log, `${monster.nickname} wears ${acc.name} now.`);
+      return next;
+    }
+
+    case 'MONSTER_UNEQUIP': {
+      if (!state.player || (state.screen !== 'stable' && state.screen !== 'monsterSheet')) return state;
+      const next = cloneCore(state);
+      const monster = [...next.party, ...next.stable].find((m) => m.uid === action.monsterUid);
+      if (!monster) return state;
+      const acc = action.slot === 'trinket' ? monster.trinket : monster.charm;
+      if (!acc) return state;
+      next.player!.addItem(acc);
+      if (action.slot === 'trinket') monster.trinket = null;
+      else monster.charm = null;
+      monster.deriveStats();
+      monster.hp = Math.min(monster.hp, monster.maxHp);
+      next.log = pushLog(state.log, `${monster.nickname} sets aside ${acc.name}.`);
       return next;
     }
 

@@ -26,10 +26,20 @@ export type SfxName =
   | 'gold'
   | 'uiClick';
 
+const SFX_NAMES: SfxName[] = [
+  'cardHover', 'cardPlay', 'slash', 'pierce', 'fire', 'frost', 'bolt', 'dark', 'holy',
+  'hit', 'block', 'heal', 'hurt', 'ko', 'tameSuccess', 'tameFail', 'victory', 'defeat',
+  'endTurn', 'draw', 'gold', 'uiClick',
+];
+
 let muted = false;
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let noiseBuffer: AudioBuffer | null = null;
+
+/** Decoded ElevenLabs SFX. Missing/not-yet-loaded → the synth covers it. */
+const clips: Partial<Record<SfxName, AudioBuffer>> = {};
+let loadStarted = false;
 
 export function setMuted(value: boolean) {
   muted = value;
@@ -37,6 +47,35 @@ export function setMuted(value: boolean) {
 
 export function isMuted(): boolean {
   return muted;
+}
+
+/** Fetch + decode every clip once, on the first user gesture. */
+function loadClips(c: AudioContext) {
+  if (loadStarted) return;
+  loadStarted = true;
+  const base = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '';
+  for (const name of SFX_NAMES) {
+    fetch(`${base}audio/sfx/${name}.mp3`)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('404'))))
+      .then((buf) => c.decodeAudioData(buf))
+      .then((decoded) => {
+        clips[name] = decoded;
+      })
+      .catch(() => {
+        // No clip → synth fallback keeps that sound working.
+      });
+  }
+}
+
+/** Play the recorded clip if it's loaded. Returns false to fall back to synth. */
+function playClip(c: AudioContext, name: SfxName): boolean {
+  const buffer = clips[name];
+  if (!buffer || !master) return false;
+  const src = c.createBufferSource();
+  src.buffer = buffer;
+  src.connect(master);
+  src.start();
+  return true;
 }
 
 function getCtx(): AudioContext | null {
@@ -233,7 +272,9 @@ export function play(name: SfxName) {
     const c = getCtx();
     if (!c) return;
     if (c.state === 'suspended') void c.resume();
-    synth(name);
+    loadClips(c);
+    // Recorded clip when it's ready; the synth covers everything else.
+    if (!playClip(c, name)) synth(name);
   } catch {
     // Audio is a garnish; never let it take the meal down.
   }

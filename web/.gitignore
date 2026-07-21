@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 art-staging/
+
+# API key — never commit
+.elevenlabs.key
+gear-staging/
+gen2-staging/

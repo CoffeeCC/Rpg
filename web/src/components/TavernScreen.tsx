@@ -1,15 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { CHRONICLER_BOONS, loadTellings, purchaseBoon } from '../platform/tellings';
 import { NPCS } from '../engine/data/npcs';
+import { NPC_LINE_AUDIO } from '../engine/data/npcLineAudio';
 import { NpcPortrait, NPC_ACCENTS } from '../art/npcArt';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
-import { play as sfx } from '../platform/sfx';
+import { play as sfx, isMuted } from '../platform/sfx';
+
+const AUDIO_BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '';
 
 export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [meta, setMeta] = useState(loadTellings());
   const talking = state.lastTalk ? NPCS.find((n) => n.id === state.lastTalk!.npcId) : null;
   const accent = talking ? NPC_ACCENTS[talking.id] ?? '#c8a24a' : '#c8a24a';
+  const voiceRef = useRef<HTMLAudioElement | null>(null);
+
+  // Speak the line when a townsfolk greets you (voiced greetings only; the
+  // procedurally-filled rumors have no recording and simply stay text).
+  useEffect(() => {
+    voiceRef.current?.pause();
+    if (!state.lastTalk || isMuted()) return;
+    const clip = NPC_LINE_AUDIO[`${state.lastTalk.npcId}|${state.lastTalk.text}`];
+    if (!clip) return;
+    const audio = new Audio(AUDIO_BASE + clip);
+    audio.volume = 0.95;
+    voiceRef.current = audio;
+    audio.play().catch(() => {});
+    return () => audio.pause();
+  }, [state.lastTalk]);
   return (
     <div className="panel tavern">
       <h1 className="title">🕯️ The Held Breath</h1>

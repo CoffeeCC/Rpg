@@ -5,7 +5,7 @@ import { PAINTED_MONSTERS, PAINTED_HEROES } from './paintedCharacters';
 
 /**
  * Painted monster art (Grok-generated, on pure black, composited with
- * mix-blend-mode: screen so the black vanishes over dark scenes). Falls back
+ * transparent PNG so it composites on any scene). Falls back
  * to the procedural SVG silhouette when no painting exists or the render is
  * too small to read (map tokens, sidebar minis).
  */

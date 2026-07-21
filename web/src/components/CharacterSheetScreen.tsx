@@ -1,6 +1,7 @@
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { Stat } from '../engine/types';
 import { RACE_TRAITS, CLASS_TRAITS, TALENTS, unlockedTalents } from '../engine/data/traits';
+import { MonsterImage } from '../art/MonsterImage';
 
 const STATS: Stat[] = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'];
 
@@ -84,6 +85,24 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
             </div>
           ) : null;
         })()}
+      </div>
+
+      <h2 className="title" style={{ fontSize: '1rem', marginTop: 14 }}>
+        Party
+      </h2>
+      <div className="option-list">
+        {state.party.length === 0 && <p className="subtitle">No companions yet. Tame a monster out in the gates.</p>}
+        {state.party.map((m) => (
+          <button key={m.uid} className="item-row party-link" onClick={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}>
+            <MonsterImage speciesId={m.speciesId} size={40} rarity={m.rarity} />
+            <div className="item-desc" style={{ flex: 1 }}>
+              <b>{m.nickname}</b> <span className="pill">Lv{m.level}</span>
+              {m.personality && <span className="pill personality-pill">{m.personality.name}</span>}
+              <span className="pill">🤝 {m.bond}</span>
+              <div className="affix-line">Open character sheet ▸</div>
+            </div>
+          </button>
+        ))}
       </div>
 
       <div className="btn-row">
