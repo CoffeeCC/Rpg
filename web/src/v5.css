@@ -629,3 +629,16 @@
   vertical-align: middle;
   pointer-events: none;
 }
+
+/* Narration-synced story reveal */
+.story-paragraph {
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+.story-paragraph.story-hidden {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.story-paragraph.story-shown {
+  opacity: 1;
+  transform: none;
+}
