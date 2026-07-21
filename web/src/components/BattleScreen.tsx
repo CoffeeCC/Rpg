@@ -8,6 +8,7 @@ import { MonsterImage, HeroImage } from '../art/MonsterImage';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
+import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
@@ -27,6 +28,7 @@ interface Ghost {
 
 let popupSeq = 0;
 let ghostSeq = 0;
+const IMPACT_KINDS = new Set(['slash', 'pierce', 'fire', 'frost', 'bolt', 'dark', 'holy', 'hit']);
 
 type PileId = 'draw' | 'discard' | 'exhaust';
 
@@ -86,6 +88,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [pileView, setPileView] = useState<PileId | null>(null);
   const [popups, setPopups] = useState<Popup[]>([]);
   const [flashing, setFlashing] = useState<Record<string, string>>({});
+  const [impactFx, setImpactFx] = useState<Record<string, ImpactKind>>({});
   const [shaking, setShaking] = useState(false);
   const [locked, setLocked] = useState(false);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
@@ -157,6 +160,15 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               delete next[fx.targetUid];
               return next;
             }), 360);
+          }
+          if (IMPACT_KINDS.has(fx.fx)) {
+            const kind = fx.fx as ImpactKind;
+            setImpactFx((prev) => ({ ...prev, [fx.targetUid]: kind }));
+            setTimeout(() => setImpactFx((prev) => {
+              const next = { ...prev };
+              if (next[fx.targetUid] === kind) delete next[fx.targetUid];
+              return next;
+            }), 450);
           }
         }, i * step)
       );
@@ -314,6 +326,8 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     </div>
   );
 
+  const renderImpact = (uid: string) => impactFx[uid] && <ImpactEffect kind={impactFx[uid]} />;
+
   const pileContents = (pile: PileId): CardInstance[] =>
     pile === 'draw' ? battle.drawPile : pile === 'discard' ? battle.discardPile : battle.exhaustPile;
 
@@ -453,12 +467,14 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           <div className={`combatant-figure hero-fig ${flashing['hero'] ?? ''}`}>
             <HeroImage className={player.className} size={185} />
             {renderPopups('hero')}
+            {renderImpact('hero')}
           </div>
           {state.party.map((m: MonsterInstance) => (
             <div key={m.uid} className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''}`}>
               <MonsterImage speciesId={m.speciesId} size={110} facing="right" />
               {!m.isAlive() && <span className="ko-label">FALLEN</span>}
               {renderPopups(m.uid)}
+              {renderImpact(m.uid)}
             </div>
           ))}
         </div>
@@ -499,6 +515,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 )}
                 <MonsterImage speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
                 {renderPopups(enemy.uid)}
+                {renderImpact(enemy.uid)}
               </div>
             );
           })}
@@ -744,6 +761,23 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           {g.card.emoji}
         </div>
       ))}
+
+      {castFx && (
+        <div className="card-cast-fx" style={{ left: castFx.x, top: castFx.y }}>
+          {castFx.frames.map((src, i) => (
+            <img
+              key={src}
+              src={src}
+              alt=""
+              className="card-cast-fx-frame"
+              style={{
+                animationDelay: `${(i * CAST_FX_TOTAL_MS) / castFx.frames.length}ms`,
+                animationDuration: `${CAST_FX_TOTAL_MS / castFx.frames.length + 120}ms`,
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
