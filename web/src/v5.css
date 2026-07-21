@@ -154,40 +154,6 @@
   }
 }
 
-/* --- Card cast FX: cross-fades through a Grok-generated frame sequence over
-   the impact point, for cards with an entry in cardAnim.ts. Cards without
-   one never render this — the plain card-ghost above still covers those. --- */
-.card-cast-fx {
-  position: absolute;
-  width: 160px;
-  height: 216px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 31;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 0 24px rgba(201, 162, 39, 0.35);
-}
-
-.card-cast-fx-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  animation-name: castFrameFade;
-  animation-timing-function: ease-in-out;
-  animation-fill-mode: both;
-}
-
-@keyframes castFrameFade {
-  0% { opacity: 0; transform: scale(1); }
-  15% { opacity: 1; transform: scale(1.03); }
-  70% { opacity: 1; transform: scale(1.03); }
-  100% { opacity: 0; transform: scale(1); }
-}
-
 /* --- Party minis get names now (permadeath makes them people) --- */
 .mini-name {
   font-size: 0.62rem;

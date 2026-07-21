@@ -761,23 +761,6 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           {g.card.emoji}
         </div>
       ))}
-
-      {castFx && (
-        <div className="card-cast-fx" style={{ left: castFx.x, top: castFx.y }}>
-          {castFx.frames.map((src, i) => (
-            <img
-              key={src}
-              src={src}
-              alt=""
-              className="card-cast-fx-frame"
-              style={{
-                animationDelay: `${(i * CAST_FX_TOTAL_MS) / castFx.frames.length}ms`,
-                animationDuration: `${CAST_FX_TOTAL_MS / castFx.frames.length + 120}ms`,
-              }}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
