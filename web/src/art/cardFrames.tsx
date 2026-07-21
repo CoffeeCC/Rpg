@@ -4,7 +4,7 @@
 // CardArtBackdrop fills the art window with type-tinted fog over near-black.
 import type { CardRarity, CardType } from '../engine/types';
 
-const TYPE_TINT: Record<CardType, string> = {
+export const TYPE_TINT: Record<CardType, string> = {
   strike: '#8a3a30',
   spell: '#3d5a8a',
   guard: '#5c6068',

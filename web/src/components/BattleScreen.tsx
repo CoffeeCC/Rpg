@@ -7,6 +7,7 @@ import { CONSUMABLES } from '../engine/data/items';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
+import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
 import { CardView } from './CardView';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
@@ -88,6 +89,8 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [shaking, setShaking] = useState(false);
   const [locked, setLocked] = useState(false);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredEnemyUid, setHoveredEnemyUid] = useState<string | null>(null);
   const processedFx = useRef<FxEvent[] | null>(null);
   const enemyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -326,8 +329,56 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     );
   };
 
+  // --- Targeting line: from the selected card to the cursor, snapping onto a hovered target.
+  // Path shape, color, and arrowhead are keyed off the hero's class — a mage's line arcs high
+  // and sparkles, a thief's cuts straight and thin, etc. See src/art/classCursors.ts.
+  const lineStyle = CLASS_LINE_STYLE[player.className];
+  let targetLine: { path: string; snapped: boolean } | null = null;
+  if (needsTarget && !locked && selectedIdx !== null && stageRef.current) {
+    const stageRect = stageRef.current.getBoundingClientRect();
+    const fromEl = slotRefs.current.get(selectedIdx);
+    const hoveredEl = hoveredEnemyUid ? enemyRefs.current.get(hoveredEnemyUid) : null;
+    if (fromEl && (hoveredEl || mousePos)) {
+      const fromRect = fromEl.getBoundingClientRect();
+      const x1 = fromRect.left - stageRect.left + fromRect.width / 2;
+      const y1 = fromRect.top - stageRect.top;
+      const x2 = hoveredEl ? hoveredEl.getBoundingClientRect().left - stageRect.left + hoveredEl.getBoundingClientRect().width / 2 : mousePos!.x;
+      const y2 = hoveredEl ? hoveredEl.getBoundingClientRect().top - stageRect.top + hoveredEl.getBoundingClientRect().height / 2 : mousePos!.y;
+      targetLine = { path: buildTargetLinePath(lineStyle, x1, y1, x2, y2), snapped: !!hoveredEl };
+    }
+  }
+
   return (
-    <div className={`panel battle-stage ${shaking ? 'stage-shake' : ''}`} ref={stageRef}>
+    <div
+      className={`panel battle-stage ${shaking ? 'stage-shake' : ''}`}
+      ref={stageRef}
+      style={{ cursor: raceCursor(player.race) }}
+      onMouseMove={(e) => {
+        if (!needsTarget) return;
+        const r = e.currentTarget.getBoundingClientRect();
+        setMousePos({ x: e.clientX - r.left, y: e.clientY - r.top });
+      }}
+      onMouseLeave={() => setMousePos(null)}
+    >
+      {targetLine && (
+        <svg className="target-line-layer">
+          <defs>
+            <marker id="target-arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+              <path d={lineStyle.marker} fill={targetLine.snapped ? lineStyle.snapColor : lineStyle.color} />
+            </marker>
+          </defs>
+          <path
+            d={targetLine.path}
+            fill="none"
+            stroke={targetLine.snapped ? lineStyle.snapColor : lineStyle.color}
+            strokeWidth={targetLine.snapped ? lineStyle.width + 0.75 : lineStyle.width}
+            strokeDasharray={lineStyle.dash}
+            className="target-line"
+            style={{ color: targetLine.snapped ? lineStyle.snapColor : lineStyle.color }}
+            markerEnd="url(#target-arrowhead)"
+          />
+        </svg>
+      )}
       {battle.gateId && (
         <div className="stage-backdrop">
           {PAINTED_BACKDROPS[battle.gateId] ? (
@@ -404,8 +455,10 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   if (targetable) {
                     const li = livingEnemies.findIndex((e) => e.uid === enemy.uid);
                     if (li >= 0) setTargetIdx(li);
+                    setHoveredEnemyUid(enemy.uid);
                   }
                 }}
+                onMouseLeave={() => setHoveredEnemyUid((cur) => (cur === enemy.uid ? null : cur))}
               >
                 {enemy.isAlive() && (
                   <div className="intent" title={iv.title}>
