@@ -630,15 +630,35 @@
   pointer-events: none;
 }
 
-/* Narration-synced story reveal */
-.story-paragraph {
-  transition: opacity 0.9s ease, transform 0.9s ease;
+/* Star Wars-style narration crawl */
+.story-crawl-panel {
+  display: flex;
+  flex-direction: column;
 }
-.story-paragraph.story-hidden {
-  opacity: 0;
-  transform: translateY(12px);
+.story-crawl-window {
+  flex: 1;
+  min-height: 46vh;
+  max-height: 62vh;
+  overflow: hidden;
+  position: relative;
+  margin: 10px 0 14px;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 14%, #000 86%, transparent 100%);
 }
-.story-paragraph.story-shown {
-  opacity: 1;
-  transform: none;
+.story-crawl-content {
+  transform: translateY(var(--crawl-from, 100%));
+  padding: 0 8%;
+}
+.story-crawl-content .story-paragraph {
+  font-size: 1.18rem;
+  line-height: 1.75;
+  text-align: justify;
+}
+@keyframes story-crawl {
+  from {
+    transform: translateY(var(--crawl-from));
+  }
+  to {
+    transform: translateY(var(--crawl-to));
+  }
 }

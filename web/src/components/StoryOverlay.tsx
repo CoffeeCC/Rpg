@@ -11,93 +11,82 @@ const NARRATION: Record<number, string> = {
 export function StoryOverlay({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const chapter = STORY.find((c) => c.id === state.pendingStory);
   const chapterId = chapter?.id;
-  const paragraphs = chapter?.paragraphs ?? [];
-  const [visibleCount, setVisibleCount] = useState(Number.MAX_SAFE_INTEGER);
-  const lastShownRef = useRef<HTMLParagraphElement | null>(null);
+  const windowRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [crawl, setCrawl] = useState<{ from: number; to: number; duration: number } | null>(null);
 
   useEffect(() => {
     if (chapterId === undefined) return;
+    const chapterNow = STORY.find((c) => c.id === chapterId);
+    const totalChars = (chapterNow?.paragraphs ?? []).join(' ').length || 1;
+    // Reading-pace fallback (~17 chars/sec) when there is no audible narration.
+    const fallbackDuration = Math.max(24, totalChars / 17);
+
+    const measure = () => ({
+      from: windowRef.current?.clientHeight ?? 480,
+      to: -(contentRef.current?.scrollHeight ?? 1200),
+    });
+
     const src = NARRATION[chapterId];
     if (!src || isMuted()) {
-      setVisibleCount(Number.MAX_SAFE_INTEGER);
+      setCrawl({ ...measure(), duration: fallbackDuration });
       return;
     }
 
     const audio = new Audio(src);
     audio.volume = 0.9;
-    let timers: ReturnType<typeof setTimeout>[] = [];
     let cancelled = false;
 
-    const revealAll = () => setVisibleCount(Number.MAX_SAFE_INTEGER);
-
-    const startSyncedReveal = () => {
-      if (cancelled) return;
-      const duration = audio.duration;
-      if (!isFinite(duration) || duration <= 0) {
-        revealAll();
-        return;
-      }
-      // Pace each paragraph by its share of the total text, so the reveal
-      // tracks the reading. Land the last one slightly before the audio ends.
-      const chapterNow = STORY.find((c) => c.id === chapterId);
-      const paras = chapterNow?.paragraphs ?? [];
-      const total = paras.reduce((sum, p) => sum + p.length, 0) || 1;
-      const usable = duration * 0.94;
-      let cum = 0;
-      setVisibleCount(1);
-      paras.forEach((p, i) => {
-        if (i === 0) {
-          cum += p.length;
-          return;
-        }
-        const at = (cum / total) * usable * 1000;
-        cum += p.length;
-        timers.push(setTimeout(() => setVisibleCount(i + 1), at));
-      });
+    const begin = (duration: number) => {
+      if (!cancelled) setCrawl({ ...measure(), duration });
     };
 
-    // Only crawl the text if the narration is actually audible; otherwise
-    // (autoplay refused, load error) show everything at once.
-    setVisibleCount(0);
-    audio.addEventListener('error', revealAll);
+    audio.addEventListener('error', () => begin(fallbackDuration));
     audio
       .play()
       .then(() => {
-        if (audio.duration && isFinite(audio.duration)) startSyncedReveal();
-        else audio.addEventListener('loadedmetadata', startSyncedReveal, { once: true });
+        if (audio.duration && isFinite(audio.duration)) begin(audio.duration);
+        else
+          audio.addEventListener('loadedmetadata', () => begin(isFinite(audio.duration) ? audio.duration : fallbackDuration), {
+            once: true,
+          });
       })
-      .catch(revealAll);
+      .catch(() => begin(fallbackDuration));
 
     return () => {
       cancelled = true;
-      timers.forEach(clearTimeout);
-      timers = [];
       audio.pause();
       audio.src = '';
     };
   }, [chapterId]);
 
-  // Follow the reveal: keep the newest paragraph in view.
-  useEffect(() => {
-    lastShownRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [visibleCount]);
-
   if (!chapter) return null;
-  const shown = Math.max(visibleCount, 0);
 
   return (
     <div className="overlay">
-      <div className="panel">
+      <div className="panel story-crawl-panel">
         <h1 className="title">📖 {chapter.title}</h1>
-        {paragraphs.map((p, i) => (
-          <p
-            className={`story-paragraph ${i < shown ? 'story-shown' : 'story-hidden'}`}
-            key={i}
-            ref={i === shown - 1 ? lastShownRef : undefined}
+        <div className="story-crawl-window" ref={windowRef}>
+          <div
+            className="story-crawl-content"
+            ref={contentRef}
+            style={
+              crawl
+                ? ({
+                    ['--crawl-from' as string]: `${crawl.from}px`,
+                    ['--crawl-to' as string]: `${crawl.to}px`,
+                    animation: `story-crawl ${crawl.duration}s linear forwards`,
+                  } as React.CSSProperties)
+                : undefined
+            }
           >
-            {p}
-          </p>
-        ))}
+            {chapter.paragraphs.map((p, i) => (
+              <p className="story-paragraph" key={i}>
+                {p}
+              </p>
+            ))}
+          </div>
+        </div>
         <button className="btn primary" onClick={() => dispatch({ type: 'STORY_CONTINUE' })}>
           Continue
         </button>
