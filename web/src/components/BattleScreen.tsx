@@ -91,6 +91,13 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredEnemyUid, setHoveredEnemyUid] = useState<string | null>(null);
+  // Retro-RPG encounter transition (flash + iris wipe) — BattleScreen mounts fresh
+  // each time a fight starts, so a mount-only effect fires exactly once per encounter.
+  const [entering, setEntering] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setEntering(false), 700);
+    return () => clearTimeout(t);
+  }, []);
   const processedFx = useRef<FxEvent[] | null>(null);
   const enemyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -350,7 +357,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
   return (
     <div
-      className={`panel battle-stage ${shaking ? 'stage-shake' : ''}`}
+      className={`panel battle-stage ${shaking ? 'stage-shake' : ''} ${entering ? 'stage-entering' : ''}`}
       ref={stageRef}
       style={{ cursor: raceCursor(player.race) }}
       onMouseMove={(e) => {
@@ -359,7 +366,30 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         setMousePos({ x: e.clientX - r.left, y: e.clientY - r.top });
       }}
       onMouseLeave={() => setMousePos(null)}
+      onTouchMove={(e) => {
+        if (!needsTarget) return;
+        const touch = e.touches[0];
+        const r = e.currentTarget.getBoundingClientRect();
+        setMousePos({ x: touch.clientX - r.left, y: touch.clientY - r.top });
+        const el = document.elementFromPoint(touch.clientX, touch.clientY)?.closest<HTMLElement>('[data-enemy-uid]');
+        setHoveredEnemyUid(el?.dataset.enemyUid ?? null);
+      }}
+      onTouchEnd={(e) => {
+        if (!needsTarget) return;
+        const touch = e.changedTouches[0];
+        const el = document.elementFromPoint(touch.clientX, touch.clientY)?.closest<HTMLElement>('[data-enemy-uid]');
+        const uid = el?.dataset.enemyUid;
+        if (uid && livingEnemies.some((en) => en.uid === uid)) playSelected(uid);
+        setMousePos(null);
+        setHoveredEnemyUid(null);
+      }}
     >
+      {entering && (
+        <>
+          <div className="battle-enter-flash" />
+          <div className="battle-enter-iris" />
+        </>
+      )}
       {targetLine && (
         <svg className="target-line-layer">
           <defs>
@@ -450,6 +480,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   if (el) enemyRefs.current.set(enemy.uid, el);
                 }}
                 className={`enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${flashing[enemy.uid] ?? ''}`}
+                data-enemy-uid={enemy.isAlive() ? enemy.uid : undefined}
                 onClick={() => targetable && playSelected(enemy.uid)}
                 onMouseEnter={() => {
                   if (targetable) {
@@ -658,6 +689,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 style={{ ['--i' as string]: i }}
                 onMouseEnter={() => sfx('cardHover')}
                 onClick={() => playable && selectCard(i)}
+                onTouchStart={() => playable && selectCard(i)}
               >
                 <CardView card={card} hero={player} sourceMonster={source} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
                 <span className="hand-key">{i + 1}</span>

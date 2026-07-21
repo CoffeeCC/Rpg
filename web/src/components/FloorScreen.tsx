@@ -173,7 +173,29 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   }, [dispatch]);
   const exp = state.expedition;
   const player = state.player;
+
+  // Camera-follow: keep the player's tile in view as they move, since taller
+  // floors scroll internally now instead of stretching past the viewport
+  // (needed for tap-to-move to reach tiles that start out off-screen).
+  const playerCellRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    playerCellRef.current?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  }, [exp?.gateId, exp?.floorIndex, exp?.x, exp?.y]);
+
   if (!exp || !player) return null;
+
+  // Tap-to-move: tapping an adjacent tile steps that direction — same MOVE
+  // action as the dpad/keyboard, just aimed by touch instead of a button.
+  // Deliberately adjacent-only for now (no auto-pathing multiple tiles);
+  // taps further away are a no-op rather than guessing a path.
+  const handleTileTap = (x: number, y: number) => {
+    if (merchantOpen) return;
+    const dx = x - exp.x;
+    const dy = y - exp.y;
+    if (Math.abs(dx) + Math.abs(dy) !== 1) return;
+    const dir = dx === 1 ? 'east' : dx === -1 ? 'west' : dy === 1 ? 'south' : 'north';
+    dispatch({ type: 'MOVE', dir });
+  };
   const gate = GATES[exp.gateId];
   const floor = gate.floors[exp.floorIndex];
   const mov = movFor(player);
@@ -214,7 +236,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               {row.split('').map((ch, x) => {
                 if (x === exp.x && y === exp.y) {
                   return (
-                    <span key={x} className="map-cell player">
+                    <span key={x} ref={playerCellRef} className="map-cell player">
                       {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
                       <span className="cell-top">
                         {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={42} height={42} className="ui-icon" alt="" /> : '🧝'}
@@ -225,7 +247,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 const unit = unitAt(exp, x, y);
                 if (unit) {
                   return (
-                    <span key={x} className="map-cell floor-tile">
+                    <span key={x} className="map-cell floor-tile" onClick={() => handleTileTap(x, y)}>
                       {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
                       <UnitToken unit={unit} />
                     </span>
@@ -243,7 +265,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 }
                 if (tile === TILE.SECRET) {
                   return (
-                    <span key={x} className="map-cell special secret" title="Something behind the stone...">
+                    <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
                       {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={48} />}
                       <span className="cell-top">✨</span>
                     </span>
@@ -254,7 +276,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
                 const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                 return (
-                  <span key={x} className={`map-cell ${view.cls}${danger ? ' threat' : ''}`} style={ch === '#' ? wallStyle(x, y) : undefined} title={danger ? 'A hostile can reach this tile next turn' : undefined}>
+                  <span
+                    key={x}
+                    className={`map-cell ${view.cls}${danger ? ' threat' : ''}`}
+                    style={ch === '#' ? wallStyle(x, y) : undefined}
+                    title={danger ? 'A hostile can reach this tile next turn' : undefined}
+                    onClick={() => handleTileTap(x, y)}
+                  >
                     {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
                     {view.emoji && (
                       <span className="cell-top">
@@ -268,7 +296,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           ))}
         </div>
 
-        <div>
+        <div className="floor-controls">
           <div className="mov-bar" title="Movement left this turn. When it runs out, the floor moves.">
             <span className="mov-label">MOV</span>
             {Array.from({ length: mov }, (_, i) => (

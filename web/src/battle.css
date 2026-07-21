@@ -43,6 +43,57 @@
   80% { transform: translate(3px, -1px); }
 }
 
+/* --- Retro RPG encounter transition: white flash + iris wipe opening onto the fight --- */
+.stage-entering {
+  animation: stagePunchIn 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes stagePunchIn {
+  0% { transform: scale(1.05); filter: brightness(1.6); }
+  40% { transform: scale(1.02); filter: brightness(1.15); }
+  100% { transform: scale(1); filter: brightness(1); }
+}
+
+.battle-enter-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: #fff;
+  animation: battleFlash 0.45s ease-out forwards;
+}
+
+@keyframes battleFlash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.battle-enter-iris {
+  position: absolute;
+  inset: 0;
+  z-index: 49;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.battle-enter-iris::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 100vmax #05040a;
+  transform: translate(-50%, -50%);
+  animation: irisOpen 0.65s cubic-bezier(0.6, 0, 0.2, 1) 0.15s forwards;
+}
+
+@keyframes irisOpen {
+  from { width: 0; height: 0; }
+  to { width: 260vmax; height: 260vmax; }
+}
+
 /* --- Souls boss bar --- */
 .boss-bar {
   text-align: center;
@@ -819,6 +870,7 @@
 /* Hand cards glide instead of snapping when the fan re-lays */
 .hand-slot {
   transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  touch-action: none; /* touch-and-drag targeting owns the gesture, not page scroll/zoom */
 }
 
 /* v7.1: painted backdrops (Grok-generated, curated) */
@@ -893,4 +945,88 @@
 .enemy-slot.boss {
   width: 360px;
   height: 300px;
+}
+
+/* --- Landscape phone: shrink the whole battle stage to fit a short viewport
+   with no scrolling. Card/figure sizes come in as inline styles from JS
+   defaults (or earlier fixed-size rules in this same file), so !important is
+   needed to win. Placed at the very end of the file so plain declarations
+   don't win the cascade by source order alone. --- */
+@media (max-height: 500px) {
+  .stage-row {
+    min-height: 90px;
+    padding: 4px 10px 2px;
+    gap: 8px;
+  }
+  .hero-fig img, .hero-fig svg,
+  .ally-fig img, .ally-fig svg {
+    width: 46px !important;
+    height: auto !important;
+  }
+  .enemy-slot {
+    width: 84px !important;
+    height: 84px !important;
+  }
+  .enemy-slot.boss {
+    width: 120px !important;
+    height: 120px !important;
+  }
+  .enemy-slot img, .enemy-slot svg {
+    width: 64px !important;
+    height: auto !important;
+  }
+  .enemy-slot.boss img, .enemy-slot.boss svg {
+    width: 90px !important;
+  }
+  .boss-bar {
+    padding: 2px 8%;
+  }
+  .boss-name {
+    font-size: 0.75rem;
+    margin-bottom: 1px;
+  }
+  .ff-boxes {
+    gap: 4px;
+    padding: 2px 4px 4px;
+  }
+  .ff-box {
+    min-width: 110px;
+    max-width: 160px;
+    padding: 3px 6px 4px;
+  }
+  .ff-box .ff-name {
+    font-size: 0.68rem;
+  }
+  .hand-zone {
+    min-height: 130px;
+    padding: 4px 8px 6px;
+    gap: 6px;
+  }
+  .hand-fan {
+    min-height: 120px;
+  }
+  .playing-card {
+    width: 84px !important;
+    height: 118px !important;
+  }
+  .energy-orb {
+    width: 38px;
+    height: 38px;
+    padding-top: 9px;
+  }
+  .energy-num {
+    font-size: 0.95rem;
+  }
+  .end-turn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+  .pile-widget {
+    transform: scale(0.7);
+    transform-origin: center;
+  }
+  .target-hint {
+    font-size: 0.7rem;
+    margin: 2px 0;
+  }
 }

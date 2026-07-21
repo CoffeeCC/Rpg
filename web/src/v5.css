@@ -315,6 +315,17 @@
   font-size: 1.02rem;
 }
 
+@media (max-height: 500px) {
+  .town-panel .menu-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 5px;
+  }
+  .town-panel .menu-grid .btn {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+  }
+}
+
 .town-content {
   position: relative;
   z-index: 1;

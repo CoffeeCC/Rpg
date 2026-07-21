@@ -683,6 +683,10 @@ h2.title {
   position: relative;
 }
 
+.map-cell:not(.wall):not(.player) {
+  cursor: pointer;
+}
+
 .map-cell.wall {
   background: linear-gradient(150deg, #241d13 0%, #16110a 100%);
   box-shadow: inset 0 1px 0 rgba(246, 226, 155, 0.06), inset 0 -2px 3px rgba(0, 0, 0, 0.5);
@@ -979,4 +983,93 @@ h2.title {
 .game-main,
 .game-sidebar {
   align-self: stretch;
+}
+
+/* --- Landscape phone: short viewport — compact everything so nothing requires
+   scrolling mid-play. Keyed on height, not width, since this is a
+   landscape-locked layout (see mobile scoping notes). Placed at the end of the
+   file so it wins the cascade against the unconditional rules above it. --- */
+@media (max-height: 500px) {
+  .game {
+    gap: 6px;
+    min-height: calc(100vh - 12px);
+    grid-template-columns: 1fr 190px;
+  }
+  .game-header {
+    padding: 4px 10px;
+    gap: 8px;
+    font-size: 0.8rem;
+  }
+  .game-header h1, .game-header .title {
+    font-size: 0.95rem;
+  }
+  .game-sidebar {
+    gap: 4px;
+  }
+  .game-log {
+    max-height: 60px;
+    overflow-y: auto;
+  }
+  .map-cell {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    overflow: hidden;
+  }
+  .map-grid {
+    padding: 6px;
+    gap: 1px;
+    /* Floor grids vary in row count (procedurally generated) — a fixed tile
+       size can't guarantee every floor fits, so cap height and let taller
+       maps scroll internally instead of pushing the controls off-screen. */
+    max-height: 270px;
+    overflow-y: auto;
+  }
+  .map-row {
+    gap: 1px;
+  }
+  .floor-layout {
+    gap: 10px;
+    flex-wrap: nowrap;
+    align-items: stretch; /* let the controls column match the map's height */
+  }
+  .floor-controls {
+    flex: 0 0 140px;
+    max-width: 140px;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Thumb-reach: dock the actually-tappable controls (dpad + action buttons)
+     to the bottom of the column, near where a thumb rests holding the phone
+     in landscape. Glanceable text (mov-bar) stays up top where it's read,
+     not tapped. */
+  .floor-controls .dpad {
+    margin-top: auto;
+    grid-template-columns: repeat(3, 34px);
+    grid-template-rows: repeat(3, 30px);
+    gap: 3px;
+  }
+  .floor-controls .dpad .btn {
+    width: 34px;
+    height: 30px;
+    padding: 0;
+    font-size: 0.85rem;
+  }
+  .floor-controls .btn-row {
+    gap: 4px;
+  }
+  .floor-controls .btn-row .btn {
+    padding: 4px 7px;
+    font-size: 0.7rem;
+  }
+  .floor-controls .map-legend,
+  .floor-controls .map-warning {
+    display: none;
+  }
+  .subtitle {
+    display: none;
+  }
+  .title {
+    font-size: 1.05rem;
+  }
 }
