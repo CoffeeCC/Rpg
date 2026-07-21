@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { CHRONICLER_BOONS, loadTellings, purchaseBoon } from '../platform/tellings';
+import { CHRONICLER_DESK_LINES, ordinal as tellingOrdinal } from '../engine/data/tellingsLore';
 import { NPCS } from '../engine/data/npcs';
 import { NPC_LINE_AUDIO } from '../engine/data/npcLineAudio';
 import { NpcPortrait, NPC_ACCENTS } from '../art/npcArt';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
 import { play as sfx, isMuted } from '../platform/sfx';
+import { Icon } from './Icon';
 
 const AUDIO_BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '';
 
@@ -30,7 +32,7 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
   }, [state.lastTalk]);
   return (
     <div className="panel tavern">
-      <h1 className="title">🕯️ The Held Breath</h1>
+      <h1 className="title title-with-icon"><Icon name="tavern" size={26} emoji="" /> The Held Breath</h1>
       <p className="subtitle">Everdusk's only tavern. The fire is low, the talk is lower, and both are warm.</p>
 
       {talking && state.lastTalk && (
@@ -75,9 +77,12 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
         <h2 className="title" style={{ fontSize: '1rem' }}>
           ✒️ The Chronicler's Desk
         </h2>
+        <p className="subtitle chronicler-desk-line">
+          {CHRONICLER_DESK_LINES[(meta.telling + meta.purchased.length) % CHRONICLER_DESK_LINES.length]}
+        </p>
         <p className="subtitle">
           {meta.telling > 1
-            ? `This is the ${meta.telling}\u1d57\u02b0 telling of your story, by the Chronicler's count. Verses banked: ${meta.verses}.`
+            ? `This is the ${tellingOrdinal(meta.telling)} telling of your story, by the Chronicler's count. Verses banked: ${meta.verses}.`
             : `The Chronicler writes everything down. Verses banked: ${meta.verses}. They hint, without quite saying it, that stories here do not stay finished.`}
         </p>
         <div className="option-list">

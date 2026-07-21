@@ -67,6 +67,7 @@ export const PAINTED_NPCS: Record<string, string> = {
   casque: 'art/npcs/casque.jpg',
   dovey: 'art/npcs/dovey.jpg',
   fennick: 'art/npcs/fennick.jpg',
+  grude: 'art/npcs/grude.jpg',
   kess: 'art/npcs/kess.jpg',
   maribel: 'art/npcs/maribel.jpg',
   ott: 'art/npcs/ott.jpg',

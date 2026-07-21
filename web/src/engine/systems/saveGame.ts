@@ -51,6 +51,7 @@ export function deserializeGameState(save: SaveData): GameState {
   }
   return {
     ...raw,
+    blessingChapter: raw.blessingChapter ?? -99, // v11 field; older saves get "never used"
     player,
     party: raw.party.map((m) => revive<MonsterInstance>(MonsterInstance, m)),
     stable: raw.stable.map((m) => revive<MonsterInstance>(MonsterInstance, m)),

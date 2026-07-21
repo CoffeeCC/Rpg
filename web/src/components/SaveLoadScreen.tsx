@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import { isSavable } from '../engine/systems/saveGame';
 import { SLOT_COUNT, saveToSlot, loadFromSlot, deleteSlot, getSlotSummary, exportSaveToFile, importSaveFromFile } from '../platform/browserSave';
+import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -54,7 +56,8 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
 
   return (
     <div className="panel">
-      <h1 className="title">💾 Save / Load</h1>
+      <h1 className="title title-with-icon"><Icon name="save" size={26} emoji="" /> Save / Load</h1>
+      <NpcHost npcId="fennick" state={state} />
       {!canSave && <p className="subtitle">Saving is only possible in town or while exploring (not mid-battle or mid-event).</p>}
       {message && <p className="subtitle">{message}</p>}
 

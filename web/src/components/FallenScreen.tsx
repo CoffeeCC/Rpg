@@ -1,17 +1,20 @@
 import type { GameAction, GameState } from '../engine/game';
 import { loadTellings, nextTelling } from '../platform/tellings';
+import { PAGE_TURN_LINES, ordinal as tellingOrdinal } from '../engine/data/tellingsLore';
 import { play as sfx } from '../platform/sfx';
 
 /** PLAN5 #49 — the run is over. The Chronicler turns the page. */
 export function FallenScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const s = state.fallenSummary;
   const meta = loadTellings();
+  const heroName = state.player?.name ?? 'The hero';
+  const pageTurn = PAGE_TURN_LINES[(meta.telling - 1) % PAGE_TURN_LINES.length]
+    .replaceAll('{telling}', tellingOrdinal(meta.telling))
+    .replaceAll('{name}', heroName);
   return (
     <div className="panel fallen-panel">
       <h1 className="title fallen-title">The Telling Ends</h1>
-      <p className="subtitle">
-        {state.player?.name ?? 'The hero'} fell. In Everdusk, the Chronicler writes the last line without looking up — they have written it before.
-      </p>
+      <p className="subtitle">{pageTurn}</p>
       {s && (
         <div className="fallen-summary">
           <div className="stat-row">

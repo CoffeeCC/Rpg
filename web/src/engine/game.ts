@@ -54,6 +54,7 @@ import { BALANCE } from './data/balance';
 import { NPCS } from './data/npcs';
 import { randInt } from './random';
 import { bankFall, loadTellings } from '../platform/tellings';
+import { TAME_LINES, BREEDING_COVENANT_LINES } from './data/covenantLore';
 
 export type Screen =
   | 'create'
@@ -129,6 +130,8 @@ export interface GameState {
   pendingLegend: PendingLegend | null;
   pendingMerchant: PendingMerchant | null;
   storyChapter: number;
+  /** v11: last story chapter Casque's free blessing was used in (-99 = never). */
+  blessingChapter: number;
   orbs: GateId[];
   defeatedBosses: GateId[];
   questLog: QuestProgress[];
@@ -167,6 +170,7 @@ export type GameAction =
   | { type: 'MERCY_FINISH' }
   | { type: 'LEAVE_GATE' }
   | { type: 'REST' }
+  | { type: 'BLESSING' }
   | { type: 'PLAY_CARD'; handIndex: number; targetUid?: string }
   | { type: 'END_TURN' }
   | { type: 'BATTLE_ITEM'; name: string; targetUid?: string }
@@ -206,6 +210,7 @@ export function initialGameState(): GameState {
     pendingLegend: null,
     pendingMerchant: null,
     storyChapter: -1,
+    blessingChapter: -99,
     orbs: [],
     defeatedBosses: [],
     questLog: [],
@@ -220,6 +225,11 @@ export function initialGameState(): GameState {
     lastFx: [],
     log: [],
   };
+}
+
+/** v11: a bed at the Held Breath. Scales with level so rest stays a decision. */
+export function restCost(player: Character): number {
+  return 10 + player.level * 4;
 }
 
 function pushLog(log: string[], ...lines: string[]): string[] {
@@ -612,6 +622,9 @@ function adoptMonster(state: GameState, tamed: MonsterInstance, lines: string[])
   } else {
     lines.push(`${tamed.nickname} keeps its name. Some things are not yours to rename.`);
   }
+  // v11: the Covenant of Names — every taming is a promise the dusk counts.
+  const covenantLine = TAME_LINES[(state.party.length + state.stable.length) % TAME_LINES.length];
+  lines.push(covenantLine.replaceAll('{monster}', species).replaceAll('{name}', state.player!.name));
   const levelFloor = state.player!.level - 2;
   if (tamed.level < levelFloor) {
     while (tamed.level < levelFloor) tamed.gainExp(tamed.expToNext() - tamed.exp);
@@ -662,7 +675,8 @@ function handleDefeat(state: GameState, log: string[]): void {
     state.orbs.length * 2 +
     state.chronicle.beastsSlain.length +
     state.questLog.filter((q) => q.claimed).length;
-  bankFall(state.runId, verses);
+  const place = state.battle?.gateId ? GATES[state.battle.gateId].name : state.expedition ? GATES[state.expedition.gateId].name : 'the road';
+  bankFall(state.runId, verses, { name: player.name, place, level: player.level });
   state.fallenSummary = {
     verses,
     level: player.level,
@@ -1127,27 +1141,55 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'LEAVE_GATE': {
-      if (state.screen !== 'floor') return state;
-      return {
-        ...state,
-        expedition: null,
-        expeditionExtras: [],
-        pendingMerchant: null,
-        screen: 'town',
-        log: pushLog(state.log, 'You return to Everdusk. The reward cards fade like a dream on waking.'),
-      };
+      // v11: no more free teleports home. Burn a Waybrand, or walk back to
+      // the door you came in by (the START tile on floor 1 remains free).
+      if (state.screen !== 'floor' || !state.player) return state;
+      const next = cloneCore(state);
+      if (!next.player!.removeConsumable('Waybrand')) {
+        next.log = pushLog(state.log, 'No Waybrand to burn. The way home is the way you came in — or Maribel sells the shortcut.');
+        return next;
+      }
+      next.expedition = null;
+      next.expeditionExtras = [];
+      next.pendingMerchant = null;
+      next.screen = 'town';
+      next.log = pushLog(state.log, 'You snap the Waybrand. The dusk folds once, politely, and you are home. The reward cards fade like a dream on waking.');
+      return next;
     }
 
     case 'REST': {
+      // v11: beds cost money. The body is a candle; wax is not free.
       if (!state.player || state.screen !== 'town') return state;
+      const cost = restCost(state.player);
+      if (state.player.gold < cost) {
+        return { ...state, log: pushLog(state.log, `Dovey shakes her head. A bed is ${cost}g, and the roof does not run on gratitude.`) };
+      }
       const next = cloneCore(state);
+      next.player!.gold -= cost;
       healParty(next.player!, next.party);
       for (const m of next.stable) {
         m.hp = m.maxHp;
         m.mp = m.maxMp;
       }
       next.gearStock = restockGear(next.player!);
-      next.log = pushLog(state.log, 'Rest, of a kind. The gear shop has new stock.');
+      next.log = pushLog(state.log, `Rest, of a kind, for ${cost}g. The gear shop has new stock.`);
+      return next;
+    }
+
+    case 'BLESSING': {
+      // v11: Brother Casque mends the party for free, once per story chapter.
+      if (!state.player || state.screen !== 'town') return state;
+      if (state.blessingChapter >= state.storyChapter) {
+        return { ...state, log: pushLog(state.log, 'Casque folds his hands. "The candle I can spare, I have already spared. Come back when the story turns."') };
+      }
+      const next = cloneCore(state);
+      next.blessingChapter = next.storyChapter;
+      healParty(next.player!, next.party);
+      for (const m of next.stable) {
+        m.hp = m.maxHp;
+        m.mp = m.maxMp;
+      }
+      next.log = pushLog(state.log, 'Brother Casque says the short version of the long prayer. Warmth, briefly, like standing near a kiln.');
       return next;
     }
 
@@ -1381,6 +1423,9 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const lines: string[] = [
         `${parentA.nickname} and ${parentB.nickname} give what they are to the egg. Both are gone.`,
         `It hatches: ${child.nickname}, a ${child.species.name} (+${child.plus}).`,
+        BREEDING_COVENANT_LINES[(next.party.length + next.stable.length) % BREEDING_COVENANT_LINES.length]
+          .replaceAll('{parentA}', parentA.nickname)
+          .replaceAll('{parentB}', parentB.nickname),
       ];
       applyQuestEvent(next.questLog, { type: 'breed' }, lines);
       next.log = pushLog(state.log, ...lines);

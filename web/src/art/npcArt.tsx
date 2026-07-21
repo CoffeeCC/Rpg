@@ -17,6 +17,7 @@ export const NPC_ACCENTS: Record<string, string> = {
   rowan: '#7a9e5a', // moss green
   fennick: '#8a7d94', // slate-violet mourning
   sess: '#e0a83c', // lantern amber
+  grude: '#b34f28', // forge-ember rust
 };
 
 const UNKNOWN_ACCENT = '#8a94a4';

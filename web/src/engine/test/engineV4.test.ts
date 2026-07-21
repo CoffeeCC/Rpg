@@ -315,11 +315,17 @@ describe('reducer v4', () => {
     expect(state.expeditionExtras).toContain(pick);
   });
 
-  it('leaving a gate clears expedition reward cards', () => {
+  it('leaving a gate burns a Waybrand and clears expedition reward cards', () => {
     let state = enterGate(createHero());
     state.expeditionExtras.push('strike');
+    // v11: no free teleports — without a Waybrand you stay put.
     state = gameReducer(state, { type: 'LEAVE_GATE' });
+    expect(state.screen).toBe('floor');
+    state.player!.addConsumable('Waybrand');
+    state = gameReducer(state, { type: 'LEAVE_GATE' });
+    expect(state.screen).toBe('town');
     expect(state.expeditionExtras).toHaveLength(0);
+    expect(state.player!.inventory.includes('Waybrand')).toBe(false);
   });
 
   it('tavern talk produces dialogue, with rumor slots filled from the world', () => {

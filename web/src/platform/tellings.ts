@@ -5,6 +5,7 @@
  * key. All writes are component-side or idempotent-per-run so the pure
  * reducer stays pure under StrictMode double-invocation.
  */
+import { TELLING_EPITAPHS, ordinal } from '../engine/data/tellingsLore';
 
 export interface TellingsMeta {
   telling: number;
@@ -12,6 +13,17 @@ export interface TellingsMeta {
   purchased: string[];
   /** Guard: which run's death has already been banked (StrictMode safety). */
   lastBankedRun: string | null;
+  /** Struck-through drafts: every failed telling, kept in the book. */
+  fallen: FallenTelling[];
+}
+
+export interface FallenTelling {
+  telling: number;
+  name: string;
+  place: string;
+  level: number;
+  /** Rendered once at bank time so the record never changes retroactively. */
+  epitaph: string;
 }
 
 export interface ChroniclerBoon {
@@ -41,12 +53,18 @@ export function loadTellings(): TellingsMeta {
         verses: parsed.verses ?? 0,
         purchased: Array.isArray(parsed.purchased) ? parsed.purchased : [],
         lastBankedRun: parsed.lastBankedRun ?? null,
+        fallen: Array.isArray(parsed.fallen) ? parsed.fallen : [],
       };
     }
   } catch {
     // localStorage unavailable or corrupt — fall through to a fresh book.
   }
-  return { telling: 1, verses: 0, purchased: [], lastBankedRun: null };
+  return { telling: 1, verses: 0, purchased: [], lastBankedRun: null, fallen: [] };
+}
+
+/** The struck-through drafts, oldest first. */
+export function loadFallenTellings(): FallenTelling[] {
+  return loadTellings().fallen;
 }
 
 function save(meta: TellingsMeta) {
@@ -57,12 +75,26 @@ function save(meta: TellingsMeta) {
   }
 }
 
-/** Bank verses for a fallen run. Idempotent per runId (StrictMode-safe). */
-export function bankFall(runId: string, verses: number): TellingsMeta {
+/** Bank verses for a fallen run. Idempotent per runId (StrictMode-safe).
+ * When `record` is given, the failed telling is written into the book as a
+ * struck-through draft the Chronicle displays forever after. */
+export function bankFall(runId: string, verses: number, record?: { name: string; place: string; level: number }): TellingsMeta {
   const meta = loadTellings();
   if (meta.lastBankedRun === runId) return meta;
   meta.verses += verses;
   meta.lastBankedRun = runId;
+  if (record) {
+    const template = TELLING_EPITAPHS[(meta.telling - 1) % TELLING_EPITAPHS.length];
+    meta.fallen.push({
+      telling: meta.telling,
+      ...record,
+      epitaph: template
+        .replaceAll('{telling}', ordinal(meta.telling))
+        .replaceAll('{name}', record.name)
+        .replaceAll('{place}', record.place)
+        .replaceAll('{level}', String(record.level)),
+    });
+  }
   save(meta);
   return meta;
 }

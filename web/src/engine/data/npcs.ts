@@ -305,4 +305,38 @@ export const NPCS: NpcDef[] = [
       'Any light kindled inside the gates does not cast shadows right. Ask anyone in {realm} who has tried. Then buy them a drink, because they will need it.',
     ],
   },
+  {
+    id: 'grude',
+    name: 'Smith Grude',
+    role: 'Smith',
+    emoji: '🔨',
+    greetings: [
+      [
+        'Don\'t touch the anvil. It doesn\'t like strangers and it\'s not wrong very often.',
+        'Every piece of steel in this shop remembers a hand that isn\'t coming back for it. I keep them anyway. Somebody should.',
+        'I was gatewatch armorer before I was anything else. Fitted plate to boys who didn\'t come home in it. You learn to talk to the metal instead of the boys, eventually. Easier on everyone.',
+      ],
+      [
+        'One orb. The forge took to a heat I haven\'t coaxed out of it in years. I didn\'t ask it why. You don\'t interrogate good luck.',
+        'Brought me a blade to reforge and it went in easy — no fighting me at all. Gear knows when the wind\'s turning. Wears knew it before we did.',
+      ],
+      ['Two orbs. Had a breastplate refuse a crack twice over, like it changed its mind about dying. I\'ll take the win and not ask questions.'],
+      [
+        'Three orbs. I\'m tempering steel that used to snap under my hammer and it just — holds. Holds like it\'s got somewhere to be.',
+        'The old gatewatch plate in the back room stopped weeping rust this month. First time since I hung it there. I didn\'t tell it to stop. It just did.',
+      ],
+      ['Four orbs. Whole rack of reforges came out clean on the first pass. Metal\'s optimistic these days. Wish I could say the same for my knees.'],
+      [
+        'Dawn, and the anvil\'s gone quiet in the good way — the way it goes when nothing\'s asking to be fixed. Strange thing to miss, urgency.',
+        'I\'ll keep the forge lit regardless. Gear doesn\'t stop remembering its wearers just because the dark let go. Neither do I.',
+      ],
+    ],
+    rumors: [
+      'I fitted armor for a hundred gatewatch in my time, and not one plate came back from {beastGate} without a story about {beast} scratched into the dents. I don\'t polish those dents out. Seemed disrespectful.',
+      'They say {artifact} was forged by a smith who talked to the metal same as I do, and the metal talked back plain as day. I\'ve never had that particular luck. I keep trying.',
+      'A blade I reforged twice swears it belonged to {figure}, once. Steel doesn\'t lie to me, not on purpose anyway, so I believe it more than I believe most people.',
+      'Back in {era}, they built armor to last centuries, not seasons. I\'ve got the tongs to prove it — older than the forge itself, and still the best pair I own.',
+      'Somewhere in the {artifactGate} there\'s supposedly a hammer that never dulls. If it\'s true, I owe whoever\'s carrying it a very long argument about technique.',
+    ],
+  },
 ];

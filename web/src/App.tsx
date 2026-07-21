@@ -17,7 +17,6 @@ import { QuestBoardScreen } from './components/QuestBoardScreen';
 import { TavernScreen } from './components/TavernScreen';
 import { ChronicleScreen } from './components/ChronicleScreen';
 import { CharacterSheetScreen } from './components/CharacterSheetScreen';
-import { EquipmentScreen } from './components/EquipmentScreen';
 import { DeckScreen } from './components/DeckScreen';
 import { SmithScreen } from './components/SmithScreen';
 import { LegendOverlay } from './components/LegendOverlay';
@@ -123,7 +122,7 @@ function App() {
         {state.screen === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
         {state.screen === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'equipment' && <EquipmentScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {state.screen === 'equipment' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}
         {state.screen === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
@@ -136,7 +135,7 @@ function App() {
       )}
 
       <div className="game-log">
-        <LogPanel lines={state.log} />
+        <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
       </div>
 
       {state.pendingStory !== null && <StoryOverlay state={state} dispatch={dispatch} />}

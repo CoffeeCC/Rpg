@@ -1,8 +1,11 @@
 import type { GameAction, GameState } from '../engine/game';
+import { NpcHost } from './NpcHost';
+import { COVENANT_INTRO, OTT_COVENANT_LINES } from '../engine/data/covenantLore';
 import { STABLE_CAP } from '../engine/game';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { FAMILY_INFO } from '../engine/data/species';
 import { MonsterImage } from '../art/MonsterImage';
+import { Icon } from './Icon';
 
 function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; actions: React.ReactNode; onView: () => void }) {
   const p = monster.personality;
@@ -44,7 +47,15 @@ function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; ac
 export function StableScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   return (
     <div className="panel">
-      <h1 className="title">🐴 The Stable</h1>
+      <h1 className="title title-with-icon"><Icon name="stable" size={26} emoji="" /> The Stable</h1>
+      <NpcHost npcId="ott" state={state} />
+      <details className="covenant-panel">
+        <summary>📜 The Covenant of Names — why we tame</summary>
+        {COVENANT_INTRO.map((p, i) => (
+          <p className="covenant-text" key={i}>{p}</p>
+        ))}
+        <p className="covenant-text covenant-ott">“{OTT_COVENANT_LINES[(state.party.length + state.stable.length) % OTT_COVENANT_LINES.length]}” — Ott</p>
+      </details>
       <p className="subtitle">
         Active party {state.party.length}/{state.player!.traits.partyCap} · Stable {state.stable.length}/{STABLE_CAP} · click a companion to open its page
       </p>

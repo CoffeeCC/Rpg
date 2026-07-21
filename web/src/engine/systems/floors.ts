@@ -161,6 +161,83 @@ function bfsFrom(exp: Expedition, sx: number, sy: number, maxDist: number): Map<
 }
 
 /**
+ * v12 click-to-move: shortest path (as a list of steps) from the player to
+ * (tx,ty), or null if unreachable within maxDist. Walls, unbroken breakables,
+ * and units block the way — EXCEPT the destination tile itself, which may be a
+ * unit or breakable so the final step bumps (→ battle) or smashes it. The
+ * component dispatches these MOVE steps one at a time, reusing all the normal
+ * per-step logic (pickups, stairs, enemy phase).
+ */
+export function pathToTile(exp: Expedition, tx: number, ty: number, maxDist: number): Direction[] | null {
+  const start = `${exp.x},${exp.y}`;
+  const goal = `${tx},${ty}`;
+  if (start === goal) return null;
+  const dist = new Map<string, number>([[start, 0]]);
+  const prev = new Map<string, { key: string; dir: Direction }>();
+  const queue: [number, number][] = [[exp.x, exp.y]];
+  while (queue.length) {
+    const [x, y] = queue.shift()!;
+    const d = dist.get(`${x},${y}`)!;
+    if (d >= maxDist) continue;
+    for (const dir of Object.keys(DELTAS) as Direction[]) {
+      const { dx, dy } = DELTAS[dir];
+      const nx = x + dx;
+      const ny = y + dy;
+      const key = `${nx},${ny}`;
+      if (dist.has(key)) continue;
+      const isGoal = key === goal;
+      const ch = tileAt(floorOf(exp), nx, ny);
+      if (ch === TILE.WALL) continue;
+      const blocked = (ch === TILE.BREAKABLE && !isBroken(exp, nx, ny)) || unitAt(exp, nx, ny) !== undefined;
+      if (blocked && !isGoal) continue;
+      dist.set(key, d + 1);
+      prev.set(key, { key: `${x},${y}`, dir });
+      if (isGoal) {
+        const path: Direction[] = [];
+        let cur = goal;
+        while (cur !== start) {
+          const p = prev.get(cur)!;
+          path.unshift(p.dir);
+          cur = p.key;
+        }
+        return path;
+      }
+      queue.push([nx, ny]);
+    }
+  }
+  return null;
+}
+
+/** v12: tiles the player can freely walk onto within maxDist (empty, no unit,
+ * no unbroken breakable). Keys are "x,y". Used to highlight the move budget. */
+export function reachableTiles(exp: Expedition, maxDist: number): Set<string> {
+  const start = `${exp.x},${exp.y}`;
+  const seen = new Set<string>([start]);
+  const dist = new Map<string, number>([[start, 0]]);
+  const queue: [number, number][] = [[exp.x, exp.y]];
+  while (queue.length) {
+    const [x, y] = queue.shift()!;
+    const d = dist.get(`${x},${y}`)!;
+    if (d >= maxDist) continue;
+    for (const { dx, dy } of Object.values(DELTAS)) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const key = `${nx},${ny}`;
+      if (seen.has(key)) continue;
+      const ch = tileAt(floorOf(exp), nx, ny);
+      if (ch === TILE.WALL) continue;
+      if (ch === TILE.BREAKABLE && !isBroken(exp, nx, ny)) continue;
+      if (unitAt(exp, nx, ny)) continue;
+      seen.add(key);
+      dist.set(key, d + 1);
+      queue.push([nx, ny]);
+    }
+  }
+  seen.delete(start);
+  return seen;
+}
+
+/**
  * Enemy phase: every hostile unit that can path to the player within
  * SIGHT_RANGE advances up to its MOV along the shortest path. Returns the
  * unit that reached the player (contact = battle), if any.

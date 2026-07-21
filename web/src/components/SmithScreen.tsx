@@ -3,6 +3,8 @@ import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, getCard } from '../engine/data/c
 import { BALANCE } from '../engine/data/balance';
 import { CardView } from './CardView';
 import { play as sfx } from '../platform/sfx';
+import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
@@ -13,7 +15,8 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
 
   return (
     <div className="panel">
-      <h1 className="title">⚒️ The Smith</h1>
+      <h1 className="title title-with-icon"><Icon name="smith" size={26} emoji="" /> The Forge</h1>
+      <NpcHost npcId="grude" state={state} />
       <p className="subtitle">
         <span className="gold">☉ {player.gold}</span> · Reforging improves ONE copy of a card at a time. Monster cards sharpen with their monster
         instead.

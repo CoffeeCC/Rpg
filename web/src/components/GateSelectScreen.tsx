@@ -1,10 +1,12 @@
 import type { GameAction, GameState } from '../engine/game';
 import { GATES, GATE_ORDER } from '../engine/data/gates';
+import { NpcHost } from './NpcHost';
 
 export function GateSelectScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   return (
     <div className="panel">
       <h1 className="title">The Gates</h1>
+      <NpcHost npcId="sess" state={state} />
       <p className="subtitle">Each gate holds a Warden. Claim all four orbs to open the way below.</p>
       <div className="option-list">
         {GATE_ORDER.map((id) => {

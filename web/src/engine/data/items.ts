@@ -49,7 +49,8 @@ export const ITEM_TYPES: Record<ItemTypeName, ItemTypeDef> = {
 export type ConsumableEffect =
   | { type: 'heal'; amount: number }
   | { type: 'mana'; amount: number }
-  | { type: 'bait'; tameBonus: number };
+  | { type: 'bait'; tameBonus: number }
+  | { type: 'waybrand' }; // v11: burn it to walk home from anywhere in a gate
 
 export interface ConsumableDef {
   name: string;
@@ -68,4 +69,11 @@ export const CONSUMABLES: Record<string, ConsumableDef> = {
   Jerky: { name: 'Jerky', emoji: '🥓', price: 4, description: 'Tame bait: +10% tame chance this fight.', effect: { type: 'bait', tameBonus: 10 } },
   Sirloin: { name: 'Sirloin', emoji: '🥩', price: 12, description: 'Tame bait: +20% tame chance this fight.', effect: { type: 'bait', tameBonus: 20 } },
   PrimeSteak: { name: 'PrimeSteak', emoji: '🍖', price: 30, description: 'Tame bait: +35% tame chance this fight.', effect: { type: 'bait', tameBonus: 35 } },
+  Waybrand: {
+    name: 'Waybrand',
+    emoji: '🏮',
+    price: 45,
+    description: 'A stub of lantern-coal on a cord. Snap it anywhere in a gate and the dusk walks you home. One use.',
+    effect: { type: 'waybrand' },
+  },
 };

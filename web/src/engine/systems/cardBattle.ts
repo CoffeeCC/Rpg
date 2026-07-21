@@ -10,6 +10,7 @@ import { talentsFor } from '../data/traits';
 import { generateItem } from './lootGen';
 import { randInt } from '../random';
 import { INSTINCT_MP_COST, bondPowerMult } from '../data/personalities';
+import { FAMILY_KITS, BOSS_KITS, ELITE_KIT, type EnemyKit, type EnemyMove } from '../data/enemyAi';
 
 export const HAND_SIZE = BALANCE.handSize;
 export const MAX_HAND = BALANCE.maxHand;
@@ -44,6 +45,10 @@ export interface BattleState {
   tamerName?: string;
   /** PLAN5 #55: a beaten monster is begging for its life. */
   mercy?: { uid: string };
+  /** v11 kit AI: enemyUid -> moveId -> turns until reusable. */
+  moveCooldowns?: Record<string, Record<string, number>>;
+  /** v11 kit AI: enemyUid -> moveId -> fired (for once-per-battle moves). */
+  movesUsed?: Record<string, Record<string, boolean>>;
 }
 
 export interface BattleStepResult {
@@ -192,6 +197,70 @@ function elementFx(effect: CardEffect): DamageFx {
 // Intents
 // ---------------------------------------------------------------------------
 
+/** v11: which move kit an enemy fights from. Bosses are matched by their
+ * given name (createBoss sets nickname = gate bossName); minibosses and
+ * famous beasts share the elite kit; everyone else fights like their family. */
+function kitFor(enemy: MonsterInstance, battle: BattleState): EnemyKit | null {
+  if (battle.isBossFight && BOSS_KITS[enemy.nickname]) return BOSS_KITS[enemy.nickname];
+  if (battle.famousBeastId || battle.unitKind === 'miniboss') return ELITE_KIT;
+  return FAMILY_KITS[enemy.family] ?? null;
+}
+
+function intentFromMove(move: EnemyMove, enemy: MonsterInstance, hero: Character): Intent {
+  const B = BALANCE;
+  const base = { label: move.name, moveId: move.id, moveStatus: move.status };
+  const atk = (mult: number) => Math.max(1, Math.round(enemy.getAttack() * B.intentBasicMult * mult - hero.getDefense() * B.intentDefMitigation));
+  switch (move.kind) {
+    case 'attack':
+    case 'heavy':
+      return { kind: 'attack', amount: atk(move.power), times: 1, ...base };
+    case 'multi':
+      return { kind: 'attack', amount: atk(move.power), times: move.hits ?? 2, ...base };
+    case 'drain':
+      return { kind: 'attack', amount: atk(move.power), times: 1, drain: true, ...base };
+    case 'guard':
+      return { kind: 'defend', amount: 5 + Math.floor(enemy.getDefense() / 2) + Math.round(move.power), ...base };
+    case 'buff':
+      return { kind: 'howl', ...base };
+    case 'debuff':
+      return { kind: 'debuff', ...base };
+  }
+}
+
+/** v11: kit-driven intent roll. Weighted pick among usable moves (cooldowns,
+ * once-flags, HP-gated enrages). Bookkeeping happens at roll time — the
+ * telegraph binds the choice. Returns null when no kit/move applies. */
+function rollKitIntent(enemy: MonsterInstance, hero: Character, battle: BattleState): Intent | null {
+  const kit = kitFor(enemy, battle);
+  if (!kit || kit.moves.length === 0) return null;
+  const cds = ((battle.moveCooldowns ??= {})[enemy.uid] ??= {});
+  const used = ((battle.movesUsed ??= {})[enemy.uid] ??= {});
+  const hpPct = enemy.hp / enemy.maxHp;
+  const usable = kit.moves.filter(
+    (m) => (cds[m.id] ?? 0) <= 0 && !(m.once && used[m.id]) && (m.belowHpPct === undefined || hpPct <= m.belowHpPct),
+  );
+  if (usable.length === 0) return null;
+  // Regular mobs stay dangerous: their guard/buff/debuff turns are half as
+  // frequent as authored, so fights read normal-but-spiky. Bosses and elites
+  // use their kits at full personality.
+  const isFamilyMob = !(battle.isBossFight && BOSS_KITS[enemy.nickname]) && !battle.famousBeastId && battle.unitKind !== 'miniboss';
+  const weightOf = (m: EnemyMove) =>
+    isFamilyMob && (m.kind === 'guard' || m.kind === 'buff' || m.kind === 'debuff') ? Math.max(1, Math.floor(m.weight / 2)) : m.weight;
+  const total = usable.reduce((s, m) => s + weightOf(m), 0);
+  let r = randInt(total);
+  let move = usable[usable.length - 1];
+  for (const m of usable) {
+    r -= weightOf(m);
+    if (r < 0) {
+      move = m;
+      break;
+    }
+  }
+  if (move.cooldown) cds[move.id] = move.cooldown + 1;
+  if (move.once) used[move.id] = true;
+  return intentFromMove(move, enemy, hero);
+}
+
 function rollIntent(enemy: MonsterInstance, hero: Character): Intent {
   const B = BALANCE;
   const skills = enemy.knownSkills.map((id) => getSkill(id)).filter((s) => !!s);
@@ -222,7 +291,11 @@ function rollIntent(enemy: MonsterInstance, hero: Character): Intent {
 
 export function rollAllIntents(battle: BattleState, hero: Character) {
   for (const enemy of battle.enemies) {
-    if (enemy.isAlive()) battle.intents[enemy.uid] = rollIntent(enemy, hero);
+    if (!enemy.isAlive()) continue;
+    // Tick this enemy's move cooldowns once per intent cycle.
+    const cds = battle.moveCooldowns?.[enemy.uid];
+    if (cds) for (const id of Object.keys(cds)) cds[id] = Math.max(0, cds[id] - 1);
+    battle.intents[enemy.uid] = rollKitIntent(enemy, hero, battle) ?? rollIntent(enemy, hero);
   }
 }
 
@@ -398,6 +471,14 @@ export function playCard(
         battle.energy += effect.amount;
         break;
       case 'heal': {
+        // v11: heal cards may be aimed at a party monster (targetUid); default is the hero.
+        const allyTarget = targetUid && targetUid !== 'hero' ? party.find((m) => m.uid === targetUid && m.isAlive()) : undefined;
+        if (allyTarget) {
+          const healed = allyTarget.heal(effectAmount(effect, hero, source, upgraded));
+          fx.push({ fx: 'heal', targetUid: allyTarget.uid, amount: healed });
+          log.push(`${allyTarget.displayName()} recovers ${healed}.`);
+          break;
+        }
         const healed = hero.heal(effectAmount(effect, hero, source, upgraded));
         fx.push({ fx: 'heal', targetUid: 'hero', amount: healed });
         log.push(`${hero.name} recovers ${healed}.`);
@@ -569,6 +650,8 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
       log.push(`${enemy.displayName()} is staggered and does nothing.`);
       continue;
     }
+    if (intent.label) log.push(`${enemy.displayName()} — ${intent.label}!`);
+    let intentDealt = 0; // v11: total damage this intent, for drain moves
     switch (intent.kind) {
       case 'attack': {
         const times = intent.times ?? 1;
@@ -582,6 +665,11 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
             const target = livingMonsters[randInt(livingMonsters.length)];
             const amount = Math.max(1, Math.round((intent.amount ?? 1) * frozenMult(target) - target.getDefense() * BALANCE.monsterDefFactor));
             target.takeDamage(amount);
+            intentDealt += amount;
+            if (intent.moveStatus && intent.moveStatus.target === 'party') {
+              target.applyStatus(intent.moveStatus.id as 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen', intent.moveStatus.turns);
+              fx.push({ fx: 'status', targetUid: target.uid, label: intent.moveStatus.id });
+            }
             fx.push({ fx: 'hit', targetUid: target.uid, amount });
             log.push(`${enemy.displayName()} strikes ${target.displayName()} for ${amount}.`);
             if (!target.isAlive()) {
@@ -602,12 +690,26 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
             }
             if (amount > 0) {
               hero.takeDamage(amount);
+              intentDealt += amount;
               fx.push({ fx: 'hit', targetUid: 'hero', amount });
               if (amount >= Math.floor(hero.maxHp * 0.2)) fx.push({ fx: 'shake' });
+            }
+            if (intent.moveStatus && intent.moveStatus.target === 'hero' && hero.isAlive()) {
+              hero.applyStatus(intent.moveStatus.id as 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen', intent.moveStatus.turns);
+              fx.push({ fx: 'status', targetUid: 'hero', label: intent.moveStatus.id });
+              log.push(`${hero.name} is ${intent.moveStatus.id}.`);
             }
             log.push(
               `${enemy.displayName()} strikes for ${amount + absorbed}${absorbed > 0 ? ` (${absorbed} warded)` : ''}${braced ? ' - you brace behind the loss, halving it' : ''}.`
             );
+          }
+        }
+        // v11 drain moves: the enemy feeds on half the damage it dealt.
+        if (intent.drain && intentDealt > 0 && enemy.isAlive()) {
+          const healed = enemy.heal(Math.floor(intentDealt / 2));
+          if (healed > 0) {
+            fx.push({ fx: 'heal', targetUid: enemy.uid, amount: healed });
+            log.push(`${enemy.displayName()} feeds on the wound (+${healed}).`);
           }
         }
         break;
@@ -627,10 +729,29 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
       case 'howl': {
         enemy.addMod({ stat: 'STR', amount: Math.max(1, Math.floor(enemy.stats.STR * 0.25)), turns: 3 });
         fx.push({ fx: 'status', targetUid: enemy.uid, label: 'STR↑' });
-        log.push(`${enemy.displayName()} howls. The dark answers.`);
+        if (intent.moveStatus && intent.moveStatus.target === 'self') {
+          // kit buffs can also armor the enemy in a status (e.g. Frozen shell is not a thing — engine statuses are hostile, so self-statuses are rare)
+          enemy.applyStatus(intent.moveStatus.id as 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen', intent.moveStatus.turns);
+        }
+        log.push(intent.label ? `${enemy.displayName()} draws something up from the dark.` : `${enemy.displayName()} howls. The dark answers.`);
         break;
       }
       case 'debuff': {
+        // v11 kit debuffs carry their own status payload; legacy skill debuffs still resolve via skillId.
+        if (intent.moveStatus && intent.moveStatus.target !== 'self') {
+          const livingMonsters = party.filter((m) => m.isAlive());
+          if (intent.moveStatus.target === 'party' && livingMonsters.length > 0) {
+            const target = livingMonsters[randInt(livingMonsters.length)];
+            target.applyStatus(intent.moveStatus.id as 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen', intent.moveStatus.turns);
+            fx.push({ fx: 'status', targetUid: target.uid, label: intent.moveStatus.id });
+            log.push(`${target.displayName()} is ${intent.moveStatus.id}.`);
+          } else {
+            hero.applyStatus(intent.moveStatus.id as 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen', intent.moveStatus.turns);
+            fx.push({ fx: 'status', targetUid: 'hero', label: intent.moveStatus.id });
+            log.push(`${hero.name} is ${intent.moveStatus.id}.`);
+          }
+          break;
+        }
         const skill = intent.skillId ? getSkill(intent.skillId) : undefined;
         if (skill?.modStat && skill.modAmount) {
           hero.addMod({ stat: skill.modStat, amount: -Math.abs(skill.modAmount), turns: skill.modTurns ?? 2 });
@@ -679,6 +800,7 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
 
   // New player turn.
   battle.turn++;
+  log.push(`⸻ turn ${battle.turn} ⸻`);
   if (!hero.traits.wardPersists) battle.heroBlock = 0;
   battle.energy = battle.maxEnergy;
   draw(battle, handSizeFor(hero), fx);

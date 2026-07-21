@@ -326,6 +326,167 @@
   }
 }
 
+/* --- v10: the town is people --- */
+.town-cast {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.town-cast-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  background: rgba(12, 10, 8, 0.72);
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.town-cast-card:hover,
+.town-cast-card:focus-visible {
+  border-color: var(--gold-deep);
+  background: rgba(22, 18, 12, 0.82);
+}
+
+.town-cast-portrait {
+  width: 74px;
+  height: 74px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.town-cast-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  background: rgba(40, 34, 24, 0.6);
+  border: 1px solid var(--border-dim);
+}
+
+.town-cast-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.town-cast-name {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  color: var(--gold-bright);
+}
+
+.town-cast-role {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.town-cast-bark {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.town-cast-services {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.town-quick-strip {
+  margin-top: auto;
+}
+
+/* --- v10: NPC hosts on service screens --- */
+.npc-host {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  background: rgba(12, 10, 8, 0.55);
+  border: 1px solid var(--border-dim);
+  border-left: 3px solid var(--gold-deep);
+  border-radius: 6px;
+}
+
+.npc-host-portrait {
+  width: 84px;
+  height: 84px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.npc-host-emoji {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  background: rgba(40, 34, 24, 0.6);
+  border: 1px solid var(--border-dim);
+}
+
+.npc-host-body {
+  min-width: 0;
+}
+
+.npc-host-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--gold-bright);
+  margin-bottom: 4px;
+}
+
+.npc-host-bark {
+  margin: 0;
+  font-size: 0.86rem;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* v11: the Covenant of Names — collapsible lore panel at the stable */
+.covenant-panel {
+  margin-bottom: 14px;
+  padding: 8px 12px;
+  background: rgba(12, 10, 8, 0.5);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+}
+
+.covenant-panel summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--gold-deep);
+}
+
+.covenant-text {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-dim);
+  margin: 8px 0 0;
+}
+
+.covenant-ott {
+  font-style: italic;
+  color: var(--gold-deep);
+}
+
 .town-content {
   position: relative;
   z-index: 1;
@@ -703,3 +864,345 @@
 .accessory-label { font-family: var(--font-display); color: var(--gold); letter-spacing: 0.04em; }
 .party-link { width: 100%; text-align: left; background: rgba(20,17,11,0.5); border: 1px solid var(--border); cursor: pointer; display: flex; align-items: center; gap: 10px; }
 .party-link:hover { border-color: var(--gold); }
+
+/* --- v12: PoE-style item hover tooltips --- */
+.item-hover-anchor { display: contents; }
+
+.item-tip {
+  position: fixed;
+  z-index: 400;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(16, 13, 10, 0.98), rgba(10, 8, 6, 0.98));
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.75);
+  font-size: 0.82rem;
+  overflow: hidden;
+}
+
+.item-tip-Normal { border-color: #6b675e; }
+.item-tip-Magic { border-color: #5a7fd4; }
+.item-tip-Rare { border-color: #d4c04a; }
+.item-tip-Legendary { border-color: #d4823a; }
+
+.item-tip-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--border-dim, #3a332a);
+}
+
+.item-tip-head img { border-radius: 4px; }
+
+.item-tip-name { font-family: var(--font-display); font-size: 0.95rem; }
+
+.item-tip-sub {
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.item-tip-block {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border-dim, #3a332a);
+  line-height: 1.5;
+}
+
+.item-tip-implicits { color: var(--text); }
+.item-tip-affixes { color: #8fa8e0; }
+.item-tip-affixname { color: var(--text-faint); font-size: 0.72rem; }
+.item-tip-plain { color: var(--text-faint); font-style: italic; }
+.item-tip-compare .delta-up { color: #8ee08e; }
+.item-tip-compare .delta-down { color: #d47a6a; }
+.item-tip-replaces { color: var(--text-faint); font-size: 0.72rem; font-style: italic; }
+.item-tip-foot { padding: 6px 12px; color: var(--gold-deep, #a8863c); font-size: 0.76rem; }
+
+/* --- v12: paperdoll equipment layout --- */
+.equip-layout {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.paperdoll {
+  position: relative;
+  display: grid;
+  grid-template-areas:
+    '.      head    amulet'
+    'weapon armor   pendant'
+    'gloves armor   ring1'
+    '.      boots   ring2';
+  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-rows: repeat(4, minmax(84px, auto));
+  gap: 10px;
+  padding: 14px;
+  background: radial-gradient(ellipse at 50% 45%, rgba(50, 40, 26, 0.35), rgba(10, 8, 6, 0.6) 75%);
+  border: 1px solid var(--border-dim, #3a332a);
+  border-radius: 10px;
+}
+
+.doll-figure {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  pointer-events: none;
+  filter: drop-shadow(0 0 22px rgba(224, 200, 120, 0.12));
+}
+
+.doll-slot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 84px;
+  background: rgba(10, 8, 6, 0.78);
+  border: 1px solid var(--border-dim, #3a332a);
+  border-radius: 8px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.doll-slot:hover { border-color: var(--gold-deep, #a8863c); }
+
+.doll-empty .doll-slot-ghost {
+  font-size: 1.5rem;
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.doll-slot-img { width: 52px; height: 52px; object-fit: contain; }
+.doll-slot-emoji { font-size: 1.7rem; }
+
+.doll-slot-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.equip-bag-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .equip-layout { grid-template-columns: 1fr; }
+}
+
+/* --- v12: character sheet, stats that explain themselves --- */
+.charsheet-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.stat-row-explained {
+  align-items: flex-start;
+  padding: 7px 0;
+}
+
+.stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-right: 14px;
+}
+
+.stat-name {
+  font-family: var(--font-display);
+  color: var(--gold, #c9a227);
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+}
+
+.stat-detail {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+@media (max-width: 860px) {
+  .charsheet-cols { grid-template-columns: 1fr; }
+}
+
+/* --- v12: PoE2-style unified character screen --- */
+.char-frame {
+  position: relative;
+  border: 1px solid var(--border-bright, #6b5a2e);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(22, 18, 12, 0.6), rgba(10, 8, 6, 0.72)),
+    radial-gradient(ellipse at 50% 0%, rgba(60, 48, 28, 0.4), transparent 70%);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(10, 8, 6, 0.9), 0 0 0 4px rgba(107, 90, 46, 0.5);
+}
+
+.char-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.char-topbar {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  padding: 8px;
+  margin-bottom: 12px;
+  background: rgba(8, 6, 4, 0.6);
+  border: 1px solid var(--border-dim, #3a332a);
+  border-radius: 8px;
+}
+
+.char-stat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px;
+  border-right: 1px solid rgba(107, 90, 46, 0.25);
+  cursor: default;
+}
+.char-stat-tile:last-child { border-right: none; }
+
+.char-stat-val {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--gold-bright, #e0c878);
+  font-variant-numeric: tabular-nums;
+}
+.char-stat-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.char-main {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.char-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.char-points {
+  font-size: 0.72rem;
+  color: var(--gold-bright, #e0c878);
+  text-align: center;
+}
+
+.attr-orb {
+  position: relative;
+  width: 74px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background: radial-gradient(ellipse at 50% 40%, rgba(50, 40, 24, 0.7), rgba(10, 8, 6, 0.85));
+  border: 1px solid var(--border-dim, #3a332a);
+  border-radius: 8px;
+  cursor: default;
+}
+.attr-orb-val {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.attr-orb-name {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+.attr-orb-plus {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-deep, #a8863c);
+  background: rgba(20, 16, 10, 0.95);
+  color: var(--gold-bright, #e0c878);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.attr-orb-plus:hover { background: var(--gold-deep, #a8863c); color: #0d0b06; }
+
+.char-fold {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(12, 10, 8, 0.5);
+  border: 1px solid var(--border-dim, #3a332a);
+  border-radius: 8px;
+}
+.char-fold summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  color: var(--gold, #c9a227);
+}
+
+/* codex modal (The Arrangement) */
+.codex-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(4, 3, 5, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.codex-box {
+  max-width: 620px;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 22px 26px;
+  background: linear-gradient(180deg, #16130d, #0c0a07);
+  border: 1px solid var(--gold-deep, #a8863c);
+  border-radius: 10px;
+  box-shadow: 0 0 60px rgba(179, 84, 30, 0.15);
+}
+.codex-text {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: var(--text-dim);
+  margin: 10px 0;
+}
+
+@media (max-width: 820px) {
+  .char-topbar { grid-template-columns: repeat(4, 1fr); }
+  .char-main { grid-template-columns: 1fr; }
+  .char-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+}

@@ -328,6 +328,14 @@ export interface Intent {
   amount?: number;
   times?: number;
   skillId?: string; // resolved skill behind the intent, if any
+  /** v11 kit moves: telegraph name shown to the player ("The Bell Tolls"). */
+  label?: string;
+  /** v11: the EnemyMove behind this intent, for cooldown/once bookkeeping. */
+  moveId?: string;
+  /** v11: attack that heals the enemy for half the damage dealt. */
+  drain?: boolean;
+  /** v11: status the move applies on execution (id must exist in the engine). */
+  moveStatus?: { id: string; target: 'self' | 'hero' | 'party'; turns: number };
 }
 
 /** Transient visual/audio feedback events emitted by the battle resolver. */
@@ -360,6 +368,10 @@ export interface WorldFigure {
   bornYear: number;
   diedYear: number | null; // null = fate unknown
   fate: string; // one souls-flavored line
+  /** Causal threads: history as a web, not a list. */
+  mentorId?: string; // taught by this figure
+  rivalId?: string; // opposed this figure (symmetric)
+  slainByBeastId?: string; // a famous beast ended them
 }
 
 export interface FamousBeast {

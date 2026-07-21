@@ -63,6 +63,21 @@ const EXTRA_WONDER = [
   'In {year}, a second moon hung low over the {gate} until dawn, gone by breakfast, and recorded nowhere else.',
 ];
 
+// Causal-thread events, authored locally like the EXTRA_* pools above.
+// These are what turn the figure list into a web: teachers, rivals, debts.
+const MENTOR_EVENTS = [
+  'In {year}, {figure} took up study under {figure2}, and neither ever called it that out loud.',
+  'In {year}, {figure2} accepted one student, {figure}, on the condition that no record be kept. This is the record.',
+  'In {year}, {figure} began carrying {figure2}\'s old pack, which is how the town learned who was teaching whom.',
+  'In {year}, {figure2} taught {figure} the trick of it in a single winter, then spent years pretending not to have.',
+];
+const RIVAL_EVENTS = [
+  'In {year}, {figure} and {figure2} stopped speaking, and the realm spent a generation choosing sides.',
+  'In {year}, {figure} and {figure2} argued in the square until the lamps were lit, and settled nothing, ever.',
+  'In {year}, a wager between {figure} and {figure2} got out of hand, in the way that ends up in chronicles.',
+  'In {year}, {figure} publicly corrected {figure2} once. The feud outlived them both.',
+];
+
 function fill(template: string, slots: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(slots[key] ?? `{${key}}`));
 }
@@ -214,8 +229,9 @@ export function generateWorld(seed: number): GeneratedWorld {
       ),
     });
     // Sometimes it killed someone notable.
-    const victim = figures.find((f) => f.diedYear !== null && f.diedYear > roseYear);
+    const victim = figures.find((f) => f.diedYear !== null && f.diedYear > roseYear && f.slainByBeastId === undefined);
     if (victim && rng.chance(0.65)) {
+      victim.slainByBeastId = beast.id;
       const others = figures.filter((f) => f.id !== victim.id);
       const figure2 = others.length > 0 ? figureName(rng.pick(others)) : 'another the records lost';
       events.push({
@@ -321,6 +337,58 @@ export function generateWorld(seed: number): GeneratedWorld {
     const overrides: Record<string, string | number> = { figure: figureName(rng.pick(figures)) };
     if (artifacts.length > 0) overrides.artifact = rng.pick(artifacts).name;
     events.push({ year: y, text: fill(bag.draw(`${eraAt(y).name}:${kind}`, pool), slotBag(y, overrides)) });
+  }
+
+  // --- Causal threads: mentors and rivals woven through the figure list ---
+  // Deliberately LAST: these draws must not shift the rng stream feeding
+  // figures/beasts/artifacts, so pre-thread worlds stay byte-identical per
+  // seed (the balance sim depends on that stability). Every thread emits a
+  // timeline event, so the web is readable, not just data.
+  for (const figure of figures) {
+    if (figure.mentorId === undefined && rng.chance(0.4)) {
+      const comeOfAge = figure.bornYear + rng.range(15, 24);
+      const mentors = figures.filter(
+        (m) =>
+          m.id !== figure.id &&
+          m.bornYear + 20 <= figure.bornYear && // meaningfully older
+          (m.diedYear === null || m.diedYear > comeOfAge), // alive to teach
+      );
+      if (mentors.length > 0) {
+        const sameRole = mentors.filter((m) => m.role === figure.role);
+        const mentor = rng.pick(sameRole.length > 0 ? sameRole : mentors);
+        figure.mentorId = mentor.id;
+        events.push({
+          year: comeOfAge,
+          text: fill(
+            bag.draw(`${eraAt(comeOfAge).name}:mentor`, MENTOR_EVENTS),
+            slotBag(comeOfAge, { figure: figureName(figure), figure2: figureName(mentor) }),
+          ),
+        });
+      }
+    }
+    if (figure.rivalId === undefined && rng.chance(0.3)) {
+      const rivals = figures.filter((r) => {
+        if (r.id === figure.id || r.rivalId !== undefined) return false;
+        const overlapStart = Math.max(figure.bornYear, r.bornYear) + 18;
+        const overlapEnd = Math.min(figure.diedYear ?? endYear, r.diedYear ?? endYear);
+        return overlapEnd - overlapStart >= 10; // enough shared adult years to feud in
+      });
+      if (rivals.length > 0) {
+        const rival = rng.pick(rivals);
+        figure.rivalId = rival.id;
+        rival.rivalId = figure.id;
+        const overlapStart = Math.max(figure.bornYear, rival.bornYear) + 18;
+        const overlapEnd = Math.min(figure.diedYear ?? endYear, rival.diedYear ?? endYear);
+        const feudYear = rng.range(overlapStart, overlapEnd);
+        events.push({
+          year: feudYear,
+          text: fill(
+            bag.draw(`${eraAt(feudYear).name}:rival`, RIVAL_EVENTS),
+            slotBag(feudYear, { figure: figureName(figure), figure2: figureName(rival) }),
+          ),
+        });
+      }
+    }
   }
 
   events.sort((a, b) => a.year - b.year);

@@ -1,12 +1,15 @@
 import type { GameAction, GameState } from '../engine/game';
 import { CONSUMABLES } from '../engine/data/items';
 import { ItemLine } from './ItemLine';
+import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
   return (
     <div className="panel">
-      <h1 className="title">🧪 Item Shop</h1>
+      <h1 className="title title-with-icon"><Icon name="itemshop" size={26} emoji="" /> Found Things</h1>
+      <NpcHost npcId="maribel" state={state} />
       <p className="subtitle gold">You have {player.gold}g</p>
       <div className="option-list">
         {Object.values(CONSUMABLES).map((def) => {
@@ -37,7 +40,8 @@ export function ShopGearScreen({ state, dispatch }: { state: GameState; dispatch
   const player = state.player!;
   return (
     <div className="panel">
-      <h1 className="title">⚒️ Gear Shop</h1>
+      <h1 className="title title-with-icon"><Icon name="gearshop" size={26} emoji="" /> The Gear Stall</h1>
+      <NpcHost npcId="grude" state={state} />
       <p className="subtitle">
         <span className="gold">You have {player.gold}g.</span> Stock rotates when you Rest.
       </p>

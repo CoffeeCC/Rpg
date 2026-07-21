@@ -3,7 +3,7 @@ import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
-import { isOpened, isBroken, unitAt, movFor, threatTiles, TILE, type FloorUnit } from '../engine/systems/floors';
+import { isOpened, isBroken, unitAt, movFor, threatTiles, pathToTile, reachableTiles, TILE, type FloorUnit } from '../engine/systems/floors';
 import { MonsterImage } from '../art/MonsterImage';
 import { TileFill } from '../art/tileArt';
 import { Icon } from './Icon';
@@ -115,6 +115,8 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
 export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [showItems, setShowItems] = useState(false);
   const merchantOpen = !!state.pendingMerchant;
+  // v12: guards a click-to-move walk so overlapping clicks don't stack paths.
+  const walkingRef = useRef(false);
 
   // PLAN5 #56: keyboard drives the floor.
   useEffect(() => {
@@ -184,23 +186,35 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
 
   if (!exp || !player) return null;
 
-  // Tap-to-move: tapping an adjacent tile steps that direction — same MOVE
-  // action as the dpad/keyboard, just aimed by touch instead of a button.
-  // Deliberately adjacent-only for now (no auto-pathing multiple tiles);
-  // taps further away are a no-op rather than guessing a path.
+  // v12 click-to-move: click ANY reachable tile and the hero walks there,
+  // one real MOVE step at a time (so pickups/stairs/enemy-phase all still fire
+  // per step). Clicking a unit within reach walks up and bumps it (→ battle).
+  // This replaces the old adjacent-only tap that made the map a chore.
   const handleTileTap = (x: number, y: number) => {
-    if (merchantOpen) return;
-    const dx = x - exp.x;
-    const dy = y - exp.y;
-    if (Math.abs(dx) + Math.abs(dy) !== 1) return;
-    const dir = dx === 1 ? 'east' : dx === -1 ? 'west' : dy === 1 ? 'south' : 'north';
-    dispatch({ type: 'MOVE', dir });
+    if (merchantOpen || walkingRef.current) return;
+    if (x === exp.x && y === exp.y) return;
+    const path = pathToTile(exp, x, y, exp.movLeft);
+    if (!path || path.length === 0) return;
+    walkingRef.current = true;
+    path.forEach((dir, i) => {
+      window.setTimeout(() => {
+        dispatch({ type: 'MOVE', dir });
+        if (i === path.length - 1) walkingRef.current = false;
+      }, i * 95);
+    });
   };
   const gate = GATES[exp.gateId];
   const floor = gate.floors[exp.floorIndex];
   const mov = movFor(player);
   const threat = threatTiles(exp);
+  // v12 click-to-move: tiles you can walk to this turn, and units you can reach
+  // and bump (adjacent to you or to a reachable tile).
+  const reachable = reachableTiles(exp, exp.movLeft);
+  const canReachUnit = (ux: number, uy: number) =>
+    (Math.abs(ux - exp.x) + Math.abs(uy - exp.y) === 1) ||
+    [`${ux - 1},${uy}`, `${ux + 1},${uy}`, `${ux},${uy - 1}`, `${ux},${uy + 1}`].some((k) => reachable.has(k));
   const hostiles = exp.units.filter((u) => u.kind !== 'merchant');
+  const waybrands = state.player ? state.player.inventory.filter((n) => n === 'Waybrand').length : 0;
   const miniboss = exp.units.find((u) => u.kind === 'miniboss');
 
   const usable = player.inventory.filter((name) => {
@@ -236,8 +250,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               {row.split('').map((ch, x) => {
                 if (x === exp.x && y === exp.y) {
                   return (
-                    <span key={x} ref={playerCellRef} className="map-cell player">
+                    <span key={x} ref={playerCellRef} className="map-cell player hero-here">
                       {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                      <span className="hero-ring" aria-hidden="true" />
                       <span className="cell-top">
                         {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={42} height={42} className="ui-icon" alt="" /> : '🧝'}
                       </span>
@@ -246,13 +261,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 }
                 const unit = unitAt(exp, x, y);
                 if (unit) {
+                  const engage = unit.kind !== 'merchant' && canReachUnit(x, y);
+                  const reach = unit.kind === 'merchant' && canReachUnit(x, y);
                   return (
-                    <span key={x} className="map-cell floor-tile" onClick={() => handleTileTap(x, y)}>
+                    <span
+                      key={x}
+                      className={`map-cell floor-tile unit-cell ${engage ? 'engageable' : ''} ${reach ? 'reachable-unit' : ''}`}
+                      title={engage ? `${unit.label} — click to engage` : unit.label}
+                      onClick={() => handleTileTap(x, y)}
+                    >
                       {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
                       <UnitToken unit={unit} />
                     </span>
                   );
                 }
+                const isReachable = reachable.has(`${x},${y}`);
                 let tile = ch;
                 if (isOpened(exp, x, y) && (ch === TILE.CHEST || ch === TILE.SHRINE || ch === TILE.EVENT || ch === TILE.BOSS || ch === TILE.SECRET)) {
                   tile = TILE.FLOOR;
@@ -278,9 +301,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 return (
                   <span
                     key={x}
-                    className={`map-cell ${view.cls}${danger ? ' threat' : ''}`}
+                    className={`map-cell ${view.cls}${danger ? ' threat' : ''}${isReachable ? ' reachable' : ''}`}
                     style={ch === '#' ? wallStyle(x, y) : undefined}
-                    title={danger ? 'A hostile can reach this tile next turn' : undefined}
+                    title={danger ? 'A hostile can reach this tile next turn' : isReachable ? 'Click to move here' : undefined}
                     onClick={() => handleTileTap(x, y)}
                   >
                     {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
@@ -339,8 +362,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
               💾 Save
             </button>
-            <button className="btn small danger" onClick={() => dispatch({ type: 'LEAVE_GATE' })}>
-              🏠 Leave
+            <button
+              className="btn small danger"
+              onClick={() => dispatch({ type: 'LEAVE_GATE' })}
+              disabled={waybrands === 0}
+              title={waybrands > 0 ? `Burn a Waybrand to walk home (${waybrands} left)` : 'No Waybrand — walk back to the door you came in by, or buy one from Maribel'}
+            >
+              🏮 Waybrand home ({waybrands})
             </button>
           </div>
           <p className="map-legend">

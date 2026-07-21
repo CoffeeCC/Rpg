@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
+import { NpcHost } from './NpcHost';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { canBreed, offspringSpecies, skillPool, MIN_BREEDING_LEVEL } from '../engine/systems/breeding';
 import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
+import { Icon } from './Icon';
 
 export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [parentA, setParentA] = useState<string | null>(null);
@@ -40,7 +42,8 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
 
   return (
     <div className="panel">
-      <h1 className="title">🥚 Breeding Lab</h1>
+      <h1 className="title title-with-icon"><Icon name="breeding" size={26} emoji="" /> Breeding Lab</h1>
+      <NpcHost npcId="ott" state={state} />
       <p className="subtitle">
         Pick two tamed monsters (level {MIN_BREEDING_LEVEL}+). Both are given to the egg - the offspring inherits their strength, a +generation growth
         boost, and up to 3 skills you choose.

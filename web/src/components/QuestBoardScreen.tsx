@@ -1,7 +1,9 @@
 import type { GameAction, GameState } from '../engine/game';
+import { NpcHost } from './NpcHost';
 import { availableQuests } from '../engine/game';
 import { QUESTS } from '../engine/data/quests';
 import type { QuestDef } from '../engine/types';
+import { Icon } from './Icon';
 
 function objectiveText(quest: QuestDef): string {
   const o = quest.objective;
@@ -32,7 +34,8 @@ export function QuestBoardScreen({ state, dispatch }: { state: GameState; dispat
   const lockedCount = QUESTS.length - posted.length;
   return (
     <div className="panel">
-      <h1 className="title">📜 Quest Board</h1>
+      <h1 className="title title-with-icon"><Icon name="quests" size={26} emoji="" /> The Watch Ledger</h1>
+      <NpcHost npcId="bram" state={state} />
       <p className="subtitle">The folk of Everdusk could use a hand. Finish work, and more will be pinned here.</p>
       <div className="option-list">
         {posted.map((quest) => {

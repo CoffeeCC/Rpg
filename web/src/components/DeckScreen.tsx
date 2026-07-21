@@ -1,6 +1,8 @@
 import type { GameAction, GameState, Screen } from '../engine/game';
 import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, SPECIES_CARDS, getCard } from '../engine/data/cards';
 import { CardView } from './CardView';
+import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 function countIds(ids: string[]): [string, number][] {
   const counts = new Map<string, number>();
@@ -35,7 +37,8 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
 
   return (
     <div className="panel">
-      <h1 className="title">🃏 Your Deck</h1>
+      <h1 className="title title-with-icon"><Icon name="deck" size={26} emoji="" /> Your Deck</h1>
+      <NpcHost npcId="kess" state={state} />
       <p className="subtitle">
         {player.className} core + {player.race} blood + one open hand. Monsters add their cards while they live; expedition boons fade at the gate.
       </p>

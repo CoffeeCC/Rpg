@@ -10,6 +10,7 @@ import { PAINTED_BACKDROPS } from '../art/painted';
 import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
 import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
+import { LanternTurn } from './LanternTurn';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
 interface Popup {
@@ -34,24 +35,29 @@ type PileId = 'draw' | 'discard' | 'exhaust';
 
 const PILE_LABEL: Record<PileId, string> = { draw: 'Deck', discard: 'Embers', exhaust: 'Ashes' };
 
-function intentView(intent: Intent | undefined): { icon: string; label: string; title: string } {
+function intentView(intent: Intent | undefined): { icon: string; label: string; title: string; move?: string } {
+  // v11: kit moves carry a telegraph name ("The Bell Tolls") shown under the number.
+  const move = intent?.label;
   if (!intent) return { icon: '…', label: '', title: 'Unknown' };
   switch (intent.kind) {
-    case 'attack':
+    case 'attack': {
+      const heavy = intent.drain ? '🩸' : '⚔️';
       return {
-        icon: '⚔️',
+        icon: heavy,
         label: intent.times && intent.times > 1 ? `${intent.amount}×${intent.times}` : `${intent.amount}`,
-        title: 'Intends to attack',
+        title: move ? `${move} — incoming attack${intent.drain ? ' that feeds on the wound' : ''}` : 'Intends to attack',
+        move,
       };
+    }
     case 'defend':
-      return { icon: '🛡️', label: `${intent.amount ?? ''}`, title: 'Intends to ward itself' };
+      return { icon: '🛡️', label: `${intent.amount ?? ''}`, title: move ? `${move} — it will ward itself` : 'Intends to ward itself', move };
     case 'heal':
-      return { icon: '✚', label: `${intent.amount ?? ''}`, title: 'Intends to heal' };
+      return { icon: '✚', label: `${intent.amount ?? ''}`, title: 'Intends to heal', move };
     case 'buff':
     case 'howl':
-      return { icon: '↑', label: '', title: 'Gathering strength' };
+      return { icon: '↑', label: '', title: move ? `${move} — gathering strength` : 'Gathering strength', move };
     case 'debuff':
-      return { icon: '↓', label: '', title: 'Intends to weaken you' };
+      return { icon: '↓', label: '', title: move ? `${move} — it means to weaken you` : 'Intends to weaken you', move };
   }
 }
 
@@ -118,6 +124,8 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   }, [battle, selectedIdx]);
 
   const needsTarget = selectedCard?.target === 'enemy';
+  // v11: self-heal cards can be aimed at a wounded party monster instead.
+  const allyAimable = !!selectedCard && selectedCard.target === 'self' && selectedCard.effects.some((e) => e.kind === 'heal');
 
   // --- FX consumption: STAGGERED playback so the fight reads sequentially ---
   useEffect(() => {
@@ -204,12 +212,14 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   }, []);
 
   const playSelected = useCallback(
-    (enemyUid?: string) => {
+    (unitUid?: string) => {
       if (!battle || locked || selectedIdx === null || !selectedCard) return;
-      const target = enemyUid ?? livingEnemies[targetIdx]?.uid;
+      const enemyTarget = selectedCard.target === 'enemy' ? (unitUid ?? livingEnemies[targetIdx]?.uid) : undefined;
+      // v11: an ally uid aims a self-heal at that party monster; no uid = hero, as ever.
+      const allyTarget = selectedCard.target === 'self' && unitUid && unitUid !== 'hero' ? unitUid : undefined;
       sfx('cardPlay');
-      flyGhost(selectedIdx, selectedCard, selectedCard.target === 'enemy' ? target : undefined);
-      dispatch({ type: 'PLAY_CARD', handIndex: selectedIdx, targetUid: selectedCard.target === 'enemy' ? target : undefined });
+      flyGhost(selectedIdx, selectedCard, enemyTarget);
+      dispatch({ type: 'PLAY_CARD', handIndex: selectedIdx, targetUid: enemyTarget ?? allyTarget });
       setSelectedIdx(null);
       setShowItems(false);
     },
@@ -464,13 +474,22 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
       <div className="stage-row ffrow">
         <div className="party-column">
-          <div className={`combatant-figure hero-fig ${flashing['hero'] ?? ''}`}>
+          <div
+            className={`combatant-figure hero-fig ${flashing['hero'] ?? ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
+            onClick={() => allyAimable && !locked && playSelected('hero')}
+            title={allyAimable ? 'Aim the mending here' : undefined}
+          >
             <HeroImage className={player.className} size={185} />
             {renderPopups('hero')}
             {renderImpact('hero')}
           </div>
           {state.party.map((m: MonsterInstance) => (
-            <div key={m.uid} className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''}`}>
+            <div
+              key={m.uid}
+              className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
+              onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
+              title={allyAimable && m.isAlive() ? `Aim the mending at ${m.nickname} (${m.hp}/${m.maxHp})` : undefined}
+            >
               <MonsterImage speciesId={m.speciesId} size={110} facing="right" />
               {!m.isAlive() && <span className="ko-label">FALLEN</span>}
               {renderPopups(m.uid)}
@@ -511,6 +530,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   <div className="intent" title={iv.title}>
                     <span className="intent-icon">{iv.icon}</span>
                     {iv.label && <span className="intent-num">{iv.label}</span>}
+                    {iv.move && <span className="intent-move">{iv.move}</span>}
                   </div>
                 )}
                 <MonsterImage speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
@@ -683,9 +703,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
       <div className="hand-zone">
         <div className="hand-left">
-          <div className="energy-orb" title="Vigor — spent to play cards">
-            <span className="energy-num">{battle.energy}</span>
-            <span className="energy-max">/{battle.maxEnergy}</span>
+          <div className="energy-gauge" title={`Vigor — ${battle.energy} of ${battle.maxEnergy} left to spend on cards`}>
+            <div className="energy-pips">
+              {Array.from({ length: battle.maxEnergy }, (_, i) => (
+                <span key={i} className={`energy-pip ${i < battle.energy ? 'lit' : 'spent'}`} />
+              ))}
+            </div>
+            <span className="energy-label">
+              <b>{battle.energy}</b>
+              <span>/{battle.maxEnergy} vigor</span>
+            </span>
           </div>
           {pileWidget('draw')}
         </div>
@@ -721,9 +748,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
 
         <div className="hand-right">
-          <button className="btn primary end-turn" onClick={endTurn} disabled={locked} title="End turn (E)">
-            End Turn
-          </button>
+          <LanternTurn yours={!locked} onEndTurn={endTurn} />
           <div className="hand-right-row">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
               🧪 {player.inventory.length}
