@@ -28,6 +28,9 @@ export const ICON_ART: Record<string, string> = {
   tavern: 'art/icons/tavern.png',
   vigor: 'art/icons/vigor.png',
   ward: 'art/icons/ward.png',
+  waterpool: 'art/icons/waterpool.png',
+  debris: 'art/icons/debris.png',
+  archway: 'art/icons/archway.png',
 };
 
 export const SPRITE_ART: Record<string, string> = {

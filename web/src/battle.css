@@ -703,7 +703,7 @@
 
 .card-art-window {
   position: relative;
-  height: 46%;
+  height: 54%;
   /* found live: at the small-phone card size (.playing-card forced to
      84x118 under the max-height:500px media query below), the text blocks'
      content-minimum height left no room for a 46%-height flex child and it
@@ -768,20 +768,20 @@
 
 .card-name {
   font-family: var(--font-display);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   text-align: center;
   color: #ddd5c2;
-  padding: 5px 8px 2px;
-  line-height: 1.15;
+  padding: 4px 6px 1px;
+  line-height: 1.1;
   z-index: 2;
 }
 
 .card-type-line {
   text-align: center;
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-faint);
   z-index: 2;
@@ -793,21 +793,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 2px 10px 12px;
+  gap: 2px;
+  padding: 2px 8px 8px;
   z-index: 2;
 }
 
 .card-numbers {
   font-family: var(--font-display);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   color: var(--gold-bright);
   letter-spacing: 0.04em;
 }
 
 .card-text {
-  font-size: 0.72rem;
-  line-height: 1.3;
+  font-size: 0.66rem;
+  line-height: 1.22;
   text-align: center;
   color: var(--text-dim);
   font-style: italic;
@@ -1459,3 +1459,65 @@
 }
 .lantern-bright .lantern-caption { color: var(--gold-bright, #e0c878); text-shadow: 0 0 8px rgba(255, 190, 90, 0.5); }
 .lantern-dim .lantern-caption { color: var(--text-faint); }
+
+/* --- v17: rarity visual ladder — glow ring + holo sheen + 3D tilt for
+   uncommon/rare cards, on top of the existing type-tinted SVG border
+   (cardFrames.tsx). Placed at file end so these rarity rules win any
+   specificity ties against earlier same-weight selectors (source order). */
+.playing-card.rarity-card-uncommon {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 10px rgba(168, 184, 201, 0.28);
+}
+
+.playing-card.rarity-card-rare {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 16px rgba(201, 162, 39, 0.4);
+  animation: rare-card-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes rare-card-glow {
+  0%, 100% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 14px rgba(201, 162, 39, 0.35); }
+  50% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 28px rgba(201, 162, 39, 0.7); }
+}
+
+.card-art-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.playing-card.rarity-card-uncommon .card-art-sheen {
+  background: linear-gradient(120deg, transparent 42%, rgba(255, 255, 255, 0.12) 50%, transparent 58%);
+  mix-blend-mode: overlay;
+}
+
+.playing-card.rarity-card-rare .card-art-sheen {
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.2) 45%,
+    rgba(255, 236, 170, 0.4) 50%,
+    rgba(255, 255, 255, 0.2) 55%,
+    transparent 75%
+  );
+  background-size: 250% 250%;
+  mix-blend-mode: overlay;
+  animation: rare-sheen-sweep 4.5s ease-in-out infinite;
+}
+
+@keyframes rare-sheen-sweep {
+  0% { background-position: 130% -30%; }
+  50% { background-position: -20% 120%; }
+  100% { background-position: 130% -30%; }
+}
+
+/* Mouse-tracked 3D tilt, rare cards only (CardView sets --tiltX/--tiltY and
+   the .tilting class on pointer move). Ties in specificity against the
+   .hand-fan .hand-slot .playing-card idle-breathe animation rule (both
+   0,3,0) — being later in the file wins, so this reliably takes over
+   during hover instead of fighting the paused breathing animation. */
+.playing-card.rarity-card-rare.tilting {
+  animation: none;
+  transition: transform 0.05s linear;
+  transform: perspective(900px) rotateX(var(--tiltX, 0deg)) rotateY(var(--tiltY, 0deg)) scale3d(1.02, 1.02, 1.02);
+  will-change: transform;
+}
