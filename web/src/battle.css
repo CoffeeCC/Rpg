@@ -1240,7 +1240,13 @@
    needed to win. Placed at the very end of the file so plain declarations
    don't win the cascade by source order alone. --- */
 @media (max-height: 500px) {
-  .stage-row {
+  /* .stage-row.ffrow (line ~1049, unconditional) is a 2-class selector and
+     out-specifies plain .stage-row here, so its min-height:280px was winning
+     over this override on every short viewport regardless of source order -
+     the actual reason the battle stage refused to shrink below ~280px and
+     pushed the hand off-screen. Match its specificity to actually win. */
+  .stage-row,
+  .stage-row.ffrow {
     min-height: 90px;
     padding: 4px 10px 2px;
     gap: 8px;
@@ -1309,8 +1315,11 @@
     font-size: 0.8rem;
   }
   .pile-widget {
-    transform: scale(0.7);
-    transform-origin: center;
+    /* transform:scale shrinks the visual box but not the layout box it
+       reserves - .hand-right-piles was still sized for the full-height
+       widget underneath, wasting the exact space this rule was meant to
+       reclaim. zoom shrinks both. */
+    zoom: 0.7;
   }
   .target-hint {
     font-size: 0.7rem;
