@@ -58,6 +58,8 @@ export const BALANCE = {
   burnPct: 0.06,
   poisonPct: 0.08,
   frozenTakenMult: 1.25,
+  encroachPct: 0.05, // per stack, compounds each tick (Encroach)
+  fatedPct: 0.3, // single burst on expiry (Fated)
 
   // --- Spoils & defeat ---
   dropChanceCommon: 10, // % (PLAN3: gear is scarce)

@@ -16,10 +16,12 @@ export type EquipmentSlot = 'weapon' | 'armor' | 'headpiece' | 'gloves' | 'boots
 // --- Elements & status ---
 export type Element = 'None' | 'Fire' | 'Ice' | 'Bolt' | 'Dark' | 'Holy';
 
-export type StatusName = 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen';
+export type StatusName = 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen' | 'Fated' | 'Encroach';
 export interface StatusEffect {
   name: StatusName;
   turns: number;
+  /** Encroach only: escalates by 1 each tick so the dread compounds instead of decaying. */
+  stacks?: number;
 }
 
 /** A timed buff/debuff on a combatant (positive or negative amount). */
@@ -292,6 +294,8 @@ export type CardEffect =
   | { kind: 'energy'; amount: number }
   | { kind: 'heal'; amount: number; scaling?: CardScaling }
   | { kind: 'drain'; amount: number; scaling?: CardScaling } // damage + heal hero half
+  | { kind: 'selfDamage'; amount: number } // a cost paid by the hero, independent of card target
+  | { kind: 'resolveDamage'; amount: number; perExhausted: number; scaling?: CardScaling } // damage, +perExhausted per card in the exhaust pile
   | { kind: 'tame' }; // attempt tame on target (reachOut card)
 
 export interface CardDef {

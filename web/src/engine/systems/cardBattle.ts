@@ -169,6 +169,10 @@ export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInst
       parts.push(`🃏${effect.count}`);
     } else if (effect.kind === 'energy') {
       parts.push(`◈${effect.amount}`);
+    } else if (effect.kind === 'selfDamage') {
+      parts.push(`💀${effect.amount}`);
+    } else if (effect.kind === 'resolveDamage') {
+      parts.push(`⚔${effect.amount}+${effect.perExhausted}/ex`);
     }
   }
   return parts;
@@ -214,6 +218,10 @@ export function describeEffect(effect: CardEffect, hero: Character, source?: Mon
       return `Gain ${effect.amount} Energy`;
     case 'tame':
       return 'Attempt to tame the target';
+    case 'selfDamage':
+      return `Take ${effect.amount} damage`;
+    case 'resolveDamage':
+      return `Deal ${effect.amount} damage, +${effect.perExhausted} for every exhausted card${scalingNote(effect.scaling)}`;
   }
 }
 
@@ -540,6 +548,27 @@ export function playCard(
         }
         break;
       }
+      case 'selfDamage': {
+        const dealt = hero.takeDamage(effect.amount);
+        fx.push({ fx: 'hit', targetUid: 'hero', amount: dealt });
+        log.push(`${hero.name} pays ${dealt} for it.`);
+        break;
+      }
+      case 'resolveDamage': {
+        const bonus = effect.perExhausted * battle.exhaustPile.length;
+        for (const target of resolveTargets()) {
+          if (!target.isAlive()) continue;
+          const amount = Math.max(
+            1,
+            Math.round((effect.amount + scalingBonus(effect.scaling, hero, source) + bonus) * frozenMult(target))
+          );
+          const dealt = damageEnemy(target, amount, battle);
+          fx.push({ fx: 'hit', targetUid: target.uid, amount: dealt });
+          log.push(`${target.displayName()} suffers ${dealt}.`);
+          if (!target.isAlive()) fx.push({ fx: 'ko', targetUid: target.uid });
+        }
+        break;
+      }
       case 'tame': {
         const target = explicitTarget ?? living[0];
         if (!target) break;
@@ -821,6 +850,18 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
         const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * pct)));
         fx.push({ fx: effect.name === 'Burned' ? 'fire' : 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
         log.push(`${c.displayName()} withers for ${dmg} (${effect.name}).`);
+      }
+      if (effect.name === 'Encroach' && c.isAlive()) {
+        const stacks = effect.stacks ?? 1;
+        const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * BALANCE.encroachPct * stacks)));
+        fx.push({ fx: 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
+        log.push(`${c.displayName()} is swallowed a little more for ${dmg}.`);
+        effect.stacks = stacks + 1;
+      }
+      if (effect.name === 'Fated' && effect.turns === 1 && c.isAlive()) {
+        const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * BALANCE.fatedPct)));
+        fx.push({ fx: 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
+        log.push(`${c.displayName()} is finally judged for ${dmg}.`);
       }
       effect.turns--;
     }
