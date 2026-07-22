@@ -27,6 +27,8 @@ import { FallenScreen } from './components/FallenScreen';
 import { MonsterSheetScreen } from './components/MonsterSheetScreen';
 import { PartySidebar } from './components/PartySidebar';
 import { LogPanel } from './components/LogPanel';
+import { Icon } from './components/Icon';
+import { HeroImage } from './art/MonsterImage';
 import { play as sfx, setMuted, isMuted } from './platform/sfx';
 
 type Banner = { text: string; kind: 'victory' | 'death' | 'tamed' } | null;
@@ -77,31 +79,66 @@ function App() {
 
   return (
     <div className={`game ${inBattle ? 'battle-mode' : ''}`}>
-      <header className="game-header">
-        <span className="hud-name">
-          {player.name} · Lv{player.level} {player.race} {player.className}
-        </span>
-        {state.world && <span className="realm-name">{state.world.name}</span>}
-        <span className="gold">☉ {player.gold}</span>
-        <span className="orbs" title={`Wardens' Orbs: ${state.orbs.length}/4`}>
-          {[0, 1, 2, 3].map((i) => (
-            <span key={i} className={`orb ${i < state.orbs.length ? 'filled' : 'empty'}`} />
-          ))}
-        </span>
-        <span className="pill">
-          EXP {player.exp}/{player.expToNext()}
-        </span>
-        <button
-          className="btn small"
-          title={muted ? 'Unmute' : 'Mute'}
-          onClick={() => {
-            const next = !muted;
-            setMuted(next);
-            setMutedState(next);
-          }}
-        >
-          {muted ? '🔇' : '🔊'}
-        </button>
+      <header className="game-header hud">
+        <div className="hud-hero">
+          <div className="hud-crest">
+            <HeroImage className={player.className} size={46} />
+          </div>
+          <div className="hud-idblock">
+            <div className="hud-name">{player.name}</div>
+            <div className="hud-sub">
+              Lv {player.level} · {player.race} {player.className}
+            </div>
+            <div className="hud-exp" title={`EXP ${player.exp}/${player.expToNext()}`}>
+              <div className="hud-exp-fill" style={{ width: `${Math.min(100, Math.round((player.exp / player.expToNext()) * 100))}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {state.world && <span className="realm-name hud-realm">{state.world.name}</span>}
+
+        <div className="hud-right">
+          <div className="hud-vitals">
+            <div className="hud-vital">
+              <div className="hud-vbar">
+                <div className="hud-vfill hp" style={{ width: `${Math.max(0, Math.round((player.hp / player.maxHp) * 100))}%` }} />
+              </div>
+              <span className="hud-vlabel">
+                {player.hp}/{player.maxHp}
+              </span>
+            </div>
+            <div className="hud-vital">
+              <div className="hud-vbar">
+                <div className="hud-vfill mp" style={{ width: `${player.maxMp ? Math.max(0, Math.round((player.mp / player.maxMp) * 100)) : 0}%` }} />
+              </div>
+              <span className="hud-vlabel">
+                {player.mp}/{player.maxMp}
+              </span>
+            </div>
+          </div>
+
+          <div className="hud-gold" title="Gold">
+            <Icon name="gold" emoji="☉" size={18} /> {player.gold}
+          </div>
+
+          <span className="orbs hud-orbs" title={`Wardens' Orbs: ${state.orbs.length}/4`}>
+            {[0, 1, 2, 3].map((i) => (
+              <span key={i} className={`orb ${i < state.orbs.length ? 'filled' : 'empty'}`} />
+            ))}
+          </span>
+
+          <button
+            className="btn small hud-mute"
+            title={muted ? 'Unmute' : 'Mute'}
+            onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              setMutedState(next);
+            }}
+          >
+            {muted ? '🔇' : '🔊'}
+          </button>
+        </div>
       </header>
 
       <main className="game-main">
