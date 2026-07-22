@@ -6,6 +6,7 @@ import type { GameAction } from '../engine/game';
 import type { RaceName, ClassName } from '../engine/types';
 import { Character } from '../engine/entities/Character';
 import { HeroImage } from '../art/MonsterImage';
+import { RACE_ART } from '../art/raceArt';
 import { PAINTED_TOWN } from '../art/painted';
 import { SLOT_COUNT, getSlotSummary, loadFromSlot, importSaveFromFile } from '../platform/browserSave';
 import { loadTellings } from '../platform/tellings';
@@ -86,7 +87,13 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
             <h2 className="forge-rail-head">Blood</h2>
             {(Object.keys(RACES) as RaceName[]).map((r) => (
               <button type="button" key={r} className={`forge-chip ${race === r ? 'sel' : ''}`} onClick={() => setRace(r)}>
-                <span className="forge-chip-emblem">{r[0]}</span>
+                {RACE_ART[r] ? (
+                  <span className="forge-chip-art forge-chip-race">
+                    <img src={RACE_ART[r]} alt="" draggable={false} />
+                  </span>
+                ) : (
+                  <span className="forge-chip-emblem">{r[0]}</span>
+                )}
                 <span className="forge-chip-body">
                   <span className="forge-chip-name">{r}</span>
                   <span className="forge-chip-sub">{RACE_TRAITS[r].name}</span>

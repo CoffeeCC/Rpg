@@ -1431,3 +1431,17 @@ h2.title {
   .forge-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; }
   .forge-chip { flex: 1 1 150px; }
 }
+
+/* v13.3: race portrait in the Blood rail chips */
+.forge-chip-race {
+  border-radius: 50%;
+  border: 1px solid var(--gold-deep, #a8863c);
+  background: radial-gradient(circle at 40% 35%, rgba(50, 40, 24, 0.85), rgba(8, 6, 4, 0.95));
+}
+.forge-chip-race img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 22%;
+}
+.forge-chip.sel .forge-chip-race { border-color: var(--gold, #c9a227); box-shadow: 0 0 8px rgba(201, 162, 39, 0.35); }
