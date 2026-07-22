@@ -22,7 +22,10 @@
 .battle-stage {
   position: relative;
   overflow: hidden;
-  min-height: calc(100vh - 210px);
+  /* v15: was min-height: calc(100vh - 210px) — a stale magic number from
+     before .game-main became a fixed-height flex container with its own
+     scroll. That forced extra blank space (via stage-row's flex:1) instead
+     of letting the stage fit the space .game-main actually gives it. */
   display: flex;
   flex-direction: column;
   background:
@@ -527,6 +530,17 @@
   z-index: 2;
 }
 
+/* v15: the Lantern (End Turn) is 118x150 by default (sized for the floor
+   screen's roomier corner spot) — that plus the button row and piles below
+   it made .hand-right the tallest thing in the hand row, taller than even
+   the cards, so shrinking cards alone didn't reduce the battle screen's
+   height at all. Real size override (not transform) so it actually shrinks
+   the layout, not just the visual. */
+.hand-right .lantern-turn {
+  width: 92px;
+  height: 118px;
+}
+
 /* v13: vigor as a row of faceted crystal pips set INTO the bar, not an orb */
 .energy-gauge {
   display: flex;
@@ -1000,8 +1014,8 @@
   align-items: stretch;
   gap: 20px;
   flex: 1;
-  min-height: 360px;
-  padding: 34px 26px 6px;
+  min-height: 280px;
+  padding: 24px 26px 6px;
   position: relative;
   z-index: 1;
 }
@@ -1023,8 +1037,8 @@
   gap: 6px;
 }
 .enemy-slot {
-  width: 250px;
-  height: 168px;
+  width: 210px;
+  height: 145px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -1032,8 +1046,8 @@
   transition: opacity 0.35s ease, filter 0.35s ease;
 }
 .enemy-slot.boss {
-  width: 300px;
-  height: 248px;
+  width: 255px;
+  height: 210px;
 }
 .enemy-slot.felled {
   opacity: 0.25;
@@ -1169,13 +1183,17 @@
   position: relative;
   z-index: 1;
 }
+/* v15: this is the rule that actually wins (later in the cascade beats the
+   earlier .enemy-slot block above, same specificity) — the earlier one was
+   edited first and appeared to have no effect until this one was found too.
+   Matches the .enemy-slot values near the top of this file. */
 .enemy-slot {
-  width: 300px;
-  height: 210px;
+  width: 210px;
+  height: 145px;
 }
 .enemy-slot.boss {
-  width: 360px;
-  height: 300px;
+  width: 255px;
+  height: 210px;
 }
 
 /* --- Landscape phone: shrink the whole battle stage to fit a short viewport

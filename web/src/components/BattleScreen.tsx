@@ -479,7 +479,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
-            <HeroImage className={player.className} size={185} />
+            <HeroImage className={player.className} size={162} />
             {renderPopups('hero')}
             {renderImpact('hero')}
           </div>
@@ -507,7 +507,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-            const size = enemy.isBoss ? 280 : 190;
+            const size = enemy.isBoss ? 210 : 145;
             return (
               <div
                 key={enemy.uid}
@@ -735,7 +735,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 onClick={() => playable && selectCard(i)}
                 onTouchStart={() => playable && selectCard(i)}
               >
-                <CardView card={card} hero={player} sourceMonster={source} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
+                <CardView card={card} hero={player} sourceMonster={source} width={190} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
                 <span className="hand-key">{i + 1}</span>
               </div>
             );

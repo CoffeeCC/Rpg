@@ -8,6 +8,12 @@ import { MonsterImage } from '../art/MonsterImage';
 import { TileFill } from '../art/tileArt';
 import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
+import { LanternTurn } from './LanternTurn';
+
+// v15: bumped up from 48 — the map felt small and cramped. Single source of
+// truth so the background-texture math and tile art stay in sync with the
+// CSS .map-cell size (App.css).
+const TILE_SIZE = 60;
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
   [TILE.WALL]: { emoji: '', icon: '', cls: 'wall' },
@@ -231,8 +237,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     tex
       ? {
           backgroundImage: `url(${tex.wall})`,
-          backgroundSize: `${cols * 48}px ${rows * 48}px`,
-          backgroundPosition: `${-x * 48}px ${-y * 48}px`,
+          backgroundSize: `${cols * TILE_SIZE}px ${rows * TILE_SIZE}px`,
+          backgroundPosition: `${-x * TILE_SIZE}px ${-y * TILE_SIZE}px`,
         }
       : undefined;
 
@@ -251,10 +257,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (x === exp.x && y === exp.y) {
                   return (
                     <span key={x} ref={playerCellRef} className="map-cell player hero-here">
-                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={TILE_SIZE} />}
                       <span className="hero-ring" aria-hidden="true" />
                       <span className="cell-top">
-                        {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={42} height={42} className="ui-icon" alt="" /> : '🧝'}
+                        {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={Math.round(TILE_SIZE * 0.875)} height={Math.round(TILE_SIZE * 0.875)} className="ui-icon" alt="" /> : '🧝'}
                       </span>
                     </span>
                   );
@@ -270,7 +276,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       title={engage ? `${unit.label} — click to engage` : unit.label}
                       onClick={() => handleTileTap(x, y)}
                     >
-                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={TILE_SIZE} />}
                       <UnitToken unit={unit} />
                     </span>
                   );
@@ -289,7 +295,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (tile === TILE.SECRET) {
                   return (
                     <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
-                      {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={48} />}
+                      {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={TILE_SIZE} />}
                       <span className="cell-top">✨</span>
                     </span>
                   );
@@ -306,10 +312,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                     title={danger ? 'A hostile can reach this tile next turn' : isReachable ? 'Click to move here' : undefined}
                     onClick={() => handleTileTap(x, y)}
                   >
-                    {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                    {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={TILE_SIZE} />}
                     {view.emoji && (
                       <span className="cell-top">
-                        <Icon name={view.icon} emoji={view.emoji} size={34} />
+                        <Icon name={view.icon} emoji={view.emoji} size={Math.round(TILE_SIZE * 0.708)} />
                       </span>
                     )}
                   </span>
@@ -331,27 +337,6 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               👑 {miniboss.label} guards the stairs.
             </p>
           )}
-          <div className="dpad">
-            <span />
-            <button className="btn" onClick={() => dispatch({ type: 'MOVE', dir: 'north' })}>
-              ⬆️
-            </button>
-            <span />
-            <button className="btn" onClick={() => dispatch({ type: 'MOVE', dir: 'west' })}>
-              ⬅️
-            </button>
-            <button className="btn" title="Hold your ground — end your movement turn" onClick={() => dispatch({ type: 'END_MAP_TURN' })}>
-              🛡️
-            </button>
-            <button className="btn" onClick={() => dispatch({ type: 'MOVE', dir: 'east' })}>
-              ➡️
-            </button>
-            <span />
-            <button className="btn" onClick={() => dispatch({ type: 'MOVE', dir: 'south' })}>
-              ⬇️
-            </button>
-            <span />
-          </div>
           <div className="btn-row">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
               🧪 Items ({usable.length})
@@ -375,6 +360,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor · 🎁 chest · ⛲ shrine · ❓ event · 🛢️ smashable · 🕳️ stairs · 🚪 way back · 👑 stair-warden · 🏮 merchant · 💀 gate warden
           </p>
         </div>
+      </div>
+
+      <div className="floor-lantern-turn">
+        <LanternTurn yours onEndTurn={() => dispatch({ type: 'END_MAP_TURN' })} />
       </div>
 
       {state.pendingMerchant && <MerchantMat state={state} dispatch={dispatch} />}

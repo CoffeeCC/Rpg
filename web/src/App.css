@@ -5,7 +5,7 @@
 .game {
   width: 100%;
   max-width: none;
-  min-height: calc(100vh - 26px);
+  height: calc(100vh - 26px);
   display: grid;
   grid-template-columns: 1fr 320px;
   grid-template-areas:
@@ -41,12 +41,33 @@
 .game-main {
   grid-area: main;
   min-width: 0;
+  min-height: 0; /* without this, oversized content stretches the 1fr grid
+                    track instead of scrolling internally — a classic CSS
+                    Grid gotcha (implicit min-height:auto on grid items). */
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .game-main > * {
-  flex: 1;
+  /* flex-basis: auto (not 0) lets the panel grow to its natural content
+     size when that's taller than the available space, so .game-main's own
+     overflow-y scrolls it — plain `flex: 1` clamps to the container height
+     and clips overflowing content instead. */
+  flex: 1 0 auto;
+}
+
+/* The battle screen's height varies with content (enemy count, boss or
+   not, hand size) in ways that are impractical to pin exactly for every
+   case. Rather than let .game-main scroll it — which made any hover/click
+   near an edge auto-scroll the whole view, visually "shifting" the End
+   Turn button on top of enemy art — cap it to the available space and let
+   it scroll *within itself* if it's ever still too tall. Decoupled from
+   .game-main's own scroll, so the header/log can never move because of it. */
+.game-main > .battle-stage {
+  flex: 1 1 auto;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .game-main > * {
@@ -697,9 +718,30 @@ h2.title {
 .floor-layout {
   display: flex;
   gap: 20px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-start;
   margin-top: 6px;
+}
+
+/* The map's own grid content has a fixed intrinsic width (tile count × 48px)
+   and doesn't reflow like text, so letting it "shrink" in the flex layout
+   just makes its content overflow its box instead — hence max-width +
+   overflow-x here instead of relying on flex-shrink alone. Wide floors
+   scroll horizontally rather than overlapping the controls column. */
+.map-grid {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+}
+
+/* Controls stay a narrow fixed column beside the map instead of wrapping
+   below it — wrapping was silently costing ~150px of vertical space, part
+   of why the page needed scrolling to reach the log. */
+.floor-controls {
+  flex: 0 0 260px;
+  max-width: 260px;
+  min-width: 0;
 }
 
 .map-grid {
@@ -719,12 +761,13 @@ h2.title {
 }
 
 .map-cell {
-  width: 48px;
-  height: 48px;
+  /* v15: matches TILE_SIZE in FloorScreen.tsx — keep these two in sync. */
+  width: 60px;
+  height: 60px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 28px;
   border-radius: 4px;
   position: relative;
 }
@@ -802,19 +845,16 @@ h2.title {
   }
 }
 
-.dpad {
-  display: grid;
-  grid-template-columns: repeat(3, 54px);
-  grid-template-rows: repeat(3, 44px);
-  gap: 5px;
-}
-
-.dpad .btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  font-size: 1.05rem;
+/* v15: click-to-move + pathfinding replaced the dpad/"hold ground" shield
+   button entirely — a single Lantern (same one as battle's End Turn) pinned
+   to the screen's bottom-right corner ends the movement turn instead. */
+.floor-lantern-turn {
+  position: absolute;
+  bottom: 10px;
+  right: 14px;
+  z-index: 5;
+  transform: scale(0.82);
+  transform-origin: bottom right;
 }
 
 .map-legend {
@@ -1085,23 +1125,13 @@ h2.title {
     display: flex;
     flex-direction: column;
   }
-  /* Thumb-reach: dock the actually-tappable controls (dpad + action buttons)
-     to the bottom of the column, near where a thumb rests holding the phone
-     in landscape. Glanceable text (mov-bar) stays up top where it's read,
-     not tapped. */
-  .floor-controls .dpad {
-    margin-top: auto;
-    grid-template-columns: repeat(3, 34px);
-    grid-template-rows: repeat(3, 30px);
-    gap: 3px;
-  }
-  .floor-controls .dpad .btn {
-    width: 34px;
-    height: 30px;
-    padding: 0;
-    font-size: 0.85rem;
-  }
+  /* Thumb-reach: dock the action buttons to the bottom of the column, near
+     where a thumb rests holding the phone in landscape (the Lantern end-turn
+     button docks itself via .floor-lantern-turn instead, screen-corner
+     pinned). Glanceable text (mov-bar) stays up top where it's read, not
+     tapped. */
   .floor-controls .btn-row {
+    margin-top: auto;
     gap: 4px;
   }
   .floor-controls .btn-row .btn {
