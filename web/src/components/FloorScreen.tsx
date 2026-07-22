@@ -23,10 +23,13 @@ import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
 
-// v15: bumped up from 48 — the map felt small and cramped. Single source of
+// v15: bumped up from 48 — the map felt small and cramped. v17: bumped again
+// from 60 now that the controls column no longer eats the row's width (see
+// .floor-body in App.css) — the map gets to actually use the freed space
+// instead of just sitting next to a mostly-empty sidebar. Single source of
 // truth so the background-texture math and tile art stay in sync with the
 // CSS .map-cell size (App.css).
-const TILE_SIZE = 60;
+const TILE_SIZE = 72;
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
   [TILE.WALL]: { emoji: '', icon: '', cls: 'wall' },
@@ -267,7 +270,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       </h1>
       <p className="subtitle">{exp.wild ? 'No cartographer has charted this. Only the Lantern knows what\'s here.' : gate.description}</p>
 
-      <div className="floor-layout">
+      <div className="floor-body">
+        <div className="floor-status">
+          <div className="mov-bar" title="Movement left this turn. When it runs out, the floor moves.">
+            <span className="mov-label">MOV</span>
+            {Array.from({ length: mov }, (_, i) => (
+              <span key={i} className={`mov-pip ${i < exp.movLeft ? 'full' : 'spent'}`} />
+            ))}
+          </div>
+          {miniboss && (
+            <p className="map-warning" title={miniboss.label}>
+              👑 {miniboss.label} guards the stairs.
+            </p>
+          )}
+        </div>
+
         <div className="map-grid" style={tex ? { backgroundImage: `url(${tex.ground})`, backgroundSize: 'cover' } : undefined}>
           {floor.grid.map((row, y) => (
             <div className="map-row" key={y}>
@@ -359,18 +376,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           ))}
         </div>
 
-        <div className="floor-controls">
-          <div className="mov-bar" title="Movement left this turn. When it runs out, the floor moves.">
-            <span className="mov-label">MOV</span>
-            {Array.from({ length: mov }, (_, i) => (
-              <span key={i} className={`mov-pip ${i < exp.movLeft ? 'full' : 'spent'}`} />
-            ))}
-          </div>
-          {miniboss && (
-            <p className="map-warning" title={miniboss.label}>
-              👑 {miniboss.label} guards the stairs.
-            </p>
-          )}
+        <div className="floor-actions">
           <div className="btn-row">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
               🧪 Items ({usable.length})
@@ -390,10 +396,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               🏮 Waybrand home ({waybrands})
             </button>
           </div>
-          <p className="map-legend">
-            {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor · 🎁 chest · ⛲ shrine · ❓ event · 🛢️ smashable · 🕳️ stairs · 🚪 way back · 👑 stair-warden · 🏮 merchant · 💀 gate warden
-          </p>
         </div>
+
+        <p className="map-legend">
+          {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor · 🎁 chest · ⛲ shrine · ❓ event · 🛢️ smashable · 🕳️ stairs · 🚪 way back · 👑 stair-warden · 🏮 merchant · 💀 gate warden
+        </p>
       </div>
 
       <div className="floor-lantern-turn">

@@ -714,34 +714,61 @@ h2.title {
   color: #1f0b09;
 }
 
-/* --- Floor map --- */
-.floor-layout {
-  display: flex;
-  gap: 20px;
-  flex-wrap: nowrap;
-  align-items: flex-start;
+/* --- Floor map ---
+   v17: this used to be a flex row — big map, then a fixed 260px controls
+   column beside it holding the MOV bar, a couple of buttons, and the
+   legend. That column's content never came close to filling its height,
+   so it just read as dead space next to the map. Now it's a single-column
+   grid: a slim status line, the map (which gets the full row width, hence
+   the bigger TILE_SIZE in FloorScreen.tsx), then a full-width action bar
+   and legend below it. The max-height:500px landscape-phone override
+   further down switches back to a side column for thumb-reach, where the
+   old layout genuinely earned its keep (short viewport, wide one). */
+.floor-body {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
   margin-top: 6px;
+}
+
+.floor-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 /* The map's own grid content has a fixed intrinsic width (tile count × 48px)
    and doesn't reflow like text, so letting it "shrink" in the flex layout
    just makes its content overflow its box instead — hence max-width +
    overflow-x here instead of relying on flex-shrink alone. Wide floors
-   scroll horizontally rather than overlapping the controls column. */
+   scroll horizontally instead of overflowing the panel. Height is capped
+   too — floors vary in row count, and at the bigger v17 tile size an 8+ row
+   floor would otherwise push the action bar and legend below the fold,
+   which is the exact scrolling problem the old side-column layout was
+   built to avoid. Capping height and scrolling the grid internally keeps
+   the actions reachable regardless of floor size. */
 .map-grid {
-  flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
+  max-height: min(560px, 55vh);
   overflow: auto;
 }
 
-/* Controls stay a narrow fixed column beside the map instead of wrapping
-   below it — wrapping was silently costing ~150px of vertical space, part
-   of why the page needed scrolling to reach the log. */
-.floor-controls {
-  flex: 0 0 260px;
-  max-width: 260px;
-  min-width: 0;
+.floor-actions .btn-row {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  /* The Lantern end-turn button floats absolutely over this corner
+     (.floor-lantern-turn) — reserve its footprint so the last button
+     doesn't render underneath it. */
+  padding-right: 130px;
+}
+
+.floor-actions .btn-row .btn {
+  flex: 1;
+  padding: 11px 16px;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .map-grid {
@@ -761,13 +788,13 @@ h2.title {
 }
 
 .map-cell {
-  /* v15: matches TILE_SIZE in FloorScreen.tsx — keep these two in sync. */
-  width: 60px;
-  height: 60px;
+  /* v17: matches TILE_SIZE in FloorScreen.tsx — keep these two in sync. */
+  width: 72px;
+  height: 72px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
+  font-size: 34px;
   border-radius: 4px;
   position: relative;
 }
@@ -871,23 +898,6 @@ h2.title {
   font-size: 0.75rem;
   margin-top: 10px;
   line-height: 1.6;
-}
-
-/* The controls column runs the full height of the map (which varies with
-   floor size) but its content — MOV bar, a few buttons, the legend — only
-   ever fills the top of it, leaving the rest visibly empty. Stack the
-   buttons full-width instead of wrapping them as small side-by-side pills;
-   at minimum that stops the column from reading as mostly dead space. The
-   max-height:500px mobile-landscape override further down re-shrinks these
-   for thumb-reach docking, and wins there on source order. */
-.floor-controls .btn-row {
-  flex-direction: column;
-}
-
-.floor-controls .btn-row .btn {
-  padding: 11px 16px;
-  font-size: 0.9rem;
-  text-align: left;
 }
 
 /* --- Combat --- */
@@ -1140,32 +1150,48 @@ h2.title {
   .map-row {
     gap: 1px;
   }
-  .floor-layout {
+  /* Landscape phone: short and wide, the opposite of desktop, so this goes
+     back to a side column instead of stacking below the map — a column
+     genuinely earns its keep here where vertical space is the scarce one. */
+  .floor-body {
+    grid-template-columns: 1fr 140px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      'map status'
+      'map actions';
     gap: 10px;
-    flex-wrap: nowrap;
-    align-items: stretch; /* let the controls column match the map's height */
   }
-  .floor-controls {
-    flex: 0 0 140px;
-    max-width: 140px;
-    display: flex;
-    flex-direction: column;
+  .floor-status {
+    grid-area: status;
+  }
+  .map-grid {
+    grid-area: map;
   }
   /* Thumb-reach: dock the action buttons to the bottom of the column, near
      where a thumb rests holding the phone in landscape (the Lantern end-turn
      button docks itself via .floor-lantern-turn instead, screen-corner
      pinned). Glanceable text (mov-bar) stays up top where it's read, not
      tapped. */
-  .floor-controls .btn-row {
-    margin-top: auto;
-    gap: 4px;
+  .floor-actions {
+    grid-area: actions;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    /* Same Lantern-clearance concern as desktop, but the button stack is
+       vertical here, so the reserved gap goes at the bottom instead. */
+    padding-bottom: 140px;
   }
-  .floor-controls .btn-row .btn {
+  .floor-actions .btn-row {
+    flex-direction: column;
+    gap: 4px;
+    padding-right: 0;
+  }
+  .floor-actions .btn-row .btn {
     padding: 4px 7px;
     font-size: 0.7rem;
   }
-  .floor-controls .map-legend,
-  .floor-controls .map-warning {
+  .map-legend,
+  .map-warning {
     display: none;
   }
   .subtitle {
