@@ -149,9 +149,29 @@ export function lanternRadius(hero: Character): number {
 
 /** Tiles currently lit by the Lantern (BFS from the hero, blocked by walls
  * and unbroken breakables — same reachability rules as sight/threat). Keys
- * are bare "x,y", NOT floor-scoped (caller decides how to persist them). */
+ * are bare "x,y", NOT floor-scoped (caller decides how to persist them).
+ *
+ * bfsFrom deliberately never travels THROUGH a wall (light doesn't pass
+ * beyond one), which means walls themselves never appear in its result -
+ * they were never getting lit AT ALL, even standing right next to one, so
+ * every wall in the game rendered as permanently opaque fog-black despite
+ * having real painted textures. Seeing a wall's face doesn't require light
+ * to pass through it, just to reach it, so add any wall adjacent to a lit
+ * floor tile into the result (without changing bfsFrom itself, which
+ * reachableTiles/threatTiles also use for movement math that must keep
+ * excluding walls). */
 export function litTiles(exp: Expedition, radius: number): Set<string> {
-  return new Set(bfsFrom(exp, exp.x, exp.y, radius).keys());
+  const lit = new Set(bfsFrom(exp, exp.x, exp.y, radius).keys());
+  const floor = floorOf(exp);
+  for (const key of [...lit]) {
+    const [x, y] = key.split(',').map(Number);
+    for (const { dx, dy } of Object.values(DELTAS)) {
+      const nx = x + dx;
+      const ny = y + dy;
+      if (tileAt(floor, nx, ny) === TILE.WALL) lit.add(`${nx},${ny}`);
+    }
+  }
+  return lit;
 }
 
 /** Merge newly-lit tiles into the floor's fog-of-war memory. Returns the same
