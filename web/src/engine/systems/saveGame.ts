@@ -49,6 +49,8 @@ export function deserializeGameState(save: SaveData): GameState {
       if (!(key in player.equipment)) (player.equipment as Record<string, unknown>)[key] = null;
     }
   }
+  // v16 field (Lantern fog-of-war): older saves' expeditions predate it.
+  if (raw.expedition && !Array.isArray(raw.expedition.revealed)) raw.expedition.revealed = [];
   return {
     ...raw,
     blessingChapter: raw.blessingChapter ?? -99, // v11 field; older saves get "never used"

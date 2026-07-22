@@ -3,9 +3,22 @@ import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
-import { isOpened, isBroken, unitAt, movFor, threatTiles, pathToTile, reachableTiles, TILE, type FloorUnit } from '../engine/systems/floors';
+import {
+  isOpened,
+  isBroken,
+  isRevealed,
+  litTiles,
+  lanternRadius,
+  unitAt,
+  movFor,
+  threatTiles,
+  pathToTile,
+  reachableTiles,
+  TILE,
+  type FloorUnit,
+} from '../engine/systems/floors';
 import { MonsterImage } from '../art/MonsterImage';
-import { TileFill } from '../art/tileArt';
+import { TileFill, pickTileProp } from '../art/tileArt';
 import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
@@ -213,6 +226,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const floor = gate.floors[exp.floorIndex];
   const mov = movFor(player);
   const threat = threatTiles(exp);
+  const lit = litTiles(exp, lanternRadius(player));
   // v12 click-to-move: tiles you can walk to this turn, and units you can reach
   // and bump (adjacent to you or to a reachable tile).
   const reachable = reachableTiles(exp, exp.movLeft);
@@ -245,9 +259,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   return (
     <div className="panel">
       <h1 className="title">
-        {gate.emoji} {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}
+        {exp.wild ? (
+          <>🌫️ Unmapped Wilds, beyond the {gate.name} — Depth {exp.floorIndex + 1}</>
+        ) : (
+          <>{gate.emoji} {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}</>
+        )}
       </h1>
-      <p className="subtitle">{gate.description}</p>
+      <p className="subtitle">{exp.wild ? 'No cartographer has charted this. Only the Lantern knows what\'s here.' : gate.description}</p>
 
       <div className="floor-layout">
         <div className="map-grid" style={tex ? { backgroundImage: `url(${tex.ground})`, backgroundSize: 'cover' } : undefined}>
@@ -265,8 +283,15 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                     </span>
                   );
                 }
+                const isLit = lit.has(`${x},${y}`);
+                // v16: the Lantern doesn't give away what's standing in the
+                // dark. A hidden unit still blocks/bumps into normally (see
+                // pathToTile) — only the visual is withheld — and once
+                // withheld it falls through to the plain-tile branch below,
+                // which already renders 'e'/'M'/'t'/'m' as blank floor
+                // whenever there's no *shown* unit, so no extra branch needed.
                 const unit = unitAt(exp, x, y);
-                if (unit) {
+                if (unit && isLit) {
                   const engage = unit.kind !== 'merchant' && canReachUnit(x, y);
                   const reach = unit.kind === 'merchant' && canReachUnit(x, y);
                   return (
@@ -281,6 +306,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                     </span>
                   );
                 }
+                const fogCls = isLit ? '' : isRevealed(exp, x, y) ? ' fog-seen' : ' fog-unseen';
                 const isReachable = reachable.has(`${x},${y}`);
                 let tile = ch;
                 if (isOpened(exp, x, y) && (ch === TILE.CHEST || ch === TILE.SHRINE || ch === TILE.EVENT || ch === TILE.BOSS || ch === TILE.SECRET)) {
@@ -303,11 +329,14 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 if (tile === TILE.BOSS && state.defeatedBosses.includes(exp.gateId)) tile = TILE.FLOOR;
                 if ((tile === TILE.ENEMY || tile === TILE.MINIBOSS || tile === TILE.TAMER || tile === TILE.MERCHANT) && !unit) tile = TILE.FLOOR;
                 const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
-                const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
+                // Threat is live tactical read (where a hostile could step next turn) —
+                // withhold it in the dark same as everything else, not just the sprite.
+                const danger = isLit && tile !== TILE.WALL && threat.has(`${x},${y}`);
+                const prop = tile === TILE.FLOOR ? pickTileProp(x, y) : null;
                 return (
                   <span
                     key={x}
-                    className={`map-cell ${view.cls}${danger ? ' threat' : ''}${isReachable ? ' reachable' : ''}`}
+                    className={`map-cell ${view.cls}${danger ? ' threat' : ''}${isReachable ? ' reachable' : ''}${fogCls}`}
                     style={ch === '#' ? wallStyle(x, y) : undefined}
                     title={danger ? 'A hostile can reach this tile next turn' : isReachable ? 'Click to move here' : undefined}
                     onClick={() => handleTileTap(x, y)}
@@ -316,6 +345,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                     {view.emoji && (
                       <span className="cell-top">
                         <Icon name={view.icon} emoji={view.emoji} size={Math.round(TILE_SIZE * 0.708)} />
+                      </span>
+                    )}
+                    {prop && (
+                      <span className="cell-top tile-prop">
+                        <Icon name={prop} emoji="" size={Math.round(TILE_SIZE * 0.92)} />
                       </span>
                     )}
                   </span>

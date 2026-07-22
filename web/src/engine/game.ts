@@ -26,6 +26,7 @@ import { generateItem, forgeCharm, forgeTrinket } from './systems/lootGen';
 import { generateWorld, forgeArtifactItem } from './systems/worldgen';
 import {
   newExpedition,
+  newWildExpedition,
   descend,
   ascend,
   openKey,
@@ -39,6 +40,7 @@ import {
   movFor,
   advanceHostiles,
   floorHasMiniboss,
+  revealLantern,
   TILE,
   type Direction,
   type Expedition,
@@ -157,6 +159,7 @@ export type GameAction =
   | { type: 'STORY_CONTINUE' }
   | { type: 'GOTO'; screen: Screen }
   | { type: 'ENTER_GATE'; gateId: GateId }
+  | { type: 'ENTER_WILDS'; gateId: GateId }
   | { type: 'MOVE'; dir: Direction }
   | { type: 'END_MAP_TURN' }
   | { type: 'MERCHANT_BUY'; what: 'consumable' | 'gear' | 'card'; index: number }
@@ -252,7 +255,9 @@ function cloneCore(state: GameState): GameState {
           ...state.expedition,
           opened: [...state.expedition.opened],
           broken: [...state.expedition.broken],
+          revealed: [...state.expedition.revealed],
           units: state.expedition.units.map((u) => ({ ...u })),
+          wild: state.expedition.wild ? { seed: state.expedition.wild.seed, floors: [...state.expedition.wild.floors] } : undefined,
         }
       : null,
     battle: state.battle
@@ -756,6 +761,20 @@ function fillRumor(template: string, world: GeneratedWorld): string {
 }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
+  const next = gameReducerCore(state, action);
+  // Single choke point for the fog-of-war reveal: cheaper and far less
+  // error-prone than calling revealLantern() at every one of MOVE's many
+  // early-return branches (bump, smash, stairs, ascend...). revealLantern()
+  // returns the same Expedition reference when nothing new is lit, so this
+  // stays a no-op (no extra re-renders) on actions that don't move the hero.
+  if (next.player && next.expedition) {
+    const revealed = revealLantern(next.expedition, next.player);
+    if (revealed !== next.expedition) return { ...next, expedition: revealed };
+  }
+  return next;
+}
+
+function gameReducerCore(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'CREATE_CHARACTER': {
       const player = new Character(action.name, action.race, action.className);
@@ -813,6 +832,22 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       next.screen = 'floor';
       next.log = pushLog(state.log, `You step through the ${gate.name}.`);
       applyQuestEvent(next.questLog, { type: 'reachFloor', gate: action.gateId, floor: 1 }, next.log);
+      return next;
+    }
+
+    case 'ENTER_WILDS': {
+      // Only past a Warden you've already felled — the Wilds are what lies
+      // beyond ground you've already mapped, not a shortcut around it.
+      if (!state.player || state.screen !== 'gateSelect') return state;
+      if (!state.defeatedBosses.includes(action.gateId)) return state;
+      const gate = GATES[action.gateId];
+      const next = cloneCore(state);
+      const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
+      next.expedition = newWildExpedition(action.gateId, seed, next.world, next.chronicle, next.party.length + next.stable.length > 0);
+      next.expedition.movLeft = movFor(next.player!);
+      next.expeditionExtras = [];
+      next.screen = 'floor';
+      next.log = pushLog(state.log, `You leave the mapped floors of the ${gate.name} behind. The dark ahead has no name yet.`);
       return next;
     }
 

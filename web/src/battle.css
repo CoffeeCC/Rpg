@@ -636,6 +636,27 @@
   z-index: 20;
 }
 
+/* v16: idle life — cards breathe gently in hand so they read as held objects,
+   not a static screenshot. Lives on .playing-card (not .hand-slot) because
+   .hand-slot's transform is already spoken for by the fan rotation above;
+   stacking a second transform on the child composes cleanly instead of
+   fighting it. Paused on hover so the deliberate lift gesture stays crisp. */
+@media (prefers-reduced-motion: no-preference) {
+  .hand-fan .hand-slot .playing-card {
+    animation: card-idle-breathe 4.4s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.73s);
+  }
+  .hand-fan .hand-slot:hover .playing-card,
+  .hand-fan .hand-slot:focus-within .playing-card {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes card-idle-breathe {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(0.45deg); }
+}
+
 .hand-key {
   position: absolute;
   bottom: -4px;
@@ -650,10 +671,20 @@
 }
 
 /* --- The card itself --- */
+/* v16: fine grain so card stock reads as printed material, not a flat vector
+   fill. feTurbulence noise tiled small and blended with 'overlay' so it only
+   perturbs local contrast (readable text untouched) rather than sitting as
+   a visible layer on top. */
+:root {
+  --card-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
 .playing-card {
   position: relative;
   border-radius: 8px;
-  background: linear-gradient(180deg, #191720 0%, #100e14 100%);
+  background: var(--card-grain), linear-gradient(180deg, #191720 0%, #100e14 100%);
+  background-size: 90px 90px, 100% 100%;
+  background-blend-mode: overlay, normal;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
   overflow: hidden;
   display: flex;
@@ -673,6 +704,13 @@
 .card-art-window {
   position: relative;
   height: 46%;
+  /* found live: at the small-phone card size (.playing-card forced to
+     84x118 under the max-height:500px media query below), the text blocks'
+     content-minimum height left no room for a 46%-height flex child and it
+     was shrinking to ~0 — the art vanished entirely on short viewports.
+     flex-shrink:0 keeps the art frame's share fixed; text truncates against
+     .playing-card's overflow:hidden instead, which is the right trade. */
+  flex-shrink: 0;
   margin: 8px 8px 0;
   border-radius: 4px;
   overflow: hidden;

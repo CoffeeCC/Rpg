@@ -109,7 +109,7 @@ describe('v6: minibosses & history', () => {
     const beast = state.world!.beasts.find((b) => b.gateId === 'verdant');
     const floorIdx = GATES.verdant.floors.findIndex((f) => floorHasMiniboss(f));
     if (floorIdx === -1 || !beast) return; // map or world rolled none; other tests cover the rest
-    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle, false);
+    const units = spawnFloorUnits(GATES.verdant.floors[floorIdx], 'verdant', state.world, state.chronicle, false);
     const mini = units.find((u) => u.kind === 'miniboss');
     expect(mini).toBeDefined();
     expect(mini!.famousBeastId).toBe(beast.id);
@@ -121,7 +121,7 @@ describe('v6: minibosses & history', () => {
     const floorIdx = GATES.verdant.floors.findIndex((f) => floorHasMiniboss(f));
     if (floorIdx === -1) return;
     for (const b of state.world!.beasts) state.chronicle.beastsSlain.push(b.id);
-    const units = spawnFloorUnits('verdant', floorIdx, state.world, state.chronicle, false);
+    const units = spawnFloorUnits(GATES.verdant.floors[floorIdx], 'verdant', state.world, state.chronicle, false);
     const mini = units.find((u) => u.kind === 'miniboss');
     expect(mini).toBeDefined();
     expect(mini!.famousBeastId).toBeUndefined();
@@ -329,12 +329,12 @@ describe('v7: tamer gating & loyalty', () => {
     const tFloor = GATES.verdant.floors.findIndex((f) => f.grid.some((r) => r.includes('t')));
     if (tFloor === -1) return;
     for (let i = 0; i < 30; i++) {
-      const units = spawnFloorUnits('verdant', tFloor, state.world, state.chronicle, false);
+      const units = spawnFloorUnits(GATES.verdant.floors[tFloor], 'verdant', state.world, state.chronicle, false);
       expect(units.some((u) => u.kind === 'tamer')).toBe(false);
     }
     let seen = false;
     for (let i = 0; i < 40 && !seen; i++) {
-      seen = spawnFloorUnits('verdant', tFloor, state.world, state.chronicle, true).some((u) => u.kind === 'tamer');
+      seen = spawnFloorUnits(GATES.verdant.floors[tFloor], 'verdant', state.world, state.chronicle, true).some((u) => u.kind === 'tamer');
     }
     expect(seen).toBe(true);
   });

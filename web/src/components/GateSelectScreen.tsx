@@ -18,23 +18,27 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
           const playerLevel = state.player?.level ?? 1;
           const overreach = playerLevel < lowBand - 1;
           return (
-            <button
-              type="button"
-              key={id}
-              className="option-card"
-              disabled={locked}
-              onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}
-            >
-              <div className="name">
-                {gate.emoji} {gate.name} {cleared ? '✅' : ''}
-                {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
-              </div>
-              <div className="desc">{gate.description}</div>
-              <div className="desc">
-                {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
-                {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
-              </div>
-            </button>
+            <div key={id}>
+              <button type="button" className="option-card" disabled={locked} onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}>
+                <div className="name">
+                  {gate.emoji} {gate.name} {cleared ? '✅' : ''}
+                  {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
+                </div>
+                <div className="desc">{gate.description}</div>
+                <div className="desc">
+                  {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
+                  {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
+                </div>
+              </button>
+              {cleared && (
+                <button type="button" className="option-card wilds-card" onClick={() => dispatch({ type: 'ENTER_WILDS', gateId: id })}>
+                  <div className="name">🌫️ Venture into the Unmapped Wilds</div>
+                  <div className="desc">
+                    Past every floor a cartographer has ever charted. No end, no map — only what your Lantern finds.
+                  </div>
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

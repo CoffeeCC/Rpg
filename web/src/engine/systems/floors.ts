@@ -4,7 +4,8 @@ import { GATES } from '../data/gates';
 import { speciesMatching, SPECIES } from '../data/species';
 import { BALANCE } from '../data/balance';
 import { bestowName } from './naming';
-import { randInt } from '../random';
+import { randInt, SeededRng } from '../random';
+import { generateFloor } from './floorgen';
 
 // ---------------------------------------------------------------------------
 // v6 (PLAN4): floors are TACTICAL. Every fight is a visible unit; the player
@@ -55,9 +56,20 @@ export interface Expedition {
   y: number;
   opened: string[];
   broken: string[];
+  /** Tiles the Lantern has ever lit on this floor (fog-of-war memory). Keyed like `opened`/`broken`. */
+  revealed: string[];
   units: FloorUnit[];
   movLeft: number;
   minibossDown: boolean;
+  /** Set only for an Unmapped Wilds expedition: floors past the gate's hand-
+   * authored ones, generated on demand and cached here (so ascending then
+   * descending again doesn't reroll a floor you've already seen). */
+  wild?: WildParams;
+}
+
+export interface WildParams {
+  seed: number;
+  floors: FloorDef[];
 }
 
 const ENEMY_MOV = 3;
@@ -68,7 +80,34 @@ export const SIGHT_RANGE = 9; // BFS path length at which hostiles notice you
 let unitSeq = 0;
 
 export function floorOf(exp: Expedition): FloorDef {
-  return GATES[exp.gateId].floors[exp.floorIndex];
+  return exp.wild ? floorAt(exp.gateId, exp.floorIndex, exp.wild) : GATES[exp.gateId].floors[exp.floorIndex];
+}
+
+/** Depth (0 = the floor just past the gate's own hand-authored ones) escalates
+ * difficulty and floor size from wherever the gate's own last floor left off —
+ * the Wilds continue the gate's danger curve rather than resetting it. */
+function wildFloorOptions(gateId: GateId, depth: number) {
+  const gate = GATES[gateId];
+  const base = gate.floors[gate.floors.length - 1].spawn;
+  return {
+    width: 17 + Math.min(6, Math.floor(depth / 3)),
+    height: 11 + Math.min(4, Math.floor(depth / 4)),
+    families: base.families,
+    tierMin: Math.min(5, base.tierMin + Math.floor(depth / 3)),
+    tierMax: Math.min(5, base.tierMax + 1 + Math.floor(depth / 2)),
+    levelBonus: base.levelBonus + 1 + depth,
+  };
+}
+
+/** Generates (and caches, in place, on `wild.floors`) whatever floors are
+ * needed to satisfy `floorIndex`. A no-op once that floor already exists —
+ * ascending back to a floor you've generated before never rerolls it. */
+function floorAt(gateId: GateId, floorIndex: number, wild: WildParams): FloorDef {
+  while (wild.floors.length <= floorIndex) {
+    const depth = wild.floors.length;
+    wild.floors.push(generateFloor(new SeededRng(wild.seed + depth), wildFloorOptions(gateId, depth)));
+  }
+  return wild.floors[floorIndex];
 }
 
 export function tileAt(floor: FloorDef, x: number, y: number): string {
@@ -96,6 +135,37 @@ export function isOpened(exp: Expedition, x: number, y: number): boolean {
 
 export function isBroken(exp: Expedition, x: number, y: number): boolean {
   return exp.broken.includes(openKey(exp, x, y));
+}
+
+export function isRevealed(exp: Expedition, x: number, y: number): boolean {
+  return exp.revealed.includes(openKey(exp, x, y));
+}
+
+/** How far the Last Lantern's light reaches. LUCK nudges it wider — the same
+ * stat the Chronicler's "lantern-luck" perk invests in. */
+export function lanternRadius(hero: Character): number {
+  return BALANCE.lanternRadius + Math.floor(hero.effectiveStat('LUCK') / 20);
+}
+
+/** Tiles currently lit by the Lantern (BFS from the hero, blocked by walls
+ * and unbroken breakables — same reachability rules as sight/threat). Keys
+ * are bare "x,y", NOT floor-scoped (caller decides how to persist them). */
+export function litTiles(exp: Expedition, radius: number): Set<string> {
+  return new Set(bfsFrom(exp, exp.x, exp.y, radius).keys());
+}
+
+/** Merge newly-lit tiles into the floor's fog-of-war memory. Returns the same
+ * Expedition reference if nothing new was revealed (keeps the reducer's
+ * "no-op returns state unchanged" contract intact for blocked moves). */
+export function revealLantern(exp: Expedition, hero: Character): Expedition {
+  const lit = litTiles(exp, lanternRadius(hero));
+  const added: string[] = [];
+  for (const key of lit) {
+    const scoped = `${exp.gateId}:${exp.floorIndex}:${key}`;
+    if (!exp.revealed.includes(scoped)) added.push(scoped);
+  }
+  if (added.length === 0) return exp;
+  return { ...exp, revealed: [...exp.revealed, ...added] };
 }
 
 export function floorHasMiniboss(floor: FloorDef): boolean {
@@ -282,14 +352,12 @@ export function advanceHostiles(exp: Expedition): FloorUnit | null {
 
 /** Build the floor's units from grid markers + generated history. */
 export function spawnFloorUnits(
+  floor: FloorDef,
   gateId: GateId,
-  floorIndex: number,
   world: GeneratedWorld | null,
   chronicle: ChronicleState,
   hasTamed: boolean
 ): FloorUnit[] {
-  const gate = GATES[gateId];
-  const floor = gate.floors[floorIndex];
   const units: FloorUnit[] = [];
 
   for (let y = 0; y < floor.grid.length; y++) {
@@ -359,7 +427,8 @@ export function spawnFloorUnits(
 }
 
 export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
-  const start = findStart(GATES[gateId].floors[0]);
+  const floor0 = GATES[gateId].floors[0];
+  const start = findStart(floor0);
   return {
     gateId,
     floorIndex: 0,
@@ -367,34 +436,70 @@ export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chro
     y: start.y,
     opened: [],
     broken: [],
-    units: spawnFloorUnits(gateId, 0, world, chronicle, hasTamed),
+    revealed: [],
+    units: spawnFloorUnits(floor0, gateId, world, chronicle, hasTamed),
     movLeft: 4,
     minibossDown: false,
   };
 }
 
+/** Enter the Unmapped Wilds past a gate whose Warden has already fallen —
+ * same biome/family flavor, but every floor beyond is generated, keyed off
+ * `seed` so a given expedition's floors are reproducible (e.g. across a
+ * save/load) without precomputing floors the player may never reach. */
+export function newWildExpedition(
+  gateId: GateId,
+  seed: number,
+  world: GeneratedWorld | null,
+  chronicle: ChronicleState,
+  hasTamed: boolean
+): Expedition {
+  const wild: WildParams = { seed, floors: [] };
+  const floor0 = floorAt(gateId, 0, wild);
+  const start = findStart(floor0);
+  return {
+    gateId,
+    floorIndex: 0,
+    x: start.x,
+    y: start.y,
+    opened: [],
+    broken: [],
+    revealed: [],
+    units: spawnFloorUnits(floor0, gateId, world, chronicle, hasTamed),
+    movLeft: 4,
+    minibossDown: false,
+    wild,
+  };
+}
+
 export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
-  const nextIndex = Math.min(exp.floorIndex + 1, GATES[exp.gateId].floors.length - 1);
-  const start = findStart(GATES[exp.gateId].floors[nextIndex]);
+  const wild = exp.wild ? { seed: exp.wild.seed, floors: [...exp.wild.floors] } : undefined;
+  const nextIndex = wild ? exp.floorIndex + 1 : Math.min(exp.floorIndex + 1, GATES[exp.gateId].floors.length - 1);
+  const floor = wild ? floorAt(exp.gateId, nextIndex, wild) : GATES[exp.gateId].floors[nextIndex];
+  const start = findStart(floor);
   return {
     ...exp,
+    wild,
     floorIndex: nextIndex,
     x: start.x,
     y: start.y,
-    units: spawnFloorUnits(exp.gateId, nextIndex, world, chronicle, hasTamed),
+    units: spawnFloorUnits(floor, exp.gateId, world, chronicle, hasTamed),
     minibossDown: false,
   };
 }
 
 export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
+  const wild = exp.wild ? { seed: exp.wild.seed, floors: [...exp.wild.floors] } : undefined;
   const prevIndex = Math.max(0, exp.floorIndex - 1);
-  const start = findStart(GATES[exp.gateId].floors[prevIndex]);
+  const floor = wild ? floorAt(exp.gateId, prevIndex, wild) : GATES[exp.gateId].floors[prevIndex];
+  const start = findStart(floor);
   return {
     ...exp,
+    wild,
     floorIndex: prevIndex,
     x: start.x,
     y: start.y,
-    units: spawnFloorUnits(exp.gateId, prevIndex, world, chronicle, hasTamed),
+    units: spawnFloorUnits(floor, exp.gateId, world, chronicle, hasTamed),
     minibossDown: true, // already earned the way down once
   };
 }

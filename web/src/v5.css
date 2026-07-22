@@ -189,6 +189,15 @@
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.18s ease;
+}
+
+.deck-cell:hover {
+  transform: translateY(-4px);
 }
 
 .deck-count {
@@ -203,6 +212,48 @@
   border-radius: 10px;
   padding: 1px 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+/* --- Card inspect overlay (Deck screen: click a card for full details) --- */
+.card-inspect-panel {
+  max-width: 640px;
+  width: 100%;
+}
+
+.card-inspect-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 10px;
+  z-index: 2;
+}
+
+.card-inspect-body {
+  display: flex;
+  gap: 22px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.card-inspect-details {
+  flex: 1;
+  min-width: 220px;
+}
+
+.card-inspect-effects {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.card-inspect-flavor {
+  margin-top: 12px;
+  font-style: italic;
+  color: var(--text-faint);
+  font-size: 0.85rem;
 }
 
 /* --- Legend overlays: the generated history LANDS --- */
@@ -596,6 +647,18 @@
 .danger-pill {
   color: #d06a5a;
   border-color: rgba(208, 106, 90, 0.5);
+}
+
+/* v17: Unmapped Wilds — a hazier, indented sub-option under its cleared gate,
+   not a peer choice: it's what lies past that gate's known floors. */
+.wilds-card {
+  margin: 6px 0 0 18px;
+  width: calc(100% - 18px);
+  border-style: dashed;
+  opacity: 0.85;
+}
+.wilds-card:hover:not(:disabled) {
+  opacity: 1;
 }
 
 /* v6.1: FE danger zones */

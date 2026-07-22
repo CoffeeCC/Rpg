@@ -174,6 +174,49 @@ export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInst
   return parts;
 }
 
+const STAT_LABEL: Record<Stat, string> = {
+  STR: 'Strength',
+  DEF: 'Defense',
+  DEX: 'Dexterity',
+  MANA: 'Mana',
+  MAGDEF: 'Magic Defense',
+  INT: 'Intellect',
+  LUCK: 'Luck',
+};
+
+/** One full sentence per effect for the deck screen's card-inspect view (fuller than cardNumbers' glyphs). */
+export function describeEffect(effect: CardEffect, hero: Character, source?: MonsterInstance, upgraded = false): string {
+  const scalingNote = (scaling?: CardScaling) => (scaling ? ` (scales with ${scaling})` : '');
+  switch (effect.kind) {
+    case 'damage': {
+      const n = effectAmount(effect, hero, source, upgraded);
+      const times = effect.times && effect.times > 1 ? ` — ${effect.times}× hits` : '';
+      const elem = effect.element && effect.element !== 'None' ? `${effect.element} ` : '';
+      return `Deal ${n} ${elem}damage${times}${scalingNote(effect.scaling)}`;
+    }
+    case 'block':
+      return `Gain ${effectAmount(effect, hero, source, upgraded)} Block${scalingNote(effect.scaling)}`;
+    case 'heal':
+      return `Heal ${effectAmount(effect, hero, source, upgraded)} HP${scalingNote(effect.scaling)}`;
+    case 'drain':
+      return `Deal ${effectAmount(effect, hero, source, upgraded)} damage, heal for half${scalingNote(effect.scaling)}`;
+    case 'status': {
+      const chance = effect.chance !== undefined && effect.chance < 1 ? ` (${Math.round(effect.chance * 100)}% chance)` : '';
+      return `Apply ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}${chance}`;
+    }
+    case 'selfStatus':
+      return `Gain ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}`;
+    case 'mod':
+      return `${effect.amount >= 0 ? '+' : ''}${effect.amount} ${STAT_LABEL[effect.stat]} for ${effect.turns} turns (${effect.onSelf ? 'self' : 'target'})`;
+    case 'draw':
+      return `Draw ${effect.count} card${effect.count === 1 ? '' : 's'}`;
+    case 'energy':
+      return `Gain ${effect.amount} Energy`;
+    case 'tame':
+      return 'Attempt to tame the target';
+  }
+}
+
 function elementMult(effect: CardEffect, target: MonsterInstance): number {
   if (effect.kind !== 'damage' || !effect.element) return 1;
   return FAMILY_INFO[target.family].resists[effect.element] ?? 1;

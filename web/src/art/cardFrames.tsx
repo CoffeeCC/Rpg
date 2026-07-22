@@ -103,9 +103,12 @@ export function CardArtBackdrop({ type }: { type: CardType }) {
         position: 'absolute',
         inset: 0,
         background:
+          'var(--card-grain), ' +
           `radial-gradient(ellipse 95% 70% at 50% 30%, ${tint}45 0%, transparent 68%), ` +
           `radial-gradient(ellipse 130% 55% at 50% 105%, rgba(0,0,0,0.75) 0%, transparent 62%), ` +
           'linear-gradient(180deg, #17141c 0%, #0c0a10 100%)',
+        backgroundSize: '90px 90px, auto, auto, auto',
+        backgroundBlendMode: 'overlay, normal, normal, normal',
       }}
     />
   );
