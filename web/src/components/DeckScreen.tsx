@@ -151,6 +151,9 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
           Back
         </button>
+        <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'cardCodex' })}>
+          📖 Card Codex
+        </button>
       </div>
 
       {inspect && (

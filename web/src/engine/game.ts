@@ -74,6 +74,7 @@ export type Screen =
   | 'tavern'
   | 'chronicle'
   | 'deck'
+  | 'cardCodex'
   | 'smith'
   | 'characterSheet'
   | 'monsterSheet'

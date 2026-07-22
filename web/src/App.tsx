@@ -18,6 +18,7 @@ import { TavernScreen } from './components/TavernScreen';
 import { ChronicleScreen } from './components/ChronicleScreen';
 import { CharacterSheetScreen } from './components/CharacterSheetScreen';
 import { DeckScreen } from './components/DeckScreen';
+import { CardCodexScreen } from './components/CardCodexScreen';
 import { SmithScreen } from './components/SmithScreen';
 import { LegendOverlay } from './components/LegendOverlay';
 import { SaveLoadScreen } from './components/SaveLoadScreen';
@@ -156,6 +157,7 @@ function App() {
         {state.screen === 'tavern' && <TavernScreen state={state} dispatch={dispatch} />}
         {state.screen === 'chronicle' && <ChronicleScreen state={state} dispatch={dispatch} />}
         {state.screen === 'deck' && <DeckScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {state.screen === 'cardCodex' && <CardCodexScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
         {state.screen === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {state.screen === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}

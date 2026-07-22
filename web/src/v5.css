@@ -215,6 +215,20 @@
   pointer-events: none;
 }
 
+/* v17: Card Codex — everything you don't currently have access to renders
+   desaturated instead of hidden. This is a compendium, not a spoiler-safe
+   unlock tracker, so it stays fully clickable/inspectable; the greyscale
+   is purely "not yours right now," not "unknown." */
+.codex-locked {
+  filter: grayscale(0.88) brightness(0.62);
+  opacity: 0.82;
+}
+
+.codex-locked:hover {
+  filter: grayscale(0.5) brightness(0.8);
+  opacity: 1;
+}
+
 /* --- Card inspect overlay (Deck screen: click a card for full details) --- */
 .card-inspect-panel {
   max-width: 640px;
