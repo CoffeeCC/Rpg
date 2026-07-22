@@ -66,7 +66,11 @@ function UnitToken({ unit }: { unit: FloorUnit }) {
   return (
     <span className={`unit-token ${unit.kind}`} title={`${unit.label} (Lv${unit.level})`}>
       {unit.speciesId && <MonsterImage speciesId={unit.speciesId} size={44} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />}
-      {unit.kind === 'miniboss' && <span className="unit-crown">👑</span>}
+      {unit.kind === 'miniboss' && (
+        <span className="unit-crown">
+          <Icon name="crown" emoji="👑" size={20} />
+        </span>
+      )}
     </span>
   );
 }
@@ -79,7 +83,9 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   return (
     <div className="merchant-mat">
       <div className="merchant-head">
-        <span className="merchant-title">🏮 Traveling Merchant</span>
+        <span className="merchant-title">
+          <Icon name="merchant" emoji="🏮" size={18} /> Traveling Merchant
+        </span>
         <span className="pill">💰 {player.gold}g</span>
         <button className="btn small" onClick={() => dispatch({ type: 'MERCHANT_CLOSE' })}>
           Walk away
@@ -280,7 +286,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           </div>
           {miniboss && (
             <p className="map-warning" title={miniboss.label}>
-              👑 {miniboss.label} guards the stairs.
+              <Icon name="crown" emoji="👑" size={16} /> {miniboss.label} guards the stairs.
             </p>
           )}
         </div>
@@ -339,7 +345,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   return (
                     <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
                       {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={TILE_SIZE} />}
-                      <span className="cell-top">✨</span>
+                      <span className="cell-top">
+                        <Icon name="secret" emoji="✨" size={Math.round(TILE_SIZE * 0.708)} />
+                      </span>
                     </span>
                   );
                 }
@@ -379,13 +387,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
         <div className="floor-actions">
           <div className="btn-row">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
-              🧪 Items ({usable.length})
+              <Icon name="itemshop" emoji="🧪" size={18} /> Items ({usable.length})
             </button>
             <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
-              🎒 Gear
+              <Icon name="equipment" emoji="🎒" size={18} /> Gear
             </button>
             <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
-              💾 Save
+              <Icon name="save" emoji="💾" size={18} /> Save
             </button>
             <button
               className="btn small danger"
@@ -393,13 +401,18 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               disabled={waybrands === 0}
               title={waybrands > 0 ? `Burn a Waybrand to walk home (${waybrands} left)` : 'No Waybrand — walk back to the door you came in by, or buy one from Maribel'}
             >
-              🏮 Waybrand home ({waybrands})
+              <Icon name="door" emoji="🏮" size={18} /> Waybrand home ({waybrands})
             </button>
           </div>
         </div>
 
         <p className="map-legend">
-          {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor · 🎁 chest · ⛲ shrine · ❓ event · 🛢️ smashable · 🕳️ stairs · 🚪 way back · 👑 stair-warden · 🏮 merchant · 💀 gate warden
+          {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor ·{' '}
+          <Icon name="chest" emoji="🎁" size={14} /> chest · <Icon name="shrine" emoji="⛲" size={14} /> shrine ·{' '}
+          <Icon name="event" emoji="❓" size={14} /> event · <Icon name="barrel" emoji="🛢️" size={14} /> smashable ·{' '}
+          <Icon name="stairs" emoji="🕳️" size={14} /> stairs · <Icon name="door" emoji="🚪" size={14} /> way back ·{' '}
+          <Icon name="crown" emoji="👑" size={14} /> stair-warden · <Icon name="merchant" emoji="🏮" size={14} /> merchant ·{' '}
+          <Icon name="boss" emoji="💀" size={14} /> gate warden
         </p>
       </div>
 

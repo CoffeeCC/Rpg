@@ -4,10 +4,12 @@
  */
 export const ICON_ART: Record<string, string> = {
   barrel: 'art/icons/barrel.png',
+  boss: 'art/icons/boss.png',
   breeding: 'art/icons/breeding.png',
   character: 'art/icons/character.png',
   chest: 'art/icons/chest.png',
   chronicle: 'art/icons/chronicle.png',
+  crown: 'art/icons/crown.png',
   deck: 'art/icons/deck.png',
   door: 'art/icons/door.png',
   equipment: 'art/icons/equipment.png',
@@ -17,6 +19,7 @@ export const ICON_ART: Record<string, string> = {
   gold: 'art/icons/gold.png',
   herb: 'art/icons/herb.png',
   itemshop: 'art/icons/itemshop.png',
+  merchant: 'art/icons/merchant.png',
   quests: 'art/icons/quests.png',
   rest: 'art/icons/rest.png',
   save: 'art/icons/save.png',
