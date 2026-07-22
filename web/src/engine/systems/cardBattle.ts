@@ -1,4 +1,4 @@
-import type { CardDef, CardEffect, CardInstance, CardScaling, FxEvent, GateId, Intent, ItemV2, Stat } from '../types';
+import type { CardDef, CardEffect, CardInstance, CardScaling, FxEvent, GateId, Intent, ItemV2, Stat, StatusName } from '../types';
 import { Character } from '../entities/Character';
 import { MonsterInstance, freshUid } from '../entities/MonsterInstance';
 import { CLASS_DECKS, RACE_CARDS, SPECIES_CARDS, TAME_CARD_ID, getCard } from '../data/cards';
@@ -188,6 +188,17 @@ const STAT_LABEL: Record<Stat, string> = {
   LUCK: 'Luck',
 };
 
+/** Plain-language glossary for the card-inspect view — "Apply Encroach for
+ * 12 turns" means nothing on its own, so spell out what the keyword does. */
+const STATUS_DESC: Record<StatusName, string> = {
+  Burned: 'deals fire damage at the start of each of its turns',
+  Poisoned: 'deals dark damage at the start of each of its turns',
+  Stunned: 'skips its next action entirely',
+  Frozen: 'takes 25% more damage while it lasts',
+  Fated: "does nothing until it expires, then detonates for a heavy burst of damage — it's a delayed strike, not a per-turn one",
+  Encroach: "deals dark damage every turn that grows larger each time — it doesn't decay and can't be cleansed",
+};
+
 /** One full sentence per effect for the deck screen's card-inspect view (fuller than cardNumbers' glyphs). */
 export function describeEffect(effect: CardEffect, hero: Character, source?: MonsterInstance, upgraded = false): string {
   const scalingNote = (scaling?: CardScaling) => (scaling ? ` (scales with ${scaling})` : '');
@@ -206,10 +217,10 @@ export function describeEffect(effect: CardEffect, hero: Character, source?: Mon
       return `Deal ${effectAmount(effect, hero, source, upgraded)} damage, heal for half${scalingNote(effect.scaling)}`;
     case 'status': {
       const chance = effect.chance !== undefined && effect.chance < 1 ? ` (${Math.round(effect.chance * 100)}% chance)` : '';
-      return `Apply ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}${chance}`;
+      return `Apply ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}${chance} — ${STATUS_DESC[effect.status]}`;
     }
     case 'selfStatus':
-      return `Gain ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}`;
+      return `Gain ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'} — ${STATUS_DESC[effect.status]}`;
     case 'mod':
       return `${effect.amount >= 0 ? '+' : ''}${effect.amount} ${STAT_LABEL[effect.stat]} for ${effect.turns} turns (${effect.onSelf ? 'self' : 'target'})`;
     case 'draw':

@@ -1,6 +1,14 @@
 // AUTO-GENERATED: card face art. Species cards borrow their monster's painting;
 // dedicated card faces win. 
 export const CARD_ART: Record<string, string> = {
+  scholarsCandle: 'art/cards/scholarsCandle.jpg',
+  delverGrit: 'art/cards/delverGrit.jpg',
+  ferrymansToll: 'art/cards/ferrymansToll.jpg',
+  mendersLitany: 'art/cards/mendersLitany.jpg',
+  skirmishersGuile: 'art/cards/skirmishersGuile.jpg',
+  huntersMark: 'art/cards/huntersMark.jpg',
+  heavensRebuke: 'art/cards/heavensRebuke.jpg',
+  stormcallersEdict: 'art/cards/stormcallersEdict.jpg',
   aspiration: 'art/cards/aspiration.jpg',
   everythingWentBlack: 'art/cards/everythingWentBlack.jpg',
   aViciousReformingOfFeatures: 'art/cards/aViciousReformingOfFeatures.jpg',

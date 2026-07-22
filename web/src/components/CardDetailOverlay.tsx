@@ -63,7 +63,7 @@ export function CardDetailOverlay({
             </p>
             <p className="subtitle">
               Targets: {TARGET_LABEL[card.target]}
-              {card.exhaust ? ' · Exhaust' : ''}
+              {card.exhaust ? ' · Exhaust (removed from play for the rest of this battle after use)' : ''}
               {sourceMonster ? ` · from ${sourceMonster.nickname}` : ''}
             </p>
             <ul className="card-inspect-effects">
