@@ -1445,3 +1445,28 @@ h2.title {
   object-position: center 22%;
 }
 .forge-chip.sel .forge-chip-race { border-color: var(--gold, #c9a227); box-shadow: 0 0 8px rgba(201, 162, 39, 0.35); }
+
+/* v13.4: the forge center shows your RACE portrait (identity) with the class
+   figure as a small badge — so "Dwarf Warrior" actually looks like a dwarf */
+.forge-hero-portrait {
+  width: 240px;
+  height: 240px;
+  object-fit: contain;
+  object-position: center bottom;
+  display: block;
+}
+.forge-hero-class {
+  position: absolute;
+  right: -6px;
+  bottom: 6px;
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  background: radial-gradient(circle at 45% 35%, rgba(40, 32, 18, 0.92), rgba(6, 5, 3, 0.96));
+  border: 1px solid var(--gold-deep, #a8863c);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+.forge-hero-class > * { transform: translateY(4px); }

@@ -104,7 +104,14 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
 
           <div className="forge-hero">
             <div className="forge-hero-art">
-              <HeroImage className={className} size={230} />
+              {RACE_ART[race] ? (
+                <img className="forge-hero-portrait" src={RACE_ART[race]} alt={`${race} portrait`} draggable={false} />
+              ) : (
+                <HeroImage className={className} size={230} />
+              )}
+              <span className="forge-hero-class" title={`${className} — your calling`}>
+                <HeroImage className={className} size={70} />
+              </span>
               <span className="forge-hero-plinth" aria-hidden="true" />
             </div>
             <input
