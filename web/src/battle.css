@@ -1291,13 +1291,25 @@
     font-size: 0.68rem;
   }
   .hand-zone {
-    min-height: 130px;
+    /* Raised from 130px: .hand-right (lantern + item/flee row + piles)
+       doesn't fit in 130px even after shrinking its contents below, and
+       .hand-zone wasn't actually growing to fit it - align-items:flex-end
+       just let the excess silently spill upward, out of .hand-zone's own
+       box, landing directly on top of the enemy sprite above it. */
+    min-height: 180px;
     padding: 4px 8px 6px;
     gap: 6px;
   }
   .hand-fan {
     min-height: 120px;
     margin-top: -66px;
+  }
+  .hand-left, .hand-right {
+    gap: 4px;
+  }
+  .hand-right .lantern-turn {
+    width: 70px;
+    height: 90px;
   }
   .playing-card {
     width: 84px !important;
@@ -1314,12 +1326,16 @@
     padding: 6px 12px;
     font-size: 0.8rem;
   }
+  .hand-right-row .btn.small {
+    padding: 3px 7px;
+    font-size: 0.7rem;
+  }
   .pile-widget {
     /* transform:scale shrinks the visual box but not the layout box it
        reserves - .hand-right-piles was still sized for the full-height
        widget underneath, wasting the exact space this rule was meant to
        reclaim. zoom shrinks both. */
-    zoom: 0.7;
+    zoom: 0.55;
   }
   .target-hint {
     font-size: 0.7rem;
