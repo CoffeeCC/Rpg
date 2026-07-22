@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Everdusk — SFX Audition</title>
+  <style>
+    body { background:#0b0a08; color:#e8dcc0; font-family:system-ui,sans-serif; margin:0; padding:28px; }
+    h1 { font-size:1.3rem; letter-spacing:.06em; color:#c8a24a; }
+    p { color:#9a8f78; margin:.2rem 0 1.2rem; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; max-width:900px; }
+    button { background:#1a160f; color:#e8dcc0; border:1px solid #3a3020; border-radius:7px; padding:14px 12px;
+             font-size:1rem; cursor:pointer; text-align:left; transition:border-color .15s, background .15s; }
+    button:hover { border-color:#c8a24a; background:#231d12; }
+    button:active { background:#2c2415; }
+    kbd { background:#000; border:1px solid #3a3020; border-radius:4px; padding:1px 5px; font-size:.75rem; color:#9a8f78; }
+  </style>
+</head>
+<body>
+  <h1>🔊 Everdusk — Sound Effect Audition</h1>
+  <p>Click any sound to play it. All 22 combat &amp; UI effects. Tell Claude which (if any) to regenerate.</p>
+  <div class="grid" id="grid"></div>
+  <script>
+    const names = ['slash','pierce','fire','frost','bolt','dark','holy','hit','hurt','block','heal','ko',
+      'tameSuccess','tameFail','victory','defeat','cardPlay','cardHover','draw','endTurn','gold','uiClick'];
+    const grid = document.getElementById('grid');
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const cache = {};
+    async function play(n){
+      if (!cache[n]) {
+        const r = await fetch('audio/sfx/'+n+'.mp3');
+        cache[n] = await ctx.decodeAudioData(await r.arrayBuffer());
+      }
+      const s = ctx.createBufferSource();
+      s.buffer = cache[n];
+      s.connect(ctx.destination);
+      s.start();
+    }
+    for (const n of names){
+      const b = document.createElement('button');
+      b.innerHTML = '▶ ' + n;
+      b.onclick = () => { ctx.resume(); play(n); };
+      grid.appendChild(b);
+    }
+  </script>
+</body>
+</html>
