@@ -873,6 +873,23 @@ h2.title {
   line-height: 1.6;
 }
 
+/* The controls column runs the full height of the map (which varies with
+   floor size) but its content — MOV bar, a few buttons, the legend — only
+   ever fills the top of it, leaving the rest visibly empty. Stack the
+   buttons full-width instead of wrapping them as small side-by-side pills;
+   at minimum that stops the column from reading as mostly dead space. The
+   max-height:500px mobile-landscape override further down re-shrinks these
+   for thumb-reach docking, and wins there on source order. */
+.floor-controls .btn-row {
+  flex-direction: column;
+}
+
+.floor-controls .btn-row .btn {
+  padding: 11px 16px;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
 /* --- Combat --- */
 .combatant {
   display: flex;
