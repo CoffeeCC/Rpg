@@ -99,7 +99,7 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
           return (
             <div className="item-row" key={`${name}-${i}`}>
               <div className="item-desc">
-                {def.emoji} {def.name} — {def.description}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {def.name} — {def.description}
               </div>
               <button className="btn small" disabled={player.gold < price} onClick={() => dispatch({ type: 'MERCHANT_BUY', what: 'consumable', index: i })}>
                 {price}g
@@ -429,7 +429,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           {usable.map((name, i) => (
             <div className="item-row" key={`${name}-${i}`}>
               <div className="item-desc">
-                {CONSUMABLES[name].emoji} {name} — {CONSUMABLES[name].description}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={CONSUMABLES[name].emoji} size={16} /> {name} — {CONSUMABLES[name].description}
               </div>
               <button
                 className="btn small"

@@ -17,7 +17,8 @@ export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatc
           return (
             <div className="item-row" key={def.name}>
               <div className="item-desc">
-                {def.emoji} <b>{def.name}</b> — {def.price}g {owned > 0 && <span className="pill">own ×{owned}</span>}
+                <Icon name={`item_${def.name.toLowerCase()}`} emoji={def.emoji} size={16} /> <b>{def.name}</b> — {def.price}g{' '}
+                {owned > 0 && <span className="pill">own ×{owned}</span>}
                 <div className="affix-line">{def.description}</div>
               </div>
               <button className="btn small" disabled={player.gold < def.price} onClick={() => dispatch({ type: 'SHOP_BUY_CONSUMABLE', name: def.name })}>

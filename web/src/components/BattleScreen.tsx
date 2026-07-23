@@ -11,6 +11,7 @@ import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classC
 import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
 import { LanternTurn } from './LanternTurn';
+import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
 interface Popup {
@@ -679,7 +680,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                       dispatch({ type: 'BATTLE_ITEM', name, targetUid: enemy.uid });
                     }}
                   >
-                    {def.emoji} {name} ×{count} → {enemy.nickname}
+                    <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count} → {enemy.nickname}
                   </button>
                 ));
             }
@@ -693,7 +694,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   dispatch({ type: 'BATTLE_ITEM', name });
                 }}
               >
-                {def.emoji} {name} ×{count}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count}
               </button>
             );
           })}
