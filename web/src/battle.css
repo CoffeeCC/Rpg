@@ -714,11 +714,13 @@
 .card-name {
   display: flex;
   align-items: center;
-  margin: 8px 14px 0;
-  /* Extra left padding clears the cost gem, which now sits on top of the
-     card's corner (see .card-cost) instead of inline here, so the name has
-     the full bar width to itself. */
-  padding: 2px 3px 2px 26px;
+  /* Left margin (not padding) clears the cost gem, which now sits on top of
+     the card's corner (see .card-cost): the plate itself starts just past
+     the badge, so its own interior padding stays small and symmetric and
+     the name text still reads as flush-left against the plate it's actually
+     inside, instead of floating in a lopsided gap padding would leave. */
+  margin: 8px 14px 0 30px;
+  padding: 2px 3px 2px 7px;
   border-radius: 3px;
   border: 1px solid var(--gold-deep);
   background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
