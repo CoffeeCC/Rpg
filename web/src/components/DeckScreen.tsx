@@ -32,13 +32,13 @@ function buildEntries(ids: string[], sourceMonster?: MonsterInstance): DeckEntry
 
 type SortMode = 'source' | 'name' | 'cost' | 'type' | 'rarity' | 'count';
 
-const SORT_MODES: [SortMode, string][] = [
-  ['source', '📚 By Source'],
-  ['name', '🔤 Name'],
-  ['cost', '◈ Cost'],
-  ['type', '🗂 Type'],
-  ['rarity', '✨ Rarity'],
-  ['count', '× Quantity'],
+const SORT_MODES: [SortMode, string, string, string][] = [
+  ['source', 'sort_source', '📚', 'By Source'],
+  ['name', 'sort_name', '🔤', 'Name'],
+  ['cost', 'sort_cost', '◈', 'Cost'],
+  ['type', 'sort_type', '🗂', 'Type'],
+  ['rarity', 'sort_rarity', '✨', 'Rarity'],
+  ['count', 'sort_count', '×', 'Quantity'],
 ];
 
 const TYPE_ORDER: CardDef['type'][] = ['strike', 'spell', 'guard', 'tactic', 'summon'];
@@ -130,7 +130,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
       {!hasResults && <p className="card-search-empty">No cards match "{query}".</p>}
 
       <div className="btn-row">
-        {SORT_MODES.map(([id, label]) => (
+        {SORT_MODES.map(([id, icon, emoji, label]) => (
           <button
             key={id}
             className={`btn small ${sortMode === id ? 'primary' : ''}`}
@@ -139,7 +139,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
               setSortMode(id);
             }}
           >
-            {label}
+            <Icon name={icon} emoji={emoji} size={16} /> {label}
           </button>
         ))}
         <button
@@ -150,7 +150,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
             setReverse((r) => !r);
           }}
         >
-          ⇅ Reverse
+          <Icon name="sort_reverse" emoji="⇅" size={16} /> Reverse
         </button>
       </div>
 
@@ -173,7 +173,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
           Back
         </button>
         <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'cardCodex' })}>
-          📖 Card Codex
+          <Icon name="deck" emoji="📖" size={16} /> Card Codex
         </button>
       </div>
 
