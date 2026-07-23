@@ -44,7 +44,7 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
         setInspect(entry);
       }}
     >
-      <CardView card={entry.card} hero={player} width={128} upgraded={(player.upgradedCounts[entry.card.id] ?? 0) > 0} />
+      <CardView card={entry.card} hero={player} width={190} upgraded={(player.upgradedCounts[entry.card.id] ?? 0) > 0} />
     </button>
   );
 
