@@ -129,6 +129,10 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const needsTarget = selectedCard?.target === 'enemy';
   // v11: self-heal cards can be aimed at a wounded party monster instead.
   const allyAimable = !!selectedCard && selectedCard.target === 'self' && selectedCard.effects.some((e) => e.kind === 'heal');
+  // The hand card's damage number updates live to the actual (elemental-adjusted)
+  // amount once you're aiming at a specific enemy, rather than always showing
+  // the untargeted base value — only while hoveredEnemyUid is live, not just selected.
+  const previewTarget = needsTarget && hoveredEnemyUid ? livingEnemies.find((e) => e.uid === hoveredEnemyUid) : undefined;
 
   // --- FX consumption: STAGGERED playback so the fight reads sequentially ---
   useEffect(() => {
@@ -751,7 +755,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 onClick={() => playable && selectCard(i)}
                 onTouchStart={() => playable && selectCard(i)}
               >
-                <CardView card={card} hero={player} sourceMonster={source} width={190} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
+                <CardView
+                  card={card}
+                  hero={player}
+                  sourceMonster={source}
+                  width={190}
+                  playable={playable}
+                  selected={selectedIdx === i}
+                  upgraded={!!inst.upgraded}
+                  previewTarget={selectedIdx === i ? previewTarget : undefined}
+                />
                 <span className="hand-key">{i + 1}</span>
               </div>
             );

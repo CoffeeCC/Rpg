@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { CardDef } from '../engine/types';
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
-import { cardNumbers } from '../engine/systems/cardBattle';
+import { cardNumbers, cardEffectiveness } from '../engine/systems/cardBattle';
 import { CardOrnament, CardArtBackdrop } from '../art/cardFrames';
 import { MonsterArt } from '../art/monsterArt';
 import { CARD_ART } from '../art/cardArt';
@@ -16,6 +16,9 @@ export interface CardViewProps {
   playable?: boolean;
   selected?: boolean;
   upgraded?: boolean;
+  /** The enemy currently being aimed at, if any — folds elemental
+   * effectiveness into the displayed damage while targeting is live. */
+  previewTarget?: MonsterInstance;
 }
 
 const TYPE_LABEL: Record<CardDef['type'], string> = {
@@ -26,9 +29,10 @@ const TYPE_LABEL: Record<CardDef['type'], string> = {
   summon: 'Summon',
 };
 
-export function CardView({ card, hero, sourceMonster, width = 216, playable = true, selected = false, upgraded = false }: CardViewProps) {
+export function CardView({ card, hero, sourceMonster, width = 216, playable = true, selected = false, upgraded = false, previewTarget }: CardViewProps) {
   const height = Math.round(width * 1.4);
-  const numbers = cardNumbers(card, hero, sourceMonster, upgraded);
+  const numbers = cardNumbers(card, hero, sourceMonster, upgraded, previewTarget);
+  const effectiveness = cardEffectiveness(card, previewTarget);
   const [tilt, setTilt] = useState<{ x: number; y: number } | null>(null);
   const tiltable = card.rarity === 'rare';
 
@@ -75,7 +79,9 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
         {card.exhaust ? ' · Exhaust' : ''}
       </div>
       <div className="card-body">
-        {numbers.length > 0 && <div className="card-numbers">{numbers.join('  ')}</div>}
+        {numbers.length > 0 && (
+          <div className={`card-numbers ${effectiveness ? `card-numbers-${effectiveness}` : ''}`}>{numbers.join('  ')}</div>
+        )}
         <div className="card-text">{card.text}</div>
       </div>
       <CardOrnament type={card.type} rarity={card.rarity} />

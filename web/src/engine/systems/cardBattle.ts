@@ -155,11 +155,15 @@ export function effectAmount(effect: CardEffect, hero: Character, source?: Monst
 }
 
 /** Human-readable computed numbers for the card face, e.g. "12×2". */
-export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInstance, upgraded = false): string[] {
+/** `previewTarget`, when given, folds elemental effectiveness into the shown
+ * damage — this is what lets the hand card update its number live as you aim
+ * at a specific enemy, rather than always showing the untargeted base value. */
+export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInstance, upgraded = false, previewTarget?: MonsterInstance): string[] {
   const parts: string[] = [];
   for (const effect of card.effects) {
     if (effect.kind === 'damage') {
-      const n = effectAmount(effect, hero, source, upgraded);
+      const base = effectAmount(effect, hero, source, upgraded);
+      const n = previewTarget ? Math.max(1, Math.round(base * elementMult(effect, previewTarget))) : base;
       parts.push(effect.times && effect.times > 1 ? `⚔${n}×${effect.times}` : `⚔${n}`);
     } else if (effect.kind === 'block') {
       parts.push(`🛡${effectAmount(effect, hero, source, upgraded)}`);
@@ -176,6 +180,21 @@ export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInst
     }
   }
   return parts;
+}
+
+/** Whether `previewTarget` is weak/resistant to any damage effect on this
+ * card — lets the UI flag the live-updated number instead of just changing
+ * silently. Null when there's no preview target or no elemental effect. */
+export function cardEffectiveness(card: CardDef, previewTarget?: MonsterInstance): 'boosted' | 'resisted' | null {
+  if (!previewTarget) return null;
+  for (const effect of card.effects) {
+    if (effect.kind === 'damage') {
+      const mult = elementMult(effect, previewTarget);
+      if (mult > 1) return 'boosted';
+      if (mult < 1) return 'resisted';
+    }
+  }
+  return null;
 }
 
 const STAT_LABEL: Record<Stat, string> = {
@@ -236,7 +255,7 @@ export function describeEffect(effect: CardEffect, hero: Character, source?: Mon
   }
 }
 
-function elementMult(effect: CardEffect, target: MonsterInstance): number {
+export function elementMult(effect: CardEffect, target: MonsterInstance): number {
   if (effect.kind !== 'damage' || !effect.element) return 1;
   return FAMILY_INFO[target.family].resists[effect.element] ?? 1;
 }

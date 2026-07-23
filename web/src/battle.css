@@ -1572,3 +1572,15 @@
   height: 24px;
   font-size: 14px;
 }
+
+/* Live damage-number feedback while aiming a card at a specific enemy —
+ * cardNumbers() already recalculated the value, this just makes the change
+ * readable at a glance instead of a same-colored number quietly shifting. */
+.card-numbers-boosted {
+  color: #ff8a3c;
+  text-shadow: 0 0 6px rgba(255, 138, 60, 0.6);
+}
+.card-numbers-resisted {
+  color: #9fd8f0;
+  text-shadow: 0 0 6px rgba(159, 216, 240, 0.45);
+}
