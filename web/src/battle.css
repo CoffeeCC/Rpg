@@ -842,9 +842,14 @@
   background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
   text-align: left;
   font-size: 0.55rem;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  /* Was --text-faint (a dim brown-gray meant for de-emphasized text like
+     flavor quotes), nearly illegible against this plate's dark gradient.
+     Same cream as .card-name-text, which sits on the identical gradient one
+     bar up and reads fine. */
+  color: #ddd5c2;
   z-index: 2;
 }
 
