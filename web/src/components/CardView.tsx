@@ -90,11 +90,11 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setTilt(null)}
     >
+      <span className="card-cost">{card.cost}</span>
       <div className="card-name">
         <span ref={nameRef} className="card-name-text" style={{ fontSize: `${(nameFontScale * NAME_BASE_FONT_REM).toFixed(3)}rem` }}>
           {nameText}
         </span>
-        <span className="card-cost">{card.cost}</span>
       </div>
       <div className="card-art-window">
         <CardArtBackdrop type={card.type} />

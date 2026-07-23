@@ -714,10 +714,11 @@
 .card-name {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
   margin: 8px 14px 0;
-  padding: 2px 3px 2px 7px;
+  /* Extra left padding clears the cost gem, which now sits on top of the
+     card's corner (see .card-cost) instead of inline here, so the name has
+     the full bar width to itself. */
+  padding: 2px 3px 2px 26px;
   border-radius: 3px;
   border: 1px solid var(--gold-deep);
   background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
@@ -778,11 +779,17 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.8));
 }
 
-/* v13: cost as a faceted gem, now inline in the name bar (top-right) rather
-   than an absolutely-positioned overlay on the corner of the art. */
+/* v18: cost as a faceted gem sitting on the card's own top-left corner,
+   overlapping the outer border like an inset badge, rather than living
+   inside the name bar and eating into its width (that was v13's fix for an
+   even earlier corner-overlay version that sat on the *art* corner instead
+   of the card's — this is the same idea one layer out, anchored to
+   .playing-card's border instead). */
 .card-cost {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 4;
   width: 22px;
   height: 24px;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
