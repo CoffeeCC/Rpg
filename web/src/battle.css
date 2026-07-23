@@ -704,12 +704,13 @@
 .card-art-window {
   position: relative;
   height: 54%;
-  /* found live: at the small-phone card size (.playing-card forced to
-     84x118 under the max-height:500px media query below), the text blocks'
-     content-minimum height left no room for a 46%-height flex child and it
-     was shrinking to ~0 — the art vanished entirely on short viewports.
-     flex-shrink:0 keeps the art frame's share fixed; text truncates against
-     .playing-card's overflow:hidden instead, which is the right trade. */
+  /* found live: at the small-phone hand-card size (.hand-fan .playing-card
+     forced to 84x118 under the max-height:500px media query below), the text
+     blocks' content-minimum height left no room for a 46%-height flex child
+     and it was shrinking to ~0 — the art vanished entirely on short
+     viewports. flex-shrink:0 keeps the art frame's share fixed; text
+     truncates against .playing-card's overflow:hidden instead, which is
+     the right trade. */
   flex-shrink: 0;
   margin: 8px 8px 0;
   border-radius: 4px;
@@ -717,6 +718,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* The painted frame (CardOrnament) is stretched over the whole card, so
+     its thin border reads fine against the flat plate behind the name/text
+     but disappears against busy artwork — the art needs its own always-
+     visible window edge, not one that depends on what's painted under it. */
+  border: 2px solid var(--gold-deep);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 1px 3px rgba(255, 255, 255, 0.12);
 }
 
 .card-art-content {
