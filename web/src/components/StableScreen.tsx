@@ -19,7 +19,7 @@ function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; ac
         {monster.plus > 0 && <span className="pill">+{monster.plus}</span>}
         <span className="pill">Lv{monster.level}</span>
         <span className="pill">
-          {FAMILY_INFO[monster.family].emoji} {monster.family}
+          <Icon name={`family_${monster.family.toLowerCase()}`} emoji={FAMILY_INFO[monster.family].emoji} size={14} /> {monster.family}
         </span>
         {p && (
           <span className="pill personality-pill" title={`${p.blurb} Instinct: ${p.instinctText}`}>

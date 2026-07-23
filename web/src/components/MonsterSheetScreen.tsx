@@ -4,6 +4,7 @@ import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
 import { MonsterImage } from '../art/MonsterImage';
 import { ItemLine } from './ItemLine';
+import { Icon } from './Icon';
 
 const STAT_ORDER = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'] as const;
 
@@ -86,7 +87,8 @@ export function MonsterSheetScreen({ state, dispatch }: { state: GameState; disp
           </h1>
           <p className="subtitle" style={{ margin: 0 }}>
             {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
-            {FAMILY_INFO[monster.family].emoji} {monster.family} · {inParty ? 'in your party' : 'in the stable'}
+            <Icon name={`family_${monster.family.toLowerCase()}`} emoji={FAMILY_INFO[monster.family].emoji} size={14} /> {monster.family} ·{' '}
+            {inParty ? 'in your party' : 'in the stable'}
           </p>
           {a && (
             <p className="affix-line" title={a.blurb}>

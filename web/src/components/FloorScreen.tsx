@@ -271,7 +271,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
         {exp.wild ? (
           <>🌫️ Unmapped Wilds, beyond the {gate.name} — Depth {exp.floorIndex + 1}</>
         ) : (
-          <>{gate.emoji} {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}</>
+          <>
+            <Icon name={`gate_${exp.gateId}`} emoji={gate.emoji} size={26} /> {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}
+          </>
         )}
       </h1>
       <p className="subtitle">{exp.wild ? 'No cartographer has charted this. Only the Lantern knows what\'s here.' : gate.description}</p>

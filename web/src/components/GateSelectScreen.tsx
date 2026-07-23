@@ -1,6 +1,7 @@
 import type { GameAction, GameState } from '../engine/game';
 import { GATES, GATE_ORDER } from '../engine/data/gates';
 import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 export function GateSelectScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   return (
@@ -21,13 +22,18 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
             <div key={id}>
               <button type="button" className="option-card" disabled={locked} onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}>
                 <div className="name">
-                  {gate.emoji} {gate.name} {cleared ? '✅' : ''}
+                  <Icon name={`gate_${id}`} emoji={gate.emoji} size={22} /> {gate.name} {cleared ? '✅' : ''}
                   {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
                 </div>
                 <div className="desc">{gate.description}</div>
                 <div className="desc">
                   {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
-                  {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
+                  {overreach && (
+                    <span className="pill danger-pill">
+                      {' '}
+                      <Icon name="boss" emoji="☠️" size={14} /> beyond you, for now
+                    </span>
+                  )}
                 </div>
               </button>
               {cleared && (

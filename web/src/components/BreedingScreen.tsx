@@ -59,7 +59,7 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
                 {m.species.emoji} {m.nickname}
                 {m.plus > 0 ? ` +${m.plus}` : ''} <span className="pill">Lv{m.level}</span>
                 <span className="pill">
-                  {FAMILY_INFO[m.family].emoji} {m.family}
+                  <Icon name={`family_${m.family.toLowerCase()}`} emoji={FAMILY_INFO[m.family].emoji} size={14} /> {m.family}
                 </span>
                 {m.level < MIN_BREEDING_LEVEL && <span className="pill">too young</span>}
               </div>
