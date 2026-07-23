@@ -24,19 +24,34 @@
   transform: translateY(-2px);
 }
 
-.pile-cardback {
-  font-size: 1.5rem;
-  line-height: 1;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.7));
+/* A small stack of overlapping card backs instead of one flat icon - each
+   layer nudged up-left and rotated a touch more than the last so it reads
+   as a physical pile, not a single card glyph. */
+.pile-stack {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 46px;
 }
 
-.pile-discard .pile-cardback {
-  color: var(--ember);
+.pile-stack-card {
+  position: absolute;
+  inset: 0;
+  transform: translate(calc(var(--i) * -2.5px), calc(var(--i) * -2.5px)) rotate(calc(var(--i) * -4deg));
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
 }
 
-.pile-exhaust .pile-cardback {
-  color: var(--text-faint);
-  opacity: 0.6;
+.pile-stack-card:nth-child(1) { z-index: 3; }
+.pile-stack-card:nth-child(2) { z-index: 2; }
+.pile-stack-card:nth-child(3) { z-index: 1; }
+
+.pile-discard .pile-stack-card img {
+  filter: sepia(0.5) saturate(2) hue-rotate(-15deg) brightness(0.85);
+}
+
+.pile-exhaust .pile-stack-card img {
+  filter: grayscale(0.85) brightness(0.55);
+  opacity: 0.8;
 }
 
 .pile-count-num {
@@ -231,7 +246,7 @@
 
 /* --- Card inspect overlay (Deck screen: click a card for full details) --- */
 .card-inspect-panel {
-  max-width: 640px;
+  max-width: 720px;
   width: 100%;
 }
 
@@ -245,29 +260,54 @@
 
 .card-inspect-body {
   display: flex;
-  gap: 22px;
+  gap: 26px;
   align-items: flex-start;
   flex-wrap: wrap;
 }
 
 .card-inspect-details {
   flex: 1;
-  min-width: 220px;
+  min-width: 260px;
+}
+
+.card-inspect-details .subtitle {
+  font-size: 1rem;
 }
 
 .card-inspect-effects {
-  margin: 10px 0 0;
-  padding-left: 18px;
+  margin: 12px 0 0;
+  padding-left: 20px;
   color: var(--text-dim);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 1.05rem;
+  line-height: 1.55;
 }
 
 .card-inspect-flavor {
-  margin-top: 12px;
+  margin-top: 14px;
   font-style: italic;
   color: var(--text-faint);
-  font-size: 0.85rem;
+  font-size: 1rem;
+}
+
+/* The embedded card face is enlarged here (300px vs the usual 216px in
+   hand/deck grids) specifically so its own text can scale up with it -
+   the face's font sizes are fixed rem values tuned for the small in-hand
+   size, so just growing the card wouldn't grow its text on its own. */
+.card-inspect-face .card-name {
+  font-size: 1rem;
+}
+
+.card-inspect-face .card-type-line {
+  font-size: 0.72rem;
+}
+
+.card-inspect-face .card-numbers {
+  font-size: 1.05rem;
+}
+
+.card-inspect-face .card-text {
+  font-size: 0.86rem;
+  line-height: 1.35;
 }
 
 /* --- Legend overlays: the generated history LANDS --- */
@@ -1282,4 +1322,161 @@
   .char-topbar { grid-template-columns: repeat(4, 1fr); }
   .char-main { grid-template-columns: 1fr; }
   .char-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; }
+}
+
+/* --- Landscape phone: short viewport — the generic menu screens (gates,
+   shop, inventory, stable, etc.) all render as a plain .panel inside
+   .game-main, which scrolls internally by design when its content is taller
+   than the available space (see the .game-main comment in App.css). That's
+   fine for genuinely unbounded lists, but the everyday case — a handful of
+   .option-cards under a title and an .npc-host portrait — was overflowing
+   even a mid-size phone in landscape and forcing a scroll that shouldn't be
+   needed. Compact the shared building blocks so the common case fits.
+   Loaded last (v5.css is the last stylesheet import in App.tsx) so this
+   beats the unconditional .panel/.option-card/.npc-host rules regardless of
+   which file they live in. */
+@media (max-height: 500px) {
+  .panel {
+    padding: 8px 12px;
+  }
+  .title {
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  .title-rule {
+    margin: 1px 0 4px;
+  }
+  .subtitle {
+    display: none;
+  }
+  .btn {
+    padding: 4px 11px;
+    font-size: 0.78rem;
+  }
+  .npc-host {
+    padding: 3px 7px;
+    gap: 7px;
+    margin-bottom: 5px;
+  }
+  .npc-host-portrait {
+    width: 30px;
+    height: 30px;
+  }
+  .npc-host-emoji {
+    font-size: 1rem;
+  }
+  .npc-host-name {
+    font-size: 0.72rem;
+    margin-bottom: 0;
+  }
+  .npc-host-bark {
+    font-size: 0.68rem;
+    line-height: 1.2;
+  }
+  /* Cards laid out as a list read as a wall on a short-but-wide phone
+     screen — the viewport has width to spare here, so use it: wrap into
+     a grid instead of stacking every card in one tall column. */
+  .option-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 4px;
+  }
+  .option-card {
+    padding: 4px 8px;
+  }
+  .option-card .name {
+    font-size: 0.74rem;
+  }
+  .option-card .desc {
+    font-size: 0.64rem;
+    line-height: 1.2;
+    margin-top: 1px;
+  }
+  /* Cards with two .desc lines (e.g. gate flavor text + the mechanical
+     floors/danger line) drop the first — flavor — line short on vertical
+     space; cards with only one .desc (tavern roles, bred-monster skills,
+     etc.) are untouched since :has(~ .desc) only matches a .desc that has
+     a later .desc sibling, i.e. never the lone one. (Not :first-of-type —
+     that matches by tag name, and .name is also a <div>, so it would have
+     claimed "first div" and matched nothing here.) */
+  .option-card .desc:has(~ .desc) {
+    display: none;
+  }
+  /* The "beyond you, for now" danger pill almost always wraps onto its
+     own extra line in a narrow grid cell, and with several cards showing
+     it at once that's the single biggest cost in this list — the danger
+     range already in the text above it says the same thing at a glance.
+     Drop it at short heights rather than fight the wrap. */
+  .option-card .pill {
+    display: none;
+  }
+  .btn-row {
+    margin-top: 6px;
+    gap: 6px;
+  }
+  .covenant-panel {
+    padding: 4px 8px;
+    margin-bottom: 6px;
+  }
+
+  /* --- Top HUD: .game-header.hud (App.css, v13.1) out-specifies the plain
+     .game-header rule in App.css's own max-height:500px block, so it never
+     shrank on short viewports and alone ate ~64px of a ~390px-tall screen.
+     Same specificity here (two classes) plus later source order (this file
+     loads last) wins it back. --- */
+  /* Same width-vs-height media query collision as the .game grid above:
+     the max-width:780px HUD rule (App.css v13.1) wraps .hud-realm onto its
+     own line, which a short-and-narrow phone (iPhone SE landscape) also
+     matches — doubling the header's height right when height is what's
+     scarce. Force it back inline here. */
+  .game-header.hud {
+    padding: 3px 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .hud-realm {
+    display: none;
+  }
+  .hud-crest {
+    width: 24px;
+    height: 24px;
+  }
+  .hud-idblock {
+    gap: 0;
+  }
+  .hud-name {
+    font-size: 0.68rem;
+  }
+  .hud-sub,
+  .hud-exp {
+    display: none;
+  }
+  .hud-vitals {
+    flex-direction: row;
+    gap: 6px;
+  }
+  .hud-vital {
+    gap: 3px;
+  }
+  .hud-vbar {
+    width: 44px;
+    height: 5px;
+  }
+  .hud-vlabel {
+    display: none;
+  }
+  .hud-gold {
+    font-size: 0.68rem;
+  }
+  .hud-mute {
+    padding: 2px 6px;
+    font-size: 0.68rem;
+  }
+  .orb {
+    width: 12px;
+    height: 12px;
+  }
+  .game-log {
+    max-height: 34px;
+  }
 }

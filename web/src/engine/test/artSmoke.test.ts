@@ -79,17 +79,20 @@ describe('backdrops', () => {
   });
 
   it('renders the card back', () => {
+    // Grok-painted image, not procedural SVG - just confirm it renders the art.
     const html = renderToStaticMarkup(createElement(CardBack, { width: 120 }));
-    expect(html).toContain('<svg');
+    expect(html).toContain('back_lantern.jpg');
   });
 });
 
 describe('card frames', () => {
   it('renders CardOrnament for all type x rarity combos', () => {
+    // One painted frame image per rarity tier (not per type x rarity) - just
+    // confirm every rarity resolves to its own frame art without crashing.
     for (const type of CARD_TYPES) {
       for (const rarity of CARD_RARITIES) {
         const html = renderToStaticMarkup(createElement(CardOrnament, { type, rarity }));
-        expect(html, `${type}/${rarity}`).toContain('<svg');
+        expect(html, `${type}/${rarity}`).toContain(`frame_${rarity}.png`);
       }
     }
   });

@@ -79,7 +79,7 @@ export const ICON_ART: Record<string, string> = {
   item_jerky: 'art/icons/item_jerky.png',
   item_sirloin: 'art/icons/item_sirloin.png',
   item_primesteak: 'art/icons/item_primesteak.png',
-  item_waybrand: 'art/icons/item_waybrand.png',
+  item_witchwick: 'art/icons/item_waybrand.png', // pre-rename art; still the lantern-coal painting, not yet a candle
   itemshop: 'art/icons/itemshop.png',
   merchant: 'art/icons/merchant.png',
   quests: 'art/icons/quests.png',

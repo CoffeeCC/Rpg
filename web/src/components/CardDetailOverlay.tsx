@@ -51,9 +51,11 @@ export function CardDetailOverlay({
           ✕
         </button>
         <div className="card-inspect-body">
-          <CardView card={card} hero={hero} sourceMonster={sourceMonster} width={260} upgraded={upgraded} />
+          <div className="card-inspect-face">
+            <CardView card={card} hero={hero} sourceMonster={sourceMonster} width={300} upgraded={upgraded} />
+          </div>
           <div className="card-inspect-details">
-            <h2 className="title" style={{ fontSize: '1.15rem' }}>
+            <h2 className="title" style={{ fontSize: '1.3rem' }}>
               {card.name}
               {upgraded ? ' +' : ''}
             </h2>

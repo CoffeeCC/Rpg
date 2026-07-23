@@ -243,7 +243,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     (Math.abs(ux - exp.x) + Math.abs(uy - exp.y) === 1) ||
     [`${ux - 1},${uy}`, `${ux + 1},${uy}`, `${ux},${uy - 1}`, `${ux},${uy + 1}`].some((k) => reachable.has(k));
   const hostiles = exp.units.filter((u) => u.kind !== 'merchant');
-  const waybrands = state.player ? state.player.inventory.filter((n) => n === 'Waybrand').length : 0;
+  const witchwicks = state.player ? state.player.inventory.filter((n) => n === 'Witchwick').length : 0;
   const miniboss = exp.units.find((u) => u.kind === 'miniboss');
 
   const usable = player.inventory.filter((name) => {
@@ -408,10 +408,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             <button
               className="btn small danger"
               onClick={() => dispatch({ type: 'LEAVE_GATE' })}
-              disabled={waybrands === 0}
-              title={waybrands > 0 ? `Burn a Waybrand to walk home (${waybrands} left)` : 'No Waybrand — walk back to the door you came in by, or buy one from Maribel'}
+              disabled={witchwicks === 0}
+              title={witchwicks > 0 ? `Burn a Witchwick to walk home (${witchwicks} left)` : 'No Witchwick — walk back to the door you came in by, or buy one from Maribel'}
             >
-              <Icon name="door" emoji="🏮" size={18} /> Waybrand home ({waybrands})
+              <Icon name="door" emoji="🕯️" size={18} /> Witchwick home ({witchwicks})
             </button>
           </div>
         </div>

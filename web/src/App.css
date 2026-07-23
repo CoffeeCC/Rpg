@@ -1112,10 +1112,27 @@ h2.title {
    landscape-locked layout (see mobile scoping notes). Placed at the end of the
    file so it wins the cascade against the unconditional rules above it. --- */
 @media (max-height: 500px) {
+  /* A short-AND-narrow viewport (e.g. iPhone SE landscape, 667x375) also
+     satisfies the max-width:780px rule above, which stacks the sidebar
+     above .game-main via grid-template-areas. That rule comes first in
+     the file, so this block's later grid-template-columns alone doesn't
+     fully override it — the area strings still imply a single column,
+     leaving an unused 190px track and a squeezed .game-main. Re-assert
+     rows/areas here too so height (not width) always wins this layout
+     on a landscape-locked game. */
   .game {
     gap: 6px;
     min-height: calc(100vh - 12px);
     grid-template-columns: 1fr 190px;
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'header header'
+      'main sidebar'
+      'log sidebar';
+  }
+  .game-sidebar {
+    position: static;
+    flex-direction: column;
   }
   .game-header {
     padding: 4px 10px;
@@ -1489,9 +1506,9 @@ h2.title {
   background: radial-gradient(ellipse at center, rgba(224, 180, 90, 0.28), transparent 70%); pointer-events: none;
 }
 .forge-nameplate {
-  width: min(320px, 80%); text-align: center; font-family: var(--font-display); font-size: 1.15rem; letter-spacing: 0.06em;
+  width: min(420px, 40vw); text-align: center; font-family: var(--font-display); font-size: 1.3rem; letter-spacing: 0.06em;
   color: var(--gold-bright, #e0c878); background: rgba(6, 5, 3, 0.85); border: none; border-bottom: 2px solid var(--gold-deep, #a8863c);
-  border-radius: 4px 4px 0 0; padding: 7px 12px; box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.4);
+  border-radius: 4px 4px 0 0; padding: 10px 16px; box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.4);
 }
 .forge-nameplate::placeholder { color: var(--text-faint); font-style: italic; letter-spacing: 0.04em; text-transform: lowercase; }
 .forge-nameplate:focus { outline: none; border-bottom-color: var(--gold, #c9a227); box-shadow: inset 0 -8px 14px rgba(0, 0, 0, 0.4), 0 3px 14px rgba(201, 162, 39, 0.2); }
@@ -1603,5 +1620,122 @@ h2.title {
 @media (prefers-reduced-motion: reduce) {
   .fog-veil {
     animation: none;
+  }
+}
+
+/* --- Landscape phone: short viewport — the character forge (start screen)
+   never got the same compact treatment the in-game grid got (see the other
+   max-height:500px block above), so on a short landscape phone it overflowed
+   the viewport and the page scrolled — exactly what this game's layout is
+   supposed to never do. Appended at the true end of the file (not merged
+   into the earlier media block) so it beats the unconditional .forge* rules
+   that come later in source order than that block — see the CSS cascade
+   note on .map-cell above for why position matters here. */
+@media (max-height: 500px) {
+  .forge,
+  .forge-inner {
+    min-height: calc(100vh - 12px);
+  }
+  .forge-inner {
+    padding: 6px 10px 8px;
+    gap: 4px;
+  }
+  .forge-title {
+    font-size: 1.3rem;
+  }
+  .forge-tagline,
+  .forge-telling {
+    display: none;
+  }
+  .forge-continue {
+    gap: 6px;
+  }
+  .forge-save {
+    padding: 3px 10px;
+  }
+  .forge-save-name {
+    font-size: 0.78rem;
+  }
+  .forge-save-where {
+    font-size: 0.62rem;
+  }
+  .forge-stage {
+    grid-template-columns: 130px 1fr 130px;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .forge-rail {
+    gap: 3px;
+  }
+  .forge-rail-head {
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    margin: 0 0 2px;
+  }
+  .forge-chip {
+    padding: 2px 6px;
+    gap: 6px;
+  }
+  .forge-chip-art,
+  .forge-chip-emblem,
+  .forge-chip-race {
+    width: 20px;
+    height: 20px;
+    font-size: 0.75rem;
+  }
+  .forge-chip-name {
+    font-size: 0.68rem;
+  }
+  .forge-chip-sub {
+    display: none;
+  }
+  .forge-hero {
+    gap: 2px;
+  }
+  .forge-hero-portrait {
+    width: 90px;
+    height: 90px;
+  }
+  .forge-hero-class {
+    width: 34px;
+    height: 34px;
+    right: -4px;
+    bottom: 2px;
+  }
+  .forge-nameplate {
+    font-size: 0.8rem;
+    padding: 3px 8px;
+  }
+  .forge-hero-title {
+    font-size: 0.7rem;
+    margin: 0;
+  }
+  .forge-stats {
+    margin: 2px 0;
+    gap: 4px;
+  }
+  .forge-stat {
+    min-width: 30px;
+    padding: 2px 5px;
+  }
+  .forge-stat b {
+    font-size: 0.78rem;
+  }
+  .forge-stat span {
+    font-size: 0.48rem;
+  }
+  .forge-hero-trait {
+    display: none;
+  }
+  .forge-actions {
+    margin-top: 4px;
+    gap: 8px;
+  }
+  .forge-begin {
+    padding: 6px 20px;
+    font-size: 0.85rem;
+  }
+  .forge-import {
+    padding: 3px 9px;
   }
 }

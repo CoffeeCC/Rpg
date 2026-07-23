@@ -114,15 +114,6 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
               </span>
               <span className="forge-hero-plinth" aria-hidden="true" />
             </div>
-            <input
-              className="forge-nameplate"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="name your hero"
-              maxLength={24}
-              aria-label="Name your hero"
-            />
             <p className="forge-hero-title">
               {name.trim() || 'The Nameless'} — {race} {className}
             </p>
@@ -163,6 +154,15 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
             ⬆ Import save
           </button>
           <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleImportFile} />
+          <input
+            className="forge-nameplate"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="name your hero"
+            maxLength={24}
+            aria-label="Name your hero"
+          />
           <button
             className="btn primary forge-begin"
             disabled={!canBegin}

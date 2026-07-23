@@ -47,9 +47,15 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
   background:
     radial-gradient(ellipse 85% 45% at 50% -10%, rgba(96, 118, 80, 0.1) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 88% 106%, rgba(179, 84, 30, 0.07) 0%, transparent 60%),
@@ -72,7 +78,7 @@ body::after {
 #root {
   position: relative;
   z-index: 1;
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   justify-content: center;
   align-items: stretch;

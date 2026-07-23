@@ -1177,19 +1177,19 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
     }
 
     case 'LEAVE_GATE': {
-      // v11: no more free teleports home. Burn a Waybrand, or walk back to
+      // v11: no more free teleports home. Burn a Witchwick, or walk back to
       // the door you came in by (the START tile on floor 1 remains free).
       if (state.screen !== 'floor' || !state.player) return state;
       const next = cloneCore(state);
-      if (!next.player!.removeConsumable('Waybrand')) {
-        next.log = pushLog(state.log, 'No Waybrand to burn. The way home is the way you came in — or Maribel sells the shortcut.');
+      if (!next.player!.removeConsumable('Witchwick')) {
+        next.log = pushLog(state.log, 'No Witchwick to burn. The way home is the way you came in — or Maribel sells the shortcut.');
         return next;
       }
       next.expedition = null;
       next.expeditionExtras = [];
       next.pendingMerchant = null;
       next.screen = 'town';
-      next.log = pushLog(state.log, 'You snap the Waybrand. The dusk folds once, politely, and you are home. The reward cards fade like a dream on waking.');
+      next.log = pushLog(state.log, 'You burn the Witchwick down to the wax. The dusk folds once, politely, and you are home. The reward cards fade like a dream on waking.');
       return next;
     }
 

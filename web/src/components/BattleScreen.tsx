@@ -344,6 +344,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
   const pileWidget = (pile: PileId) => {
     const cards = pileContents(pile);
+    const layers = Math.min(3, Math.max(1, cards.length));
     return (
       <button
         type="button"
@@ -354,7 +355,13 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           setPileView((v) => (v === pile ? null : pile));
         }}
       >
-        <span className="pile-cardback"><CardBack width={30} /></span>
+        <span className="pile-stack">
+          {Array.from({ length: layers }, (_, i) => (
+            <span className="pile-stack-card" key={i} style={{ ['--i' as string]: i }}>
+              <CardBack width={30} />
+            </span>
+          ))}
+        </span>
         <span className="pile-count-num">{cards.length}</span>
         <span className="pile-name">{PILE_LABEL[pile]}</span>
       </button>

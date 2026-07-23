@@ -446,55 +446,23 @@ export function TownBackdrop(): ReactElement {
 // Card back
 // ---------------------------------------------------------------------------
 
-/** Filigree flourish echoing cardFrames.tsx's corner curl, scaled to 0-100x140. */
-const CORNER =
-  'M4 18 C 4 10 10 4 18 4 M6.4 15.6 C 6.4 10.3 10.3 6.4 15.6 6.4 ' +
-  'M18 4 c 3.4 0 5.7 1.8 5.7 4.3 c 0 2.1 -1.6 3.4 -3.4 3.4 c -1.4 0 -2.3 -1 -2.3 -2.2 ' +
-  'M4 18 c 0 3.4 1.8 5.7 4.3 5.7 c 2.1 0 3.4 -1.6 3.4 -3.4 c 0 -1.4 -1 -2.3 -2.2 -2.3';
+/** Grok-painted card backs. 'lantern' (the game's core motif) is the default;
+ * 'embermoth' is available as an alt for anywhere a second design is wanted. */
+export const CARD_BACK_SRC = {
+  lantern: 'art/cards/back_lantern.jpg',
+  embermoth: 'art/cards/back_embermoth.jpg',
+} as const;
 
-export function CardBack({ width }: { width: number }): ReactElement {
-  const height = width * 1.4;
-  const gid = 'bd-cardback';
+export function CardBack({ width, variant = 'lantern' }: { width: number; variant?: keyof typeof CARD_BACK_SRC }): ReactElement {
+  const height = Math.round(width * 1.4);
   return (
-    <svg
+    <img
+      src={CARD_BACK_SRC[variant]}
       width={width}
       height={height}
-      viewBox="0 0 100 140"
-      role="img"
-      aria-label="Card back"
-      style={{ display: 'block' }}
-    >
-      <defs>
-        <radialGradient id={`${gid}-glow`}>
-          <stop offset="0%" stopColor={GOLD} stopOpacity="0.22" />
-          <stop offset="100%" stopColor={GOLD} stopOpacity="0" />
-        </radialGradient>
-      </defs>
-
-      <rect x="0" y="0" width="100" height="140" rx="6" fill="#0a0a0d" />
-      <ellipse cx="50" cy="70" rx="46" ry="60" fill={`url(#${gid}-glow)`} />
-
-      <rect x="3" y="3" width="94" height="134" rx="5" fill="none" stroke={GOLD} strokeWidth="1" opacity="0.7" />
-      <rect x="6.5" y="6.5" width="87" height="127" rx="4" fill="none" stroke={GOLD} strokeWidth="0.5" opacity="0.4" />
-
-      <g fill="none" stroke={GOLD} strokeWidth="0.9" strokeLinecap="round" opacity="0.75">
-        <path d={CORNER} />
-        <path d={CORNER} transform="translate(100 0) scale(-1 1)" />
-        <path d={CORNER} transform="translate(0 140) scale(1 -1)" />
-        <path d={CORNER} transform="translate(100 140) scale(-1 -1)" />
-      </g>
-
-      {/* central emblem: the Last Lantern as minimal gold linework */}
-      <g transform="translate(50 76)" stroke={GOLD} strokeWidth="1" fill="none" opacity="0.85" strokeLinecap="round">
-        <path d="M0 32 L0 20" />
-        <path d="M-8 20 L8 20 L6 -8 L-6 -8 Z" />
-        <path d="M-6 -8 L0 -16 L6 -8" />
-        <path d="M-3.5 16 L-2.5 -4 M3.5 16 L2.5 -4" opacity="0.6" />
-        <path d="M0 10 C -2.6 6 -2 1.5 0 -2 C 2 1.5 2.6 6 0 10 Z" fill={GOLD} opacity="0.9" />
-        <circle cx="0" cy="-19" r="1.6" fill={GOLD} opacity="0.7" />
-        <circle cx="-6" cy="-3" r="1.3" fill={GOLD} opacity="0.5" />
-        <circle cx="6" cy="-3" r="1.3" fill={GOLD} opacity="0.5" />
-      </g>
-    </svg>
+      alt="Card back"
+      draggable={false}
+      style={{ display: 'block', width, height, borderRadius: Math.max(2, width * 0.045), objectFit: 'cover' }}
+    />
   );
 }
