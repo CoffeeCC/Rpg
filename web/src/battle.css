@@ -685,6 +685,10 @@
   background: var(--card-grain), linear-gradient(180deg, #191720 0%, #100e14 100%);
   background-size: 90px 90px, 100% 100%;
   background-blend-mode: overlay, normal;
+  /* Real CSS bevel, not the old whole-card picture-frame PNG (see cardFrames.tsx
+     comment) - same border on all 4 sides by construction, so it can't read
+     thicker on one edge than another the way the image overlay did. */
+  border: 3px ridge var(--gold-deep);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
   overflow: hidden;
   display: flex;
@@ -703,10 +707,10 @@
 
 /* --- MTG-style layout: name bar, then art window, then type bar, then a
  * separate rules-text plate — instead of a big art block with all the text
- * centered below it. Borders are thin (1px) flat lines, not the chunky
- * bevel this used before; the ornate painted CardOrnament underneath is
- * still what gives the card its heavy framing, these are just the crisp
- * inner window edges MTG cards use to separate art/name/text from it. */
+ * centered below it. These inner dividers stay thin (1px) flat lines; the
+ * heavier framing is the .playing-card outer border and the .card-art-window
+ * bevel, both plain CSS now (see cardFrames.tsx comment for why the old
+ * painted frame image was dropped). */
 .card-name {
   display: flex;
   align-items: center;
@@ -752,11 +756,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* The painted frame (CardOrnament) is stretched over the whole card, so
-     its border reads fine against the flat plate behind the name/text but
-     disappears against busy artwork — the art needs its own thin, always-
-     visible window edge, not one that depends on what's painted under it. */
-  border: 1px solid var(--gold-deep);
+  /* Beveled (not flat 1px) so the art reads as sitting behind a carved
+     window rather than a hard-edged image pasted on top — same border
+     language as .playing-card's outer edge, just inset (groove) instead of
+     raised (ridge) since this edge is a window into the card, not the card's
+     own boundary. */
+  border: 3px groove var(--gold-deep);
 }
 
 .card-art-content {

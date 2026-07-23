@@ -4,15 +4,14 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SPECIES } from '../data/species';
-import type { CardRarity, CardType, ClassName, GateId, MonsterRarity } from '../types';
+import type { CardType, ClassName, GateId, MonsterRarity } from '../types';
 import { MonsterArt } from '../../art/monsterArt';
 import { HeroArt } from '../../art/heroArt';
-import { CardArtBackdrop, CardOrnament } from '../../art/cardFrames';
+import { CardArtBackdrop } from '../../art/cardFrames';
 import { BattleBackdrop, CardBack, TownBackdrop } from '../../art/backdrops';
 
 const CLASSES: ClassName[] = ['Warrior', 'Mage', 'Thief', 'Bard', 'Knight'];
 const CARD_TYPES: CardType[] = ['strike', 'spell', 'guard', 'tactic', 'summon'];
-const CARD_RARITIES: CardRarity[] = ['starter', 'common', 'uncommon', 'rare'];
 const MONSTER_RARITIES: MonsterRarity[] = ['Common', 'Alpha', 'Rare'];
 const GATE_IDS: GateId[] = ['verdant', 'hollow', 'sunken', 'storm', 'abyss'];
 
@@ -86,17 +85,6 @@ describe('backdrops', () => {
 });
 
 describe('card frames', () => {
-  it('renders CardOrnament for all type x rarity combos', () => {
-    // One painted frame image per rarity tier (not per type x rarity) - just
-    // confirm every rarity resolves to its own frame art without crashing.
-    for (const type of CARD_TYPES) {
-      for (const rarity of CARD_RARITIES) {
-        const html = renderToStaticMarkup(createElement(CardOrnament, { type, rarity }));
-        expect(html, `${type}/${rarity}`).toContain(`frame_${rarity}.png`);
-      }
-    }
-  });
-
   it('renders CardArtBackdrop for all types', () => {
     for (const type of CARD_TYPES) {
       const html = renderToStaticMarkup(createElement(CardArtBackdrop, { type }));

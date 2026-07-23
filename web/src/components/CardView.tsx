@@ -3,7 +3,7 @@ import type { CardDef } from '../engine/types';
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { cardNumbers, cardEffectiveness } from '../engine/systems/cardBattle';
-import { CardOrnament, CardArtBackdrop } from '../art/cardFrames';
+import { CardArtBackdrop } from '../art/cardFrames';
 import { MonsterArt } from '../art/monsterArt';
 import { CARD_ART } from '../art/cardArt';
 
@@ -88,7 +88,6 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
           <div className="card-text">{card.text}</div>
         </div>
       </div>
-      <CardOrnament type={card.type} rarity={card.rarity} />
     </div>
   );
 }

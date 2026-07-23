@@ -1,9 +1,11 @@
-// Card chrome: CardOrnament is an absolutely-positioned painted frame image,
-// one per rarity tier (Grok-painted, not procedural) - worn iron/leather for
-// starter, plain carved wood for common, silver+gems for uncommon, ornate
-// gold filigree for rare. CardArtBackdrop fills the art window with
-// type-tinted fog over near-black (unchanged, still SVG).
-import type { CardRarity, CardType } from '../engine/types';
+// Card chrome: framing is a plain CSS beveled border (see .playing-card and
+// .card-art-window in battle.css), not painted frame art - the old
+// full-card picture-frame PNGs (one per rarity) had a fixed opening that
+// didn't line up with the card's actual name/art/type/text sections, so
+// their border thickness read inconsistently (thick at the bottom, broken
+// up at the top by the name plate sitting above it in z-order). CardArtBackdrop
+// fills the art window with type-tinted fog over near-black (unchanged, still SVG).
+import type { CardType } from '../engine/types';
 
 export const TYPE_TINT: Record<CardType, string> = {
   strike: '#8a3a30',
@@ -12,29 +14,6 @@ export const TYPE_TINT: Record<CardType, string> = {
   tactic: '#6d5a2e',
   summon: '#4a7040',
 };
-
-const FRAME_SRC: Record<CardRarity, string> = {
-  starter: 'art/cards/frame_starter.png',
-  common: 'art/cards/frame_common.png',
-  uncommon: 'art/cards/frame_uncommon.png',
-  rare: 'art/cards/frame_rare.png',
-};
-
-export function CardOrnament({ rarity }: { type: CardType; rarity: CardRarity }) {
-  return (
-    <div
-      className={`card-ornament-frame rarity-frame-${rarity}`}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        pointerEvents: 'none',
-        backgroundImage: `url(${FRAME_SRC[rarity]})`,
-        backgroundSize: '100% 100%',
-        backgroundRepeat: 'no-repeat',
-      }}
-    />
-  );
-}
 
 export function CardArtBackdrop({ type }: { type: CardType }) {
   const tint = TYPE_TINT[type];
