@@ -289,6 +289,63 @@
   font-size: 1rem;
 }
 
+/* Keyword glossary terms in the card-inspect effect list (see
+   components/KeywordText.tsx + engine/data/keywords.ts). Colored by
+   category so the same term reads consistently everywhere it appears, with
+   a hover/tap popup carrying the fuller explanation that used to be
+   crammed into the sentence itself. */
+.keyword {
+  position: relative;
+  cursor: help;
+  font-weight: 700;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.keyword-status {
+  color: #c98ae0;
+}
+
+.keyword-stat {
+  color: #6fc6d9;
+}
+
+.keyword-mechanic {
+  color: var(--gold-bright, #e6cf7a);
+}
+
+.keyword-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(180deg, #22190d 0%, #120d07 100%);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  font-weight: 400;
+  font-style: normal;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-decoration: none;
+  color: var(--text);
+  white-space: normal;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.keyword-tooltip strong {
+  font-family: var(--font-display);
+  color: var(--gold-bright, #e6cf7a);
+  font-size: 0.85rem;
+}
+
 /* The embedded card face is enlarged here (300px vs the usual 216px in
    hand/deck grids) specifically so its own text can scale up with it -
    the face's font sizes are fixed rem values tuned for the small in-hand

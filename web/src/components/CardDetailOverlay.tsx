@@ -4,6 +4,7 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import type { CardDef } from '../engine/types';
 import { describeEffect } from '../engine/systems/cardBattle';
 import { CardView } from './CardView';
+import { KeywordText } from './KeywordText';
 import { play as sfx } from '../platform/sfx';
 
 const TARGET_LABEL: Record<CardDef['target'], string> = {
@@ -65,12 +66,19 @@ export function CardDetailOverlay({
             </p>
             <p className="subtitle">
               Targets: {TARGET_LABEL[card.target]}
-              {card.exhaust ? ' · Exhaust (removed from play for the rest of this battle after use)' : ''}
+              {card.exhaust && (
+                <>
+                  {' · '}
+                  <KeywordText text="Exhaust" />
+                </>
+              )}
               {sourceMonster ? ` · from ${sourceMonster.nickname}` : ''}
             </p>
             <ul className="card-inspect-effects">
               {card.effects.map((effect, i) => (
-                <li key={i}>{describeEffect(effect, hero, sourceMonster, upgraded)}</li>
+                <li key={i}>
+                  <KeywordText text={describeEffect(effect, hero, sourceMonster, upgraded)} />
+                </li>
               ))}
             </ul>
             {card.flavor && <p className="card-inspect-flavor">"{card.flavor}"</p>}
