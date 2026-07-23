@@ -1567,15 +1567,41 @@ h2.title {
   filter: brightness(0.42) saturate(0.5);
 }
 
-.map-cell.fog-unseen::after {
-  content: '';
+/* Real element (rendered in FloorScreen.tsx), not a ::after - .floor-tile
+   already owns its ::after (the small centered dot) and the two pseudo-
+   elements were competing for the same box, which is why this only ever
+   visibly covered walls (no competing ::after there) while floor tiles
+   kept showing their ground art straight through it.
+   Fully opaque at its core, not e.g. 0.93 — a never-lit tile should show
+   zero information; a bright fleck in the painted ground art was still
+   visibly poking through at 93%. The smoke wisps drifting on top stay
+   within a hair of that same near-black tone so nothing leaks. */
+.fog-veil {
   position: absolute;
   inset: -2px;
-  /* Fully opaque, not e.g. 0.93 — a never-lit tile should show zero
-     information. A bright fleck in the painted ground art was still
-     visibly poking through at 93%; solid black leaves nothing to leak. */
-  background: #050403;
   border-radius: 4px;
   pointer-events: none;
   z-index: 5;
+  background:
+    radial-gradient(ellipse 65% 55% at 25% 30%, rgba(58, 50, 42, 0.55), transparent 60%),
+    radial-gradient(ellipse 60% 55% at 78% 68%, rgba(38, 34, 30, 0.5), transparent 55%),
+    radial-gradient(ellipse 75% 65% at 50% 90%, rgba(48, 42, 36, 0.4), transparent 65%),
+    #050403;
+  background-size: 220% 220%, 200% 200%, 240% 240%, 100% 100%;
+  animation: fogDrift 14s ease-in-out infinite;
+}
+
+@keyframes fogDrift {
+  0%, 100% {
+    background-position: 0% 0%, 100% 100%, 50% 100%, 0 0;
+  }
+  50% {
+    background-position: 22% 18%, 78% 82%, 42% 78%, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fog-veil {
+    animation: none;
+  }
 }

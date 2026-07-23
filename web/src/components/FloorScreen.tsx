@@ -379,6 +379,14 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                         <Icon name={prop} emoji="" size={Math.round(TILE_SIZE * 0.92)} />
                       </span>
                     )}
+                    {/* A real element, not a ::after — .floor-tile already has its own
+                        ::after (the little centered dot) and the two competed for the
+                        same pseudo-element, which is why the fog only ever visibly
+                        covered walls (no competing ::after there) and floor tiles kept
+                        showing their ground art right through it. */}
+                    {fogCls.includes('fog-unseen') && (
+                      <span className="fog-veil" style={{ animationDelay: `${-((x * 7 + y * 13) % 140) / 10}s` }} />
+                    )}
                   </span>
                 );
               })}
