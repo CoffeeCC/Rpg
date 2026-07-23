@@ -125,7 +125,7 @@ export const CARDS: Record<string, CardDef> = {
     text: 'Deal bolt damage to all enemies.',
     flavor: 'Lightning remembers every road at once.',
     emoji: '⚡',
-    effects: [{ kind: 'damage', amount: 8, scaling: 'INT', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 8, scaling: 'INT', element: 'Electric' }],
   },
   scholarsCandle: {
     id: 'scholarsCandle',
@@ -481,7 +481,7 @@ export const CARDS: Record<string, CardDef> = {
     target: 'enemy',
     text: 'Deal bolt damage.',
     emoji: '⚡',
-    effects: [{ kind: 'damage', amount: 6, scaling: 'INT', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 6, scaling: 'INT', element: 'Electric' }],
   },
   graveWhisper: {
     id: 'graveWhisper',
@@ -903,7 +903,7 @@ export const CARDS: Record<string, CardDef> = {
     target: 'randomEnemy',
     text: 'Strike random enemies with bolts, twice.',
     emoji: '🌩️',
-    effects: [{ kind: 'damage', amount: 5, scaling: 'INT', times: 2, element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 5, scaling: 'INT', times: 2, element: 'Electric' }],
   },
   abyssalGrasp: {
     id: 'abyssalGrasp',
@@ -1409,7 +1409,7 @@ export const CARDS: Record<string, CardDef> = {
     text: 'Deal bolt damage twice. May apply Stunned.',
     emoji: '🌩️',
     effects: [
-      { kind: 'damage', amount: 7, scaling: 'INT', times: 2, element: 'Bolt' },
+      { kind: 'damage', amount: 7, scaling: 'INT', times: 2, element: 'Electric' },
       { kind: 'status', status: 'Stunned', turns: 1, chance: 0.33 },
     ],
   },
@@ -1472,7 +1472,7 @@ export const CARDS: Record<string, CardDef> = {
     target: 'enemy',
     text: 'Shimmer Ooze cracks like a whip of light. Deal bolt damage.',
     emoji: '✨',
-    effects: [{ kind: 'damage', amount: 7, scaling: 'MINT', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 7, scaling: 'MINT', element: 'Electric' }],
   },
   borrowedFortune: {
     id: 'borrowedFortune',
@@ -1577,7 +1577,7 @@ export const CARDS: Record<string, CardDef> = {
     text: 'Storm Drake calls the sky down. Deal bolt damage to all enemies.',
     flavor: 'It rides thunderheads the way gulls ride sea wind.',
     emoji: '⛈️',
-    effects: [{ kind: 'damage', amount: 9, scaling: 'MINT', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 9, scaling: 'MINT', element: 'Electric' }],
   },
   stormveilWing: {
     id: 'stormveilWing',
@@ -1858,7 +1858,7 @@ export const CARDS: Record<string, CardDef> = {
     target: 'allEnemies',
     text: 'Storm Roc claps its wings; the thunder is not a metaphor. Deal bolt damage to all enemies.',
     emoji: '🌩️',
-    effects: [{ kind: 'damage', amount: 8, scaling: 'MSTR', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 8, scaling: 'MSTR', element: 'Electric' }],
   },
   thunderheadDive: {
     id: 'thunderheadDive',
@@ -1869,7 +1869,7 @@ export const CARDS: Record<string, CardDef> = {
     target: 'enemy',
     text: 'Storm Roc drops out of its own storm. Deal heavy bolt damage.',
     emoji: '🌩️',
-    effects: [{ kind: 'damage', amount: 12, scaling: 'MSTR', element: 'Bolt' }],
+    effects: [{ kind: 'damage', amount: 12, scaling: 'MSTR', element: 'Electric' }],
   },
   phoenixFlare: {
     id: 'phoenixFlare',

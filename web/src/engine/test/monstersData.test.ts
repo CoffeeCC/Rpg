@@ -66,7 +66,7 @@ describe('SKILLS', () => {
   it('covers all elements and all skill kinds', () => {
     const elements = new Set(Object.values(SKILLS).map((s) => s.element));
     const kinds = new Set(Object.values(SKILLS).map((s) => s.kind));
-    for (const el of ['None', 'Fire', 'Ice', 'Bolt', 'Dark', 'Holy']) {
+    for (const el of ['None', 'Fire', 'Ice', 'Electric', 'Dark', 'Holy']) {
       expect(elements.has(el as never), `no ${el} skills`).toBe(true);
     }
     for (const kind of ['damage', 'heal', 'buff', 'debuff', 'drain']) {

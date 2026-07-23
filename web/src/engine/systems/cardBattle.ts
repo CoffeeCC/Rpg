@@ -267,7 +267,7 @@ function elementFx(effect: CardEffect): DamageFx {
   const map: Record<Exclude<NonNullable<typeof effect.element>, 'None'>, DamageFx> = {
     Fire: 'fire',
     Ice: 'frost',
-    Bolt: 'bolt',
+    Electric: 'bolt',
     Dark: 'dark',
     Holy: 'holy',
   };

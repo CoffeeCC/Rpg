@@ -20,13 +20,13 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🐺',
     description: 'Muscle, fur, and instinct.',
     trainsStat: 'STR',
-    resists: { Ice: 0.5, Dark: 1.5 },
+    resists: { Ice: 0.5, Electric: 1.5 },
   },
   Bird: {
     emoji: '🦅',
     description: 'Fast, sharp-eyed, and hard to pin down.',
     trainsStat: 'DEX',
-    resists: { Bolt: 1.5, Fire: 0.5 },
+    resists: { Electric: 1.5, Fire: 0.5 },
   },
   Plant: {
     emoji: '🌿',
@@ -38,7 +38,7 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🪲',
     description: 'Skittering swarms with chitin armor.',
     trainsStat: 'DEX',
-    resists: { Fire: 1.5, Dark: 0.5 },
+    resists: { Fire: 1.5, Ice: 0.5 },
   },
   Devil: {
     emoji: '😈',
@@ -56,7 +56,7 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🗿',
     description: 'Animated stone, metal, and stranger things.',
     trainsStat: 'DEF',
-    resists: { Fire: 0.5, Holy: 1.5 },
+    resists: { Fire: 0.5, Electric: 1.5 },
   },
 };
 

@@ -14,7 +14,7 @@ export type ClassName = 'Warrior' | 'Mage' | 'Thief' | 'Bard' | 'Knight';
 export type EquipmentSlot = 'weapon' | 'armor' | 'headpiece' | 'gloves' | 'boots' | 'ring' | 'amulet' | 'pendant' | 'charm' | 'trinket';
 
 // --- Elements & status ---
-export type Element = 'None' | 'Fire' | 'Ice' | 'Bolt' | 'Dark' | 'Holy';
+export type Element = 'None' | 'Fire' | 'Ice' | 'Electric' | 'Dark' | 'Holy';
 
 export type StatusName = 'Burned' | 'Poisoned' | 'Stunned' | 'Frozen' | 'Fated' | 'Encroach';
 export interface StatusEffect {

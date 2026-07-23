@@ -6,7 +6,7 @@ import type { Element } from '../engine/types';
 export const ELEMENT_ICON: Record<Exclude<Element, 'None'>, string> = {
   Fire: '🔥',
   Ice: '❄️',
-  Bolt: '⚡',
+  Electric: '⚡',
   Dark: '🌑',
   Holy: '✨',
 };
