@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { CardDef } from '../engine/types';
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
@@ -29,12 +29,47 @@ const TYPE_LABEL: Record<CardDef['type'], string> = {
   summon: 'Summon',
 };
 
+// Card names are hand-written and vary a lot in length ('Ashes to Feathers'
+// vs 'A Vicious Reforming of Features') while the name bar's width scales
+// with the card's rendered size, so a fixed font-size either wastes space on
+// short names or truncates long ones. Measuring actual overflow beats a
+// character-count guess since it accounts for the real font metrics, the
+// cost gem's width, and every width this component gets rendered at (128 in
+// the smith, 300 in the detail overlay, etc).
+const NAME_BASE_FONT_REM = 0.7;
+// Low enough that even the game's longest name ('A Vicious Reforming of
+// Features', 31 chars) fits at every width the game actually renders cards
+// at except the smallest (128px, the smith's upgrade-preview slot) — verified
+// against the built app, not just guessed from character count.
+const NAME_MIN_FONT_SCALE = 0.45;
+
+function useFitNameFontScale(text: string, width: number) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let s = 1;
+    el.style.fontSize = `${NAME_BASE_FONT_REM}rem`;
+    while (el.scrollWidth > el.clientWidth + 1 && s > NAME_MIN_FONT_SCALE) {
+      s = Math.max(NAME_MIN_FONT_SCALE, s - 0.05);
+      el.style.fontSize = `${(s * NAME_BASE_FONT_REM).toFixed(3)}rem`;
+    }
+    setScale(s);
+  }, [text, width]);
+
+  return { ref, scale };
+}
+
 export function CardView({ card, hero, sourceMonster, width = 216, playable = true, selected = false, upgraded = false, previewTarget }: CardViewProps) {
   const height = Math.round(width * 1.4);
   const numbers = cardNumbers(card, hero, sourceMonster, upgraded, previewTarget);
   const effectiveness = cardEffectiveness(card, previewTarget);
   const [tilt, setTilt] = useState<{ x: number; y: number } | null>(null);
   const tiltable = card.rarity === 'rare';
+  const nameText = `${card.name}${upgraded ? ' +' : ''}`;
+  const { ref: nameRef, scale: nameFontScale } = useFitNameFontScale(nameText, width);
 
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!tiltable) return;
@@ -56,9 +91,8 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
       onMouseLeave={() => setTilt(null)}
     >
       <div className="card-name">
-        <span className="card-name-text">
-          {card.name}
-          {upgraded ? ' +' : ''}
+        <span ref={nameRef} className="card-name-text" style={{ fontSize: `${(nameFontScale * NAME_BASE_FONT_REM).toFixed(3)}rem` }}>
+          {nameText}
         </span>
         <span className="card-cost">{card.cost}</span>
       </div>
