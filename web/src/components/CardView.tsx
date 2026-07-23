@@ -55,6 +55,13 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setTilt(null)}
     >
+      <div className="card-name">
+        <span className="card-name-text">
+          {card.name}
+          {upgraded ? ' +' : ''}
+        </span>
+        <span className="card-cost">{card.cost}</span>
+      </div>
       <div className="card-art-window">
         <CardArtBackdrop type={card.type} />
         <div className="card-art-content">
@@ -68,17 +75,12 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
         </div>
         {(card.rarity === 'uncommon' || card.rarity === 'rare') && <div className="card-art-sheen" />}
       </div>
-      <div className="card-cost">{card.cost}</div>
+      <div className="card-type-line">
+        {TYPE_LABEL[card.type]}
+        {sourceMonster ? ` · ${sourceMonster.nickname}` : ''}
+        {card.exhaust ? ' · Exhaust' : ''}
+      </div>
       <div className="card-text-plate">
-        <div className="card-name">
-          {card.name}
-          {upgraded ? ' +' : ''}
-        </div>
-        <div className="card-type-line">
-          {TYPE_LABEL[card.type]}
-          {sourceMonster ? ` · ${sourceMonster.nickname}` : ''}
-          {card.exhaust ? ' · Exhaust' : ''}
-        </div>
         <div className="card-body">
           {numbers.length > 0 && (
             <div className={`card-numbers ${effectiveness ? `card-numbers-${effectiveness}` : ''}`}>{numbers.join('  ')}</div>

@@ -185,7 +185,7 @@
 }
 
 /* --- Upgraded cards --- */
-.playing-card.upgraded .card-name {
+.playing-card.upgraded .card-name-text {
   color: var(--gold-bright);
   text-shadow: 0 0 8px rgba(201, 162, 39, 0.4);
 }
@@ -293,7 +293,7 @@
    hand/deck grids) specifically so its own text can scale up with it -
    the face's font sizes are fixed rem values tuned for the small in-hand
    size, so just growing the card wouldn't grow its text on its own. */
-.card-inspect-face .card-name {
+.card-inspect-face .card-name-text {
   font-size: 1rem;
 }
 
@@ -308,6 +308,12 @@
 .card-inspect-face .card-text {
   font-size: 0.86rem;
   line-height: 1.35;
+}
+
+.card-inspect-face .card-cost {
+  width: 30px;
+  height: 33px;
+  font-size: 1.05rem;
 }
 
 /* --- Legend overlays: the generated history LANDS --- */

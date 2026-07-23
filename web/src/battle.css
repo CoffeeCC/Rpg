@@ -701,9 +701,43 @@
   filter: grayscale(0.7) brightness(0.6);
 }
 
+/* --- MTG-style layout: name bar, then art window, then type bar, then a
+ * separate rules-text plate — instead of a big art block with all the text
+ * centered below it. Borders are thin (1px) flat lines, not the chunky
+ * bevel this used before; the ornate painted CardOrnament underneath is
+ * still what gives the card its heavy framing, these are just the crisp
+ * inner window edges MTG cards use to separate art/name/text from it. */
+.card-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 8px 14px 0;
+  padding: 2px 3px 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
+  z-index: 2;
+}
+
+.card-name-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #ddd5c2;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .card-art-window {
   position: relative;
-  height: 54%;
+  height: 43%;
   /* found live: at the small-phone hand-card size (.hand-fan .playing-card
      forced to 84x118 under the max-height:500px media query below), the text
      blocks' content-minimum height left no room for a 46%-height flex child
@@ -712,18 +746,17 @@
      truncates against .playing-card's overflow:hidden instead, which is
      the right trade. */
   flex-shrink: 0;
-  margin: 8px 8px 0;
-  border-radius: 4px;
+  margin: 6px 14px 0;
+  border-radius: 3px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   /* The painted frame (CardOrnament) is stretched over the whole card, so
-     its thin border reads fine against the flat plate behind the name/text
-     but disappears against busy artwork — the art needs its own always-
+     its border reads fine against the flat plate behind the name/text but
+     disappears against busy artwork — the art needs its own thin, always-
      visible window edge, not one that depends on what's painted under it. */
-  border: 2px solid var(--gold-deep);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 1px 3px rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--gold-deep);
 }
 
 .card-art-content {
@@ -740,25 +773,23 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.8));
 }
 
-/* v13: cost as a faceted gem inlaid into the card's top-left corner — reads as
-   part of the frame (flush to the edge, beveled crown), not a ball dropped on. */
+/* v13: cost as a faceted gem, now inline in the name bar (top-right) rather
+   than an absolutely-positioned overlay on the corner of the art. */
 .card-cost {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 30px;
-  height: 34px;
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 24px;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 3px;
+  padding-top: 2px;
   background: linear-gradient(155deg, #f6e6a6 0%, #d9b25a 40%, #9c7a30 72%, #6b5220 100%);
   color: #201705;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1rem;
-  z-index: 4;
+  font-size: 0.8rem;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), inset -1px -1px 3px rgba(0, 0, 0, 0.4);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
@@ -781,29 +812,21 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  margin: 4px 8px 6px;
-  border-radius: 4px;
-  border: 2px solid var(--gold-deep);
+  margin: 6px 14px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
   background: linear-gradient(180deg, rgba(24, 20, 15, 0.94) 0%, rgba(8, 7, 5, 0.97) 100%);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 1px 3px rgba(255, 255, 255, 0.08);
   position: relative;
   overflow: hidden;
 }
 
-.card-name {
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-align: center;
-  color: #ddd5c2;
-  padding: 4px 6px 1px;
-  line-height: 1.1;
-  z-index: 2;
-}
-
 .card-type-line {
-  text-align: center;
+  margin: 6px 14px 0;
+  padding: 1px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
+  text-align: left;
   font-size: 0.55rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
