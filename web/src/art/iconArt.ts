@@ -15,6 +15,8 @@ export const ICON_ART: Record<string, string> = {
   equipment: 'art/icons/equipment.png',
   event: 'art/icons/event.png',
   event_mossyIdol: 'art/icons/event_mossyIdol.png',
+  event_gamblersGhost: 'art/icons/event_gamblersGhost.png',
+  event_widowsLoom: 'art/icons/event_widowsLoom.png',
   event_bubblingSpring: 'art/icons/event_bubblingSpring.png',
   event_wanderingPeddler: 'art/icons/event_wanderingPeddler.png',
   event_collapsedTamer: 'art/icons/event_collapsedTamer.png',

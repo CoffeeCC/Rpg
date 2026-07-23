@@ -4,6 +4,7 @@ import type { CardDef, CardInstance, FxEvent, Intent } from '../engine/types';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
 import { CONSUMABLES } from '../engine/data/items';
+import { CARD_ART } from '../art/cardArt';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
 import { ELEMENT_ICON } from '../art/elementIcons';
 import { familyWeakness } from '../engine/data/species';
@@ -812,7 +813,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             ['--ty' as string]: `${g.to.y}px`,
           }}
         >
-          {g.card.emoji}
+          {CARD_ART[g.card.id] ? (
+            <img src={CARD_ART[g.card.id]} alt="" className="card-ghost-img" draggable={false} />
+          ) : (
+            g.card.emoji
+          )}
         </div>
       ))}
     </div>

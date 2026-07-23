@@ -46,7 +46,11 @@ export const GEAR_ART: Record<string, string> = {
  "sword:legendary": "art/gear/sword_legendary.png",
  "sword:magic": "art/gear/sword_magic.png",
  "sword:normal": "art/gear/sword_normal.png",
- "sword:rare": "art/gear/sword_rare.png"
+ "sword:rare": "art/gear/sword_rare.png",
+ "trinket:legendary": "art/gear/trinket_legendary.png",
+ "trinket:magic": "art/gear/trinket_magic.png",
+ "trinket:normal": "art/gear/trinket_normal.png",
+ "trinket:rare": "art/gear/trinket_rare.png"
 };
 
 export const UNIQUE_ART: Record<string, string> = {
