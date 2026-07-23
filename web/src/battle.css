@@ -1311,7 +1311,11 @@
     width: 70px;
     height: 90px;
   }
-  .playing-card {
+  /* Scoped to the battle hand specifically — .playing-card is shared by the
+     codex, deck screen, and card-inspect overlay too, and this used to force
+     ALL of them down to hand-card size on any short viewport, wrecking their
+     own (much larger) intended card sizes. */
+  .hand-fan .playing-card {
     width: 84px !important;
     height: 118px !important;
   }
