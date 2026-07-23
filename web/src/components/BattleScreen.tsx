@@ -5,6 +5,8 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
 import { CONSUMABLES } from '../engine/data/items';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
+import { ELEMENT_ICON } from '../art/elementIcons';
+import { familyWeakness } from '../engine/data/species';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
@@ -516,6 +518,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
             const size = enemy.isBoss ? 210 : 145;
+            const weakTo = familyWeakness(enemy.family);
             return (
               <div
                 key={enemy.uid}
@@ -542,6 +545,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   </div>
                 )}
                 <MonsterImage speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
+                {enemy.isAlive() && weakTo && (
+                  <span className="weak-badge" title={`Weak to ${weakTo}`}>
+                    {ELEMENT_ICON[weakTo]}
+                  </span>
+                )}
                 {renderPopups(enemy.uid)}
                 {renderImpact(enemy.uid)}
               </div>

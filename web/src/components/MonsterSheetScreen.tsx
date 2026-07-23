@@ -1,8 +1,9 @@
 import type { GameAction, GameState } from '../engine/game';
 import type { ItemV2 } from '../engine/types';
-import { FAMILY_INFO } from '../engine/data/species';
+import { FAMILY_INFO, familyWeakness } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
 import { MonsterImage } from '../art/MonsterImage';
+import { ELEMENT_ICON } from '../art/elementIcons';
 import { ItemLine } from './ItemLine';
 import { Icon } from './Icon';
 
@@ -89,6 +90,9 @@ export function MonsterSheetScreen({ state, dispatch }: { state: GameState; disp
             {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
             <Icon name={`family_${monster.family.toLowerCase()}`} emoji={FAMILY_INFO[monster.family].emoji} size={14} /> {monster.family} ·{' '}
             {inParty ? 'in your party' : 'in the stable'}
+            {familyWeakness(monster.family) && (
+              <> · <span title={`Takes bonus damage from ${familyWeakness(monster.family)}`}>{ELEMENT_ICON[familyWeakness(monster.family)!]} Weak to {familyWeakness(monster.family)}</span></>
+            )}
           </p>
           {a && (
             <p className="affix-line" title={a.blurb}>

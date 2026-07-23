@@ -1546,3 +1546,29 @@
   transform: perspective(900px) rotateX(var(--tiltX, 0deg)) rotateY(var(--tiltY, 0deg)) scale3d(1.02, 1.02, 1.02);
   will-change: transform;
 }
+
+/* Elemental weakness hint on an enemy — a small corner glyph rather than
+ * text, so it reads at a glance without eating into the tight battle layout. */
+.weak-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 50%;
+  background: rgba(6, 5, 3, 0.82);
+  border: 1px solid var(--gold-deep, #a8863c);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.enemy-slot.boss .weak-badge {
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+}
