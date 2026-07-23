@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { CardDef } from '../engine/types';
-import { CLASS_DECKS, RACE_CARDS, REWARD_POOLS, SPECIES_CARDS, TAME_CARD_ID, getCard } from '../engine/data/cards';
+import { CLASS_DECKS, RACE_CARDS, REWARD_POOLS, SPECIES_CARDS, TAME_CARD_ID, cardMatchesQuery, getCard } from '../engine/data/cards';
 import { SPECIES } from '../engine/data/species';
 import { CardView } from './CardView';
 import { CardDetailOverlay } from './CardDetailOverlay';
@@ -32,6 +32,7 @@ function dedupeCards(ids: string[]): CardDef[] {
 export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameState; backScreen: Screen; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
   const [inspect, setInspect] = useState<CodexEntry | null>(null);
+  const [query, setQuery] = useState('');
   const ownedSpecies = new Set([...state.party, ...state.stable].map((m) => m.speciesId));
 
   const cell = (entry: CodexEntry) => (
@@ -48,15 +49,19 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
     </button>
   );
 
-  const section = (title: string, entries: CodexEntry[]) =>
-    entries.length > 0 && (
-      <>
-        <h2 className="title" style={{ fontSize: '0.95rem', marginTop: 16 }}>
-          {title}
-        </h2>
-        <div className="deck-grid">{entries.map(cell)}</div>
-      </>
+  const section = (title: string, entries: CodexEntry[]) => {
+    const filtered = entries.filter((e) => cardMatchesQuery(e.card, query));
+    return (
+      filtered.length > 0 && (
+        <>
+          <h2 className="title" style={{ fontSize: '0.95rem', marginTop: 16 }}>
+            {title}
+          </h2>
+          <div className="deck-grid">{filtered.map(cell)}</div>
+        </>
+      )
     );
+  };
 
   const starterSections = (Object.keys(CLASS_DECKS) as (keyof typeof CLASS_DECKS)[]).map((className) => ({
     title: `${className} Starters`,
@@ -84,6 +89,15 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
     entries: dedupeCards(REWARD_POOLS[rarity]).map((card) => ({ card, owned: state.expeditionExtras.includes(card.id) })),
   }));
 
+  const allEntries = [
+    ...universalEntries,
+    ...starterSections.flatMap((s) => s.entries),
+    ...raceSections.flatMap((s) => s.entries),
+    ...rewardSections.flatMap((s) => s.entries),
+    ...speciesSections.flatMap((s) => s.entries),
+  ];
+  const hasResults = allEntries.some((e) => cardMatchesQuery(e.card, query));
+
   return (
     <>
       <div className="panel">
@@ -91,6 +105,16 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
           <Icon name="deck" size={26} emoji="" /> Card Codex
         </h1>
         <p className="subtitle">Every card in Everdusk. Ones you don't currently have access to show dimmed — click any card to inspect it regardless.</p>
+
+        <input
+          type="text"
+          className="card-search"
+          placeholder="Search by name, type, or text..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search cards"
+        />
+        {!hasResults && <p className="card-search-empty">No cards match "{query}".</p>}
 
         {section('Universal', universalEntries)}
         {starterSections.map((s) => (

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { CardDef } from '../engine/types';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
-import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, SPECIES_CARDS, getCard } from '../engine/data/cards';
+import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, SPECIES_CARDS, cardMatchesQuery, getCard } from '../engine/data/cards';
 import { CardView } from './CardView';
 import { CardDetailOverlay } from './CardDetailOverlay';
 import { NpcHost } from './NpcHost';
@@ -57,6 +57,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
   const [sortMode, setSortMode] = useState<SortMode>('source');
   const [reverse, setReverse] = useState(false);
   const [inspect, setInspect] = useState<DeckEntry | null>(null);
+  const [query, setQuery] = useState('');
 
   const persistentEntries = buildEntries([...CLASS_DECKS[player.className], ...RACE_CARDS[player.race], TAME_CARD_ID]);
   const monsterGroups = state.party.map((m) => ({ monster: m, entries: buildEntries(SPECIES_CARDS[m.speciesId] ?? [], m) }));
@@ -83,20 +84,30 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
     </button>
   );
 
-  const section = (title: string, entries: DeckEntry[]) => (
-    <>
-      <h2 className="title" style={{ fontSize: '0.95rem', marginTop: 16 }}>
-        {title}
-      </h2>
-      <div className="deck-grid">{entries.map(cell)}</div>
-    </>
-  );
+  const section = (title: string, entries: DeckEntry[]) => {
+    const filtered = entries.filter((e) => cardMatchesQuery(e.card, query));
+    return (
+      filtered.length > 0 && (
+        <>
+          <h2 className="title" style={{ fontSize: '0.95rem', marginTop: 16 }}>
+            {title}
+          </h2>
+          <div className="deck-grid">{filtered.map(cell)}</div>
+        </>
+      )
+    );
+  };
 
   let flatView: DeckEntry[] = [];
   if (sortMode !== 'source') {
     flatView = [...persistentEntries, ...monsterGroups.flatMap((g) => g.entries), ...expeditionEntries].sort(COMPARATORS[sortMode]);
     if (reverse) flatView.reverse();
   }
+
+  const allEntries = [...persistentEntries, ...monsterGroups.flatMap((g) => g.entries), ...expeditionEntries];
+  const hasResults = allEntries.some((e) => cardMatchesQuery(e.card, query));
+  const persistentMatchCount = persistentEntries.filter((e) => cardMatchesQuery(e.card, query)).length;
+  const flatMatchCount = flatView.filter((e) => cardMatchesQuery(e.card, query)).length;
 
   return (
     <div className="panel">
@@ -107,6 +118,16 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
       <p className="subtitle">
         {player.className} core + {player.race} blood + one open hand. Monsters add their cards while they live; expedition boons fade at the gate.
       </p>
+
+      <input
+        type="text"
+        className="card-search"
+        placeholder="Search by name, type, or text..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search cards"
+      />
+      {!hasResults && <p className="card-search-empty">No cards match "{query}".</p>}
 
       <div className="btn-row">
         {SORT_MODES.map(([id, label]) => (
@@ -135,7 +156,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
 
       {sortMode === 'source' ? (
         <>
-          {section(`${player.className} & ${player.race} · ${persistentEntries.length} cards`, persistentEntries)}
+          {section(`${player.className} & ${player.race} · ${persistentMatchCount} cards`, persistentEntries)}
           {monsterGroups.map(({ monster: m, entries }) => (
             <div key={m.uid}>
               {section(`${m.species.emoji} ${m.nickname}${m.plus > 0 ? ` +${m.plus}` : ''} · ${m.isAlive() ? 'fighting' : 'KO — cards inactive'}`, entries)}
@@ -144,7 +165,7 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
           {expeditionEntries.length > 0 && section(`Expedition boons · fade on leaving`, expeditionEntries)}
         </>
       ) : (
-        section(`All cards · ${flatView.length}`, flatView)
+        section(`All cards · ${flatMatchCount}`, flatView)
       )}
 
       <div className="btn-row">

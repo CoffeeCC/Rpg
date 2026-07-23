@@ -2967,3 +2967,12 @@ export const REWARD_POOLS: { common: string[]; uncommon: string[]; rare: string[
 export function getCard(id: string): CardDef | undefined {
   return CARDS[id];
 }
+
+/** Shared search predicate for the Deck screen and Card Codex — matches
+ * name, type, and rules text so a query like "stun" surfaces every card
+ * that applies it, not just one literally named "Stun". */
+export function cardMatchesQuery(card: CardDef, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return card.name.toLowerCase().includes(q) || card.type.toLowerCase().includes(q) || card.text.toLowerCase().includes(q);
+}
