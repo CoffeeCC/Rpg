@@ -4,11 +4,18 @@
 
 .game.battle-mode {
   grid-template-columns: 1fr;
+  /* v18: the shell's bottom log row is gone in battle — the combat log rides
+     a right-side rail INSIDE the stage (.battle-log-rail), and the vertical
+     strip the log vacated is exactly where the hand/deck row drops to. */
   grid-template-areas:
     'header'
-    'main'
-    'log';
+    'main';
+  grid-template-rows: auto 1fr;
   max-width: none;
+}
+
+.game.battle-mode .game-log {
+  display: none;
 }
 
 .realm-name {
@@ -1999,4 +2006,211 @@
 .card-numbers-resisted {
   color: #9fd8f0;
   text-shadow: 0 0 6px rgba(159, 216, 240, 0.45);
+}
+
+/* =========================================================
+   v18 — Paul's live playtest punch list, block A.
+   Placed at file end so these win any same-specificity ties
+   against the v17 rules above (source order).
+   ========================================================= */
+
+/* --- (1) Combat log: a RIGHT-side vertical rail inside the battlefield,
+   mirroring the candle rail on the left. The shell's bottom .game-log is
+   hidden in battle (top of this file). --- */
+.battle-log-rail {
+  position: absolute;
+  top: 4px;
+  right: 12px;
+  bottom: 8px;
+  width: 216px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(17, 13, 10, 0.86), rgba(10, 8, 6, 0.92));
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.06);
+  overflow: hidden;
+}
+
+.battle-log-title {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(200, 162, 74, 0.8);
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid rgba(200, 162, 74, 0.16);
+}
+
+/* The shared .log widget fills the rail instead of capping at 168px. */
+.battle-log-rail .log {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.78rem;
+  padding: 8px 12px 10px;
+  scrollbar-width: thin;
+}
+
+/* Desktop: the battlefield clears the rail on the right the same way it
+   clears the candles on the left. */
+@media (min-width: 901px) and (min-height: 501px) {
+  .battlefield {
+    padding-right: 244px;
+  }
+}
+
+/* Narrow viewports: no room for a side rail — the log docks as a short strip
+   under the party row instead (the rail is a flex child of .battlefield). */
+@media (max-width: 900px) and (min-height: 501px) {
+  .battle-log-rail {
+    position: static;
+    width: auto;
+    order: 9;
+    flex: 0 0 92px;
+    margin-top: 4px;
+  }
+}
+
+/* Landscape phone: there is genuinely no room — popups/banners carry it. */
+@media (max-height: 500px) {
+  .battle-log-rail {
+    display: none;
+  }
+}
+
+/* --- (1b) The hand/deck row drops into the strip the shell log vacated, so
+   resting cards live in the bottom band instead of covering the player
+   portrait. Banded by height to compose with the v17 compact media queries
+   above (same specificity — file order decides). --- */
+@media (min-width: 901px) and (min-height: 861px) {
+  .hand-zone {
+    min-height: 280px;
+  }
+  .hand-fan {
+    margin-top: -12px;
+    min-height: 272px;
+  }
+}
+
+@media (min-width: 901px) and (min-height: 501px) and (max-height: 860px) {
+  .hand-zone {
+    min-height: 238px;
+  }
+  .hand-fan {
+    margin-top: -12px;
+    min-height: 230px;
+  }
+}
+
+/* --- (2) Nameplates paint ABOVE the figures. The figure box is positioned
+   (z auto) and its art overflows downward, so the static plate below was
+   losing the paint-order fight — especially under bosses. --- */
+.bf-plate {
+  position: relative;
+  z-index: 5;
+}
+
+/* --- (2b) Duel portrait chips bigger. Banded by height so the v17 compact
+   sizes above aren't steamrolled by file order. --- */
+@media (min-height: 861px) {
+  .duel-ring {
+    width: 96px;
+    height: 96px;
+  }
+  .duel-art {
+    inset: 9px;
+  }
+  .duel-hp {
+    font-size: 0.8rem;
+  }
+  /* the bigger top chip needs more headroom over the enemy figures */
+  .enemy-row {
+    padding-top: 96px;
+  }
+}
+
+@media (min-height: 501px) and (max-height: 860px) {
+  .duel-ring {
+    width: 74px;
+    height: 74px;
+  }
+  .duel-art {
+    inset: 8px;
+  }
+}
+
+/* The bigger top chip must never hide a centered enemy's intent telegraph:
+   drop it below .intent (z 5) — it's pointer-events:none dressing either way. */
+.duel-top {
+  z-index: 4;
+}
+
+/* --- (3) Hero status/buff badges pinned under the player portrait chip. --- */
+.duel-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+  max-width: 200px;
+}
+
+.duel-status-row .status-tag {
+  font-size: 0.62rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+.duel-status-row .status-tag.block-tag {
+  background: rgba(22, 28, 38, 0.92);
+  color: #b0c4de;
+  border: 1px solid #5f7391;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- (4) Items/Flee are real labeled buttons now, and the opened items tray
+   paints ABOVE the hand fan (.hand-zone is a z-index:1 sibling context, so
+   z-index:40 here clears even the z:30 hover-lifted cards inside it). --- */
+.hand-right-row .cmd-btn {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 6px 13px;
+  white-space: nowrap;
+}
+
+.panel.battle-stage > .battle-items {
+  position: relative;
+  z-index: 40;
+  background: linear-gradient(180deg, rgba(20, 15, 10, 0.96), rgba(12, 9, 6, 0.98));
+  border-top: 1px solid rgba(200, 162, 74, 0.3);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.45);
+}
+
+/* --- (5) Pre-attack beat: the unit the current actor's next effect will hit
+   wears a pulsing ring for the beat between the banner and the number. --- */
+.bf-unit.pre-target {
+  z-index: 6;
+}
+
+.bf-unit.pre-target .bf-figure::after {
+  content: '';
+  position: absolute;
+  inset: -8px -12px;
+  border-radius: 16px;
+  border: 2px solid rgba(240, 150, 70, 0.9);
+  box-shadow: 0 0 22px rgba(240, 150, 70, 0.45), inset 0 0 18px rgba(240, 150, 70, 0.22);
+  pointer-events: none;
+  animation: preTargetRing 0.6s ease-in-out infinite;
+}
+
+@keyframes preTargetRing {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
 }

@@ -14,6 +14,7 @@ import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classC
 import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
 import { LanternTurn } from './LanternTurn';
+import { LogPanel } from './LogPanel';
 import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
@@ -105,6 +106,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   // v15 readability: whose action is resolving right now (banner + figure glow).
   const [actorBanner, setActorBanner] = useState<{ name: string; label: string; side: 'ally' | 'enemy' } | null>(null);
   const [actingUid, setActingUid] = useState<string | null>(null);
+  // v18: pre-attack telegraph — whoever the CURRENT actor's next effect will
+  // land on gets a highlight ring for the beat between banner and impact.
+  const [preTargetUid, setPreTargetUid] = useState<string | null>(null);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredEnemyUid, setHoveredEnemyUid] = useState<string | null>(null);
@@ -144,10 +148,13 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     if (!state.lastFx.length || processedFx.current === state.lastFx) return;
     processedFx.current = state.lastFx;
     const fxList = state.lastFx;
-    // v15 pacing: slow enough to READ. ~½s a beat, compressing gently on long
-    // rounds so the whole phase still lands inside ~10s.
-    const step = Math.min(560, Math.max(240, 10000 / fxList.length));
-    const total = fxList.length * step + 500;
+    // v18 pacing: v15's ~½s beats still read as a blur in live play. Beats now
+    // clamp to 500–800ms — a normal round runs at the full 800ms a beat, and
+    // only very long rounds compress toward the 500ms floor (~12s budget).
+    const step = Math.min(800, Math.max(500, 12000 / fxList.length));
+    // The +900 tail lets the last actor banner HOLD on screen instead of
+    // vanishing the instant its final number lands.
+    const total = fxList.length * step + 900;
     setLocked(true);
     const timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -164,6 +171,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   '';
             setActorBanner({ name, label: fx.label, side: fx.side });
             setActingUid(fx.uid);
+            // v18 pre-attack beat: ring the unit the NEXT effect will land on,
+            // so "what's about to happen" reads before the number does. Pure
+            // presentation — derived from the fx order the engine already emits.
+            const upcoming = fxList.slice(i + 1).find((f) => f.fx !== 'actor' && f.fx !== 'shake');
+            setPreTargetUid(upcoming && 'targetUid' in upcoming ? upcoming.targetUid : null);
             return;
           }
           const sound = fxSound(fx);
@@ -173,6 +185,8 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             setTimeout(() => setShaking(false), 400);
             return;
           }
+          // The telegraph ring comes off the moment its promised hit lands.
+          if ('targetUid' in fx) setPreTargetUid((cur) => (cur === fx.targetUid ? null : cur));
           let popup: Popup | null = null;
           if (fx.fx === 'status') popup = { id: ++popupSeq, targetUid: fx.targetUid, text: fx.label, kind: 'status' };
           else if (fx.fx === 'tameTry')
@@ -213,6 +227,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         setLocked(false);
         setActorBanner(null);
         setActingUid(null);
+        setPreTargetUid(null);
       }, total)
     );
     return () => timers.forEach(clearTimeout);
@@ -539,13 +554,21 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           <span className="vigor-word">vigor</span>
         </div>
 
+        {/* v18: the combat log rides a RIGHT-side rail, opposite the candles.
+            The app shell's bottom .game-log is hidden in battle (battle.css);
+            the strip it vacated is where the hand now lives. */}
+        <aside className="battle-log-rail" aria-label="Combat log">
+          <div className="battle-log-title">Chronicle</div>
+          <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
+        </aside>
+
         {/* Enemy duel portrait, top-center. Boss fights fold the boss bar in here. */}
         {leadEnemy && (
           <div className={`duel-chip duel-top ${boss ? 'duel-boss' : ''}`}>
             <div className="duel-ring">
               {hpRing(leadEnemy.hp / leadEnemy.maxHp)}
               <span className="duel-art">
-                <MonsterImage speciesId={leadEnemy.speciesId} size={52} rarity={leadEnemy.rarity} />
+                <MonsterImage speciesId={leadEnemy.speciesId} size={78} rarity={leadEnemy.rarity} />
               </span>
             </div>
             {boss ? (
@@ -580,7 +603,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 ref={(el) => {
                   if (el) enemyRefs.current.set(enemy.uid, el);
                 }}
-                className={`bf-unit enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${actingUid === enemy.uid ? 'acting' : ''} ${flashing[enemy.uid] ?? ''}`}
+                className={`bf-unit enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${actingUid === enemy.uid ? 'acting' : ''} ${preTargetUid === enemy.uid ? 'pre-target' : ''} ${flashing[enemy.uid] ?? ''}`}
                 data-enemy-uid={enemy.isAlive() ? enemy.uid : undefined}
                 title={enemy.aspect ? `${enemy.aspect.name} — ${enemy.aspect.blurb}` : undefined}
                 onClick={() => targetable && playSelected(enemy.uid)}
@@ -661,7 +684,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
         <div className="bf-row party-row">
           <div
-            className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
+            className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${preTargetUid === 'hero' ? 'pre-target' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
@@ -702,7 +725,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           {state.party.map((m: MonsterInstance) => (
             <div
               key={m.uid}
-              className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
+              className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${preTargetUid === m.uid ? 'pre-target' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
               onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
               title={
                 allyAimable && m.isAlive()
@@ -739,12 +762,30 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           <div className="duel-ring">
             {hpRing(player.hp / player.maxHp)}
             <span className="duel-art">
-              <HeroImage className={player.className} size={52} />
+              <HeroImage className={player.className} size={78} />
             </span>
           </div>
           <span className="duel-hp">
             {player.hp}/{player.maxHp}
           </span>
+          {/* v18: the hero's block + statuses + stat mods (STR↑ …) pinned to
+              the portrait itself, where the eye already lives. */}
+          {(battle.heroBlock > 0 || player.statusEffects.length > 0 || player.activeMods.length > 0) && (
+            <span className="duel-status-row">
+              {battle.heroBlock > 0 && <span className="status-tag block-tag">🛡 {battle.heroBlock}</span>}
+              {player.statusEffects.map((st) => (
+                <span key={st.name} className="status-tag">
+                  {st.name}
+                </span>
+              ))}
+              {player.activeMods.map((m, i) => (
+                <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                  {m.stat}
+                  {m.amount > 0 ? '↑' : '↓'}
+                </span>
+              ))}
+            </span>
+          )}
         </div>
       </div>
 
@@ -863,11 +904,12 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         <div className="hand-right">
           <div className="hand-right-col">
             <div className="hand-right-row">
-              <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
-                🧪 {player.inventory.length}
+              {/* v18: real labeled buttons instead of bare emoji glyphs. */}
+              <button className="btn small cmd-btn" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
+                Items{player.inventory.length > 0 ? ` · ${player.inventory.length}` : ''}
               </button>
               <button
-                className="btn small danger"
+                className="btn small danger cmd-btn"
                 disabled={locked}
                 onClick={() => {
                   sfx('uiClick');
@@ -875,7 +917,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 }}
                 title="Attempt to flee"
               >
-                🏃
+                Flee
               </button>
             </div>
             <div className="hand-right-piles">

@@ -1,5 +1,55 @@
 # PLAN7 — UI Deep Dive: every menu to AAA (v17)
 
+## v18 — Paul's live playtest punch list (2026-07-24, post-ship)
+
+Agent ownership mirrors v17: A=battle files, B=floor files, C/D=everything else.
+FIXED already by orchestrator: SPEND_ATTRIBUTE no-op'd on the 'equipment' screen
+route (guard now accepts both; regression test added).
+
+**A — Battle (BattleScreen/battle.css/LanternTurn/CardView):**
+1. Combat log moves to a RIGHT-side vertical rail (opposite the candles); the
+   bottom strip it vacates goes to the hand/deck row so cards stop covering the
+   player portrait.
+2. Portraits (player + enemy chip) bigger; enemy NAMEPLATES render BEHIND the
+   enemy figure — z-index them above.
+3. Status/buff badges must be visible on the player portrait (STR↑ etc.).
+4. Items (🧪) and flee (🏃) are still emoji buttons — real labeled buttons; the
+   opened items tray renders BEHIND the hand cards (z-index above hand).
+5. Turns still read too fast: raise beat floor (~500-800ms), hold actor banner
+   longer, brief pre-attack pause highlighting the target so "what's about to
+   happen" lands.
+
+**B — Expedition map (FloorScreen/floor.css):**
+6. Lantern light leaves unlit pockets beside the walked path (4-dir BFS makes
+   diagonal/corner holes; breakables block light). After BFS, also light tiles
+   orthogonally+diagonally adjacent to any lit floor tile (extend the existing
+   wall-face rule to all tiles); consider +1 lanternRadius.
+7. Can't click the room's exit tile (fog tap-guard). Allow tapping a fogged
+   tile adjacent to revealed ground (path resolves through known tiles).
+8. Enemy/threat visibility gone: units + red threat tiles only show in
+   CURRENTLY-lit tiles. Show units + threat on any REVEALED tile (dim units
+   outside current light rather than hiding).
+9. Reachable-tile highlight too subtle — make movement range obvious.
+10. Layout: page must not scroll — controls become a TOP bar aligned with the
+    map viewport's top edge (Items/Gear/Save/Waybrand/MOV/miniboss warning),
+    REMOVE the d-pad entirely (click-to-move + WASD suffice), legend docks at
+    the BOTTOM edge of the map viewport.
+
+**C/D — Everything else:**
+11. Town screen shows a wall of empty dark space (backdrop paint area too tall/
+    slow to load) — tighten the vertical layout, ensure the painting fills, add
+    a graceful loading state.
+12. Gate select: banner cards are UNEVEN widths — uniform full-width rows,
+    consistent height.
+13. Hover-scroll bug: hovering buttons makes the page slowly creep downward —
+    reproduce (character sheet at minimum), find the layout-shifting hover/
+    animation or smooth-scroll trigger, kill it.
+14. Tavern portrait grid: some NPCs still render fallback/emoji-looking
+    portraits — audit PAINTED_NPCS coverage; missing paintings need Grok
+    (queue ids under the art-batch task), but make the SVG fallback match the
+    painted style meanwhile.
+
+
 Audit source: headless screenshot harness (all 18 screens) + Paul's notes 2026-07-23.
 Builds ON TOP of the v16 layer (scene backdrops, glass panels, plaque titles, HUD back
 chip). Shared design tokens: gold rgba(200,162,74,*), display font var(--font-display),

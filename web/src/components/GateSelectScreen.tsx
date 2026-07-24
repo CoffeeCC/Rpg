@@ -20,7 +20,7 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
           const playerLevel = state.player?.level ?? 1;
           const overreach = playerLevel < lowBand - 1;
           return (
-            <div key={id}>
+            <div key={id} className="gate-row">
               <button
                 type="button"
                 className={`option-card gate-card ${locked ? 'locked' : ''}`}

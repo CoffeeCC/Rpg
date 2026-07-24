@@ -163,12 +163,23 @@ export function lanternRadius(hero: Character): number {
 export function litTiles(exp: Expedition, radius: number): Set<string> {
   const lit = new Set(bfsFrom(exp, exp.x, exp.y, radius).keys());
   const floor = floorOf(exp);
+  // v18: lantern light SPILLS one tile outward in all 8 directions from every
+  // lit floor tile. The 4-dir BFS alone left unlit pockets beside the walked
+  // path (diagonals cost 2+ steps; breakables block the walk entirely), which
+  // read as fog holes in the middle of a bright room. Light falling on a tile
+  // doesn't require a walkable path to it — only adjacency to somewhere lit.
+  const SPILL = [
+    { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+    { dx: -1, dy: 0 },                     { dx: 1, dy: 0 },
+    { dx: -1, dy: 1 },  { dx: 0, dy: 1 },  { dx: 1, dy: 1 },
+  ];
   for (const key of [...lit]) {
     const [x, y] = key.split(',').map(Number);
-    for (const { dx, dy } of Object.values(DELTAS)) {
+    for (const { dx, dy } of SPILL) {
       const nx = x + dx;
       const ny = y + dy;
-      if (tileAt(floor, nx, ny) === TILE.WALL) lit.add(`${nx},${ny}`);
+      if (ny < 0 || ny >= floor.grid.length || nx < 0 || nx >= (floor.grid[ny]?.length ?? 0)) continue;
+      lit.add(`${nx},${ny}`);
     }
   }
   return lit;

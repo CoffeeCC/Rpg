@@ -39,7 +39,7 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
       {talking && state.lastTalk && (
         <div className="tavern-speech with-portrait" style={{ ['--npc-accent' as string]: accent }}>
           {/* key on npcId so switching speakers replays the slide-in */}
-          <div key={talking.id} className="tavern-portrait">
+          <div key={talking.id} className={`tavern-portrait${PAINTED_NPCS[talking.id] ? '' : ' portrait-fallback'}`}>
             {PAINTED_NPCS[talking.id] ? (
               <img src={PAINTED_NPCS[talking.id]} width={132} height={132} alt="" className="painted-portrait" draggable={false} />
             ) : (
@@ -66,7 +66,7 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
               dispatch({ type: 'TALK', npcId: npc.id });
             }}
           >
-            <div className="npc-thumb">
+            <div className={`npc-thumb${PAINTED_NPCS[npc.id] ? '' : ' portrait-fallback'}`}>
               {PAINTED_NPCS[npc.id] ? (
                 <img src={PAINTED_NPCS[npc.id]} alt="" draggable={false} />
               ) : (

@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import { availableQuests, restCost } from '../engine/game';
 import { Icon } from './Icon';
 import { PAINTED_TOWN } from '../art/painted';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
+import { NpcPortrait } from '../art/npcArt';
 import { pickBark } from './NpcHost';
 import '../services.css';
 
@@ -18,6 +20,10 @@ interface CastEntry {
 }
 
 export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  // v18.11: the town painting is a large JPEG that used to decode into a void
+  // of raw panel-black. The backdrop div carries a dusk gradient underneath,
+  // and the painting cross-fades in once it has actually loaded.
+  const [sceneReady, setSceneReady] = useState(false);
   const questsNew = availableQuests(state).length > state.seen.questCount;
   const questsClaimable = state.questLog.some((q) => q.complete && !q.claimed);
   const tavernNew = state.storyChapter > state.seen.tavernChapter;
@@ -83,7 +89,17 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
   return (
     <div className="panel town-panel">
       <div className="stage-backdrop">
-        <img className="painted-scene" src={PAINTED_TOWN} alt="" />
+        <img
+          className={`painted-scene${sceneReady ? ' scene-ready' : ''}`}
+          src={PAINTED_TOWN}
+          alt=""
+          decoding="async"
+          onLoad={() => setSceneReady(true)}
+          ref={(el) => {
+            // cached image: onLoad may never fire, but complete is already true
+            if (el && el.complete && el.naturalWidth > 0) setSceneReady(true);
+          }}
+        />
       </div>
       <div className="town-content">
         <h1 className="title">🌳 Everdusk</h1>
@@ -108,7 +124,11 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
                 {painted ? (
                   <img src={painted} alt="" className="painted-portrait town-cast-portrait" draggable={false} />
                 ) : (
-                  <div className="town-cast-portrait town-cast-emoji">{c.emoji}</div>
+                  /* v18.14: no painting yet — the SVG portrait wears the same
+                     round painted-style frame instead of a flat emoji tile */
+                  <div className="town-cast-portrait portrait-fallback" aria-hidden="true">
+                    <NpcPortrait npcId={c.npcId} size={74} />
+                  </div>
                 )}
                 <div className="town-cast-body">
                   <div className="town-cast-name">{c.name}</div>

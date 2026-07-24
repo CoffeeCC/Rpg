@@ -134,3 +134,18 @@ describe('v15: battle readability & companion stamina', () => {
     expect(ally.mp).toBe(ally.maxMp);
   });
 });
+
+describe('v18: attribute points spendable from both sheet routes', () => {
+  it('SPEND_ATTRIBUTE works on characterSheet AND equipment screens', () => {
+    let state = gameReducer(initialGameState(), { type: 'CREATE_CHARACTER', name: 'Aria', race: 'Human', className: 'Warrior' });
+    state = gameReducer(state, { type: 'STORY_CONTINUE' });
+    state.player!.attributePoints = 2;
+    for (const screen of ['characterSheet', 'equipment'] as const) {
+      state = { ...state, screen };
+      const before = state.player!.stats.STR;
+      state = gameReducer(state, { type: 'SPEND_ATTRIBUTE', stat: 'STR' });
+      expect(state.player!.stats.STR).toBe(before + 1);
+    }
+    expect(state.player!.attributePoints).toBe(0);
+  });
+});

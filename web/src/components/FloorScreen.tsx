@@ -219,6 +219,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
 
   if (!exp || !player) return null;
 
+  // v18 #7: a fogged tile orthogonally adjacent to any REVEALED tile is
+  // tappable — room exits sit exactly one step into the dark, and the old
+  // hard fog guard made them unclickable. The path still resolves through
+  // known ground; the Lantern reveals the tile the moment you arrive.
+  const fogBordersKnown = (x: number, y: number) =>
+    isRevealed(exp, x - 1, y) || isRevealed(exp, x + 1, y) || isRevealed(exp, x, y - 1) || isRevealed(exp, x, y + 1);
+
   // v12 click-to-move: click ANY reachable tile and the hero walks there,
   // one real MOVE step at a time (so pickups/stairs/enemy-phase all still fire
   // per step). Clicking a unit within reach walks up and bumps it (→ battle).
@@ -226,8 +233,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const handleTileTap = (x: number, y: number) => {
     if (merchantOpen || walkingRef.current) return;
     if (x === exp.x && y === exp.y) return;
-    // v15 fog: you can't walk to a tile the Lantern has never revealed.
-    if (!isRevealed(exp, x, y)) return;
+    // v15 fog: you can't walk to a tile the Lantern has never revealed —
+    // v18 #7: unless it borders revealed ground (see fogBordersKnown).
+    if (!isRevealed(exp, x, y) && !fogBordersKnown(x, y)) return;
     const path = pathToTile(exp, x, y, exp.movLeft);
     if (!path || path.length === 0) return;
     walkingRef.current = true;
@@ -290,7 +298,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   };
 
   return (
-    <div className="panel">
+    <div className="panel floor-panel">
       <h1 className="title">
         {exp.wild ? (
           <>🌫️ Unmapped Wilds, beyond the {gate.name} — Depth {exp.floorIndex + 1}</>
@@ -303,6 +311,47 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       <p className="subtitle">{exp.wild ? 'No cartographer has charted this. Only the Lantern knows what\'s here.' : gate.description}</p>
 
       <div className="floor-layout">
+        {/* v18 #10: every control lives in a compact TOP bar flush with the
+            map viewport's top edge — the old side column (and its d-pad) is
+            gone; click-to-move + WASD + gamepad cover movement. */}
+        <div className="floor-topbar">
+          <div className="btn-row floor-actions">
+            <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
+              <Icon name="itemshop" emoji="🧪" size={18} /> Items ({usable.length})
+            </button>
+            <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
+              <Icon name="equipment" emoji="🎒" size={18} /> Gear
+            </button>
+            <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
+              <Icon name="save" emoji="💾" size={18} /> Save
+            </button>
+            <button
+              className="btn small danger"
+              onClick={() => dispatch({ type: 'LEAVE_GATE' })}
+              disabled={witchwicks === 0}
+              title={witchwicks > 0 ? `Burn a Witchwick to walk home (${witchwicks} left)` : 'No Witchwick — walk back to the door you came in by, or buy one from Maribel'}
+            >
+              <Icon name="door" emoji="🕯️" size={18} /> Witchwick home ({witchwicks})
+            </button>
+          </div>
+          <div className="mov-bar" title="Movement left this turn. When it runs out, the floor moves.">
+            <span className="mov-label">MOV</span>
+            <span className="mov-gems">
+              {Array.from({ length: mov }, (_, i) => (
+                <span key={i} className={`mov-pip ${i < exp.movLeft ? 'full' : 'spent'}`} />
+              ))}
+            </span>
+            <span className="mov-count">
+              <b>{exp.movLeft}</b>/{mov}
+            </span>
+          </div>
+          {miniboss && (
+            <p className="map-warning" title={miniboss.label}>
+              <Icon name="crown" emoji="👑" size={16} /> {miniboss.label} guards the stairs.
+            </p>
+          )}
+        </div>
+
         <div className="map-frame">
           <i className="map-corner tl" aria-hidden="true" />
           <i className="map-corner tr" aria-hidden="true" />
@@ -317,9 +366,20 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               <div className="map-row" key={y}>
                 {row.split('').map((ch, x) => {
                   // v15 fog of war: tiles the Lantern has never revealed are
-                  // darkness — no icons, no units, no hints, no clicks.
+                  // darkness — no icons, no units, no hints. v18 #7: fog that
+                  // borders revealed ground takes clicks (room exits), with a
+                  // hover affordance but no content — the dark stays dark.
                   if (!isRevealed(exp, x, y)) {
-                    return <span key={x} className="map-cell fog" aria-hidden="true" />;
+                    const tappable = fogBordersKnown(x, y);
+                    return (
+                      <span
+                        key={x}
+                        className={`map-cell fog${tappable ? ' fog-tappable' : ''}`}
+                        aria-hidden={tappable ? undefined : 'true'}
+                        title={tappable ? 'Step into the dark' : undefined}
+                        onClick={tappable ? () => handleTileTap(x, y) : undefined}
+                      />
+                    );
                   }
                   if (x === exp.x && y === exp.y) {
                     return (
@@ -333,20 +393,20 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       </span>
                     );
                   }
-                  // v16: the Lantern doesn't give away what's standing in the
-                  // dark. A hidden unit still blocks/bumps into normally (see
-                  // pathToTile) — only the visual is withheld — and once
-                  // withheld it falls through to the plain-tile branch below,
-                  // which already renders 'e'/'M'/'t'/'m' as blank floor
-                  // whenever there's no *shown* unit, so no extra branch needed.
+                  // v18 #8: units render on any REVEALED tile — v16 hid them
+                  // outside the CURRENT light and Paul lost all threat read.
+                  // Light still matters: a unit standing beyond the lantern's
+                  // reach draws dimmed + desaturated (.unit-unlit) instead of
+                  // vanishing. Never-revealed fog still hides everything.
                   const unit = unitAt(exp, x, y);
-                  if (unit && lit.has(`${x},${y}`)) {
+                  if (unit) {
+                    const litHere = lit.has(`${x},${y}`);
                     const engage = unit.kind !== 'merchant' && canReachUnit(x, y);
                     const reach = unit.kind === 'merchant' && canReachUnit(x, y);
                     return (
                       <span
                         key={x}
-                        className={`map-cell floor-tile unit-cell ${engage ? 'engageable' : ''} ${reach ? 'reachable-unit' : ''}`}
+                        className={`map-cell floor-tile unit-cell ${engage ? 'engageable' : ''} ${reach ? 'reachable-unit' : ''}${litHere ? '' : ' unit-unlit'}`}
                         title={engage ? `${unit.label} — click to engage` : unit.label}
                         onClick={() => handleTileTap(x, y)}
                       >
@@ -381,9 +441,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   if (tile === TILE.BOSS && state.defeatedBosses.includes(exp.gateId)) tile = TILE.FLOOR;
                   if ((tile === TILE.ENEMY || tile === TILE.MINIBOSS || tile === TILE.TAMER || tile === TILE.MERCHANT) && !unit) tile = TILE.FLOOR;
                   const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
-                  // Threat is live tactical read (where a hostile could step next
-                  // turn) — withhold it in the dark same as the sprite itself.
-                  const danger = lit.has(`${x},${y}`) && tile !== TILE.WALL && threat.has(`${x},${y}`);
+                  // Threat is live tactical read (where a hostile could step
+                  // next turn). v18 #8: shown on any REVEALED tile — gating it
+                  // to the current light hid the exact warning it exists for.
+                  const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                   const prop = tile === TILE.FLOOR ? pickTileProp(x, y) : null;
                   return (
                     <span
@@ -413,105 +474,38 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           </div>
         </div>
 
-        <div className="floor-controls">
-          <div className="exp-head">
-            <span className="exp-head-title">Expedition</span>
-            <span className="exp-head-floor">
-              Floor {exp.floorIndex + 1}/{gate.floors.length}
-            </span>
-          </div>
-          <div className="mov-bar" title="Movement left this turn. When it runs out, the floor moves.">
-            <span className="mov-label">MOV</span>
-            <span className="mov-gems">
-              {Array.from({ length: mov }, (_, i) => (
-                <span key={i} className={`mov-pip ${i < exp.movLeft ? 'full' : 'spent'}`} />
-              ))}
-            </span>
-            <span className="mov-count">
-              <b>{exp.movLeft}</b>/{mov}
-            </span>
-          </div>
-          {miniboss && (
-            <p className="map-warning" title={miniboss.label}>
-              <Icon name="crown" emoji="👑" size={16} /> {miniboss.label} guards the stairs.
-            </p>
-          )}
-          <div className="dpad">
-            <span />
-            <button className="btn" aria-label="Move north" onClick={() => dispatch({ type: 'MOVE', dir: 'north' })}>
-              {'▲'}
-            </button>
-            <span />
-            <button className="btn" aria-label="Move west" onClick={() => dispatch({ type: 'MOVE', dir: 'west' })}>
-              {'◀︎'}
-            </button>
-            <button
-              className="btn dpad-hold"
-              title="Hold your ground — end your movement turn"
-              onClick={() => dispatch({ type: 'END_MAP_TURN' })}
-            >
-              🛡️
-            </button>
-            <button className="btn" aria-label="Move east" onClick={() => dispatch({ type: 'MOVE', dir: 'east' })}>
-              {'▶︎'}
-            </button>
-            <span />
-            <button className="btn" aria-label="Move south" onClick={() => dispatch({ type: 'MOVE', dir: 'south' })}>
-              {'▼'}
-            </button>
-            <span />
-          </div>
-          <div className="btn-row floor-actions">
-            <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
-              <Icon name="itemshop" emoji="🧪" size={18} /> Items ({usable.length})
-            </button>
-            <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
-              <Icon name="equipment" emoji="🎒" size={18} /> Gear
-            </button>
-            <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
-              <Icon name="save" emoji="💾" size={18} /> Save
-            </button>
-            <button
-              className="btn small danger"
-              onClick={() => dispatch({ type: 'LEAVE_GATE' })}
-              disabled={witchwicks === 0}
-              title={witchwicks > 0 ? `Burn a Witchwick to walk home (${witchwicks} left)` : 'No Witchwick — walk back to the door you came in by, or buy one from Maribel'}
-            >
-              <Icon name="door" emoji="🕯️" size={18} /> Witchwick home ({witchwicks})
-            </button>
-          </div>
-          <div className="map-legend legend-chips">
-            <span className="legend-chip threat-chip">
-              ⚔️ {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor
-            </span>
-            <span className="legend-chip">
-              <Icon name="chest" emoji="🎁" size={16} /> chest
-            </span>
-            <span className="legend-chip">
-              <Icon name="shrine" emoji="⛲" size={16} /> shrine
-            </span>
-            <span className="legend-chip">
-              <Icon name="event" emoji="❓" size={16} /> event
-            </span>
-            <span className="legend-chip">
-              <Icon name="barrel" emoji="🛢️" size={16} /> smashable
-            </span>
-            <span className="legend-chip">
-              <Icon name="stairs" emoji="🕳️" size={16} /> stairs
-            </span>
-            <span className="legend-chip">
-              <Icon name="door" emoji="🚪" size={16} /> way back
-            </span>
-            <span className="legend-chip">
-              <Icon name="crown" emoji="👑" size={16} /> stair-warden
-            </span>
-            <span className="legend-chip">
-              <Icon name="merchant" emoji="🏮" size={16} /> merchant
-            </span>
-            <span className="legend-chip">
-              <Icon name="boss" emoji="💀" size={16} /> gate warden
-            </span>
-          </div>
+        {/* v18 #10: legend chips dock along the map viewport's BOTTOM edge. */}
+        <div className="map-legend legend-chips">
+          <span className="legend-chip threat-chip">
+            ⚔️ {hostiles.length} hostile{hostiles.length === 1 ? '' : 's'} on this floor
+          </span>
+          <span className="legend-chip">
+            <Icon name="chest" emoji="🎁" size={16} /> chest
+          </span>
+          <span className="legend-chip">
+            <Icon name="shrine" emoji="⛲" size={16} /> shrine
+          </span>
+          <span className="legend-chip">
+            <Icon name="event" emoji="❓" size={16} /> event
+          </span>
+          <span className="legend-chip">
+            <Icon name="barrel" emoji="🛢️" size={16} /> smashable
+          </span>
+          <span className="legend-chip">
+            <Icon name="stairs" emoji="🕳️" size={16} /> stairs
+          </span>
+          <span className="legend-chip">
+            <Icon name="door" emoji="🚪" size={16} /> way back
+          </span>
+          <span className="legend-chip">
+            <Icon name="crown" emoji="👑" size={16} /> stair-warden
+          </span>
+          <span className="legend-chip">
+            <Icon name="merchant" emoji="🏮" size={16} /> merchant
+          </span>
+          <span className="legend-chip">
+            <Icon name="boss" emoji="💀" size={16} /> gate warden
+          </span>
         </div>
       </div>
 

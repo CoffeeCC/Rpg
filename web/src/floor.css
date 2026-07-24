@@ -1,7 +1,14 @@
 /* =========================================================================
-   floor.css — v17 expedition map (PLAN7 §B): the war-table pass.
+   floor.css — v18 expedition map (PLAN7 §B): the war-table, no-scroll pass.
    Imported by FloorScreen.tsx, so it loads AFTER App.css/v5.css/v16.css and
    equal-specificity rules here win the cascade. Scope: FloorScreen only.
+
+   v18 layout (#10): the PAGE never scrolls. .floor-panel pins itself to the
+   shell's height; inside it a flex column stacks a compact TOP control bar
+   (actions + MOV + miniboss warning), the war-table map frame (absorbing all
+   remaining height — the .map-grid inside stays the ONLY scroll container,
+   which camera-follow drives), and the legend chips docked on the map's
+   bottom edge. The d-pad is gone — click-to-move + WASD + gamepad remain.
 
    Cell size is a single token, --cell, set on .map-grid:
      · 64px  — desktop (width ≥ 781px AND height ≥ 501px): war-table tiles
@@ -94,17 +101,11 @@
   .map-corner.br { bottom: 4px; right: 4px; border-left: 0; border-top: 0; border-bottom-right-radius: 11px; }
 }
 
-/* Desktop proper: bigger tiles, hard two-column war-table layout. */
+/* Desktop proper: bigger war-table tiles. (v18 #10 removed the side column —
+   the top-bar layout in section 7 owns everything else at every size.) */
 @media (min-width: 781px) and (min-height: 501px) {
   .map-grid {
     --cell: 64px;
-  }
-  .floor-layout {
-    flex-wrap: nowrap;
-  }
-  .floor-controls {
-    flex: 0 0 260px;
-    max-width: 260px;
   }
 }
 
@@ -158,6 +159,18 @@
   outline: 2px solid #05030a;
 }
 
+/* v18 #7: fog bordering revealed ground takes clicks (room exits live one
+   step into the dark). Affordance is hover-only and faint — a candle-warm
+   inner rim, no content — so the unknown still reads as unknown. */
+.map-cell.fog.fog-tappable {
+  cursor: pointer;
+}
+.map-cell.fog.fog-tappable:hover {
+  background: #0a0714;
+  outline-color: #0a0714;
+  box-shadow: inset 0 0 0 1px rgba(210, 176, 100, 0.4), inset 0 0 12px rgba(210, 176, 100, 0.14);
+}
+
 /* Lit cells bordering fog get per-side gradient fringes (rendered by
    FloorScreen) so darkness rolls over the terrain instead of ending on a
    hard grid line. Under icons/units (z1 < cell-top z2), pointer-transparent. */
@@ -194,30 +207,66 @@
   50% { opacity: 1; }
 }
 
-/* --- 6 · Reachable: soft gold breathing --------------------------------------- */
+/* v18 #8: units on revealed-but-unlit tiles draw dimmed + desaturated —
+   "you know it's there" rather than "you can see it clearly" — so lantern
+   light still matters. The filter also replaces v5's red glow drop-shadows
+   (same property), which would read as full visibility in the dark. */
+.map-grid .map-cell.unit-unlit .unit-token {
+  opacity: 0.55;
+  filter: saturate(0.35) brightness(0.8);
+}
+.map-grid .map-cell.unit-unlit .unit-crown {
+  opacity: 0.6;
+}
+
+/* --- 6 · Reachable: UNMISTAKABLE breathing gold (v18 #9) --------------------- */
+/* Paul couldn't tell where he could move. Each reachable tile now carries a
+   bright center dot + gold fill + 2px rim, all breathing together; hover
+   snaps to a solid high-contrast "this one" state. Dot radius rides --cell
+   so it scales with the war-table/mobile tile sizes. The overlay lives on
+   ::before (threat owns ::after — a tile can be both) at z1, under cell
+   content (z2), pointer-transparent. */
 .map-grid .map-cell.reachable,
 .map-grid .map-cell.reachable:hover {
-  box-shadow: none; /* ring lives on ::before so it can breathe via opacity */
+  box-shadow: none; /* overlay lives on ::before so it can breathe via opacity */
 }
 .map-grid .map-cell.reachable::before {
   content: '';
   position: absolute;
   inset: 2px;
   border-radius: 6px;
-  background: radial-gradient(circle, rgba(230, 205, 130, 0.18), transparent 70%);
-  box-shadow: inset 0 0 0 1px rgba(224, 200, 120, 0.5), inset 0 0 9px rgba(224, 200, 120, 0.18);
+  background:
+    radial-gradient(
+      circle,
+      rgba(255, 234, 158, 0.95) calc(var(--cell, 48px) * 0.07),
+      rgba(255, 234, 158, 0) calc(var(--cell, 48px) * 0.07 + 3px)
+    ),
+    radial-gradient(circle, rgba(246, 214, 122, 0.34), rgba(246, 214, 122, 0.08) 74%);
+  box-shadow:
+    inset 0 0 0 2px rgba(252, 224, 130, 0.85),
+    inset 0 0 14px rgba(252, 224, 130, 0.38),
+    0 0 8px rgba(226, 188, 96, 0.3);
   pointer-events: none;
   z-index: 1;
-  animation: reachBreathe 2.6s ease-in-out infinite;
+  animation: reachBreathe 1.5s ease-in-out infinite;
 }
 .map-grid .map-cell.reachable:hover::before {
   animation: none;
   opacity: 1;
-  background: radial-gradient(circle, rgba(242, 216, 140, 0.36), transparent 72%);
-  box-shadow: inset 0 0 0 2px rgba(242, 216, 140, 0.95), inset 0 0 12px rgba(242, 216, 140, 0.3);
+  background:
+    radial-gradient(
+      circle,
+      #fff3c6 calc(var(--cell, 48px) * 0.09),
+      rgba(255, 243, 198, 0) calc(var(--cell, 48px) * 0.09 + 3px)
+    ),
+    radial-gradient(circle, rgba(255, 230, 150, 0.55), rgba(255, 230, 150, 0.16) 78%);
+  box-shadow:
+    inset 0 0 0 3px #ffe9a2,
+    inset 0 0 18px rgba(255, 234, 158, 0.55),
+    0 0 14px rgba(255, 220, 120, 0.6);
 }
 @keyframes reachBreathe {
-  0%, 100% { opacity: 0.5; }
+  0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
 
@@ -229,31 +278,147 @@
   }
 }
 
-/* --- 7 · Expedition control panel -------------------------------------------- */
-/* Base pieces are unconditional (they also serve portrait phones); the panel
-   chrome + big controls are scoped to min-height 501px so the landscape-phone
-   thumb-dock layout in App.css keeps winning below that. */
+/* --- 7 · No-scroll shell fit + top bar + docked legend (v18 #10) ------------- */
 
-.exp-head {
+/* The floor panel clamps to the shell's height instead of growing past it, so
+   .game-main (the old page scroller) never has anything to scroll. v16 sizes
+   panels via `.game:not(.battle-mode) .game-main > .panel` at (0,4,0) — the
+   conflicting overrides here carry the same prefix + .floor-panel to win. */
+.game-main > .panel.floor-panel {
+  flex: 1 1 auto; /* beats .game-main > * { flex: 1 0 auto } — allow shrink */
+}
+.game:not(.battle-mode) .game-main > .panel.floor-panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  padding: 14px 20px 12px;
+}
+/* Compact plaque — the map deserves the vertical space, not the title. */
+.game-main > .panel.floor-panel > h1.title {
+  font-size: 1.15rem;
+  margin-bottom: 0;
+}
+.game-main > .panel.floor-panel > h1.title::after {
+  margin-top: 5px;
+}
+.game-main > .panel.floor-panel > .subtitle {
+  margin: 5px 0 10px;
+  font-size: 0.84rem;
+}
+
+/* The column: top bar · map frame (all remaining height) · legend dock. */
+.floor-layout {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid rgba(200, 162, 74, 0.2);
 }
-.exp-head-title {
-  font-family: var(--font-display);
-  font-size: 0.78rem;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: rgba(220, 183, 101, 0.92);
+.floor-panel .map-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; /* gives .map-grid a definite box to resolve max-height: 100% */
+  align-items: center;
+  justify-content: center;
 }
-.exp-head-floor {
-  font-family: var(--font-display);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  color: var(--text-faint);
+.floor-panel .map-grid {
+  /* Overrides App.css's min(560px, 55vh) cap — the flex column now decides
+     the map viewport's height; taller floors scroll INSIDE the grid, which
+     stays the one and only scroll container (camera-follow drives it). */
+  max-height: 100%;
+}
+
+/* Top bar: actions · MOV gems · miniboss warning, flush with the map's top
+   edge. Unconditional — it serves every viewport (phone tweaks in §8). */
+.floor-topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  padding: 7px 10px;
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(24, 18, 12, 0.9), rgba(12, 9, 6, 0.94));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(246, 226, 155, 0.06);
+}
+.floor-topbar .floor-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+}
+.floor-topbar .floor-actions .btn {
+  padding: 7px 11px;
+  font-size: 0.8rem;
+  border-radius: 7px;
+  white-space: nowrap;
+}
+.floor-topbar .mov-bar {
+  margin: 0;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.floor-topbar .mov-gems {
+  flex: 0 0 auto; /* shrink-wrap in the bar; the base flex:1 is for phones */
+}
+.floor-topbar .mov-label {
+  font-size: 0.74rem;
+  letter-spacing: 0.22em;
+}
+
+/* Gem pips (rescoped from the old side column). */
+.floor-topbar .mov-pip {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(200, 162, 74, 0.5);
+  background: radial-gradient(circle at 35% 30%, rgba(90, 74, 40, 0.55), rgba(22, 17, 10, 0.95) 70%);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7);
+  transition: background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
+}
+.floor-topbar .mov-pip.full {
+  border-color: rgba(240, 214, 140, 0.85);
+  background: radial-gradient(circle at 32% 28%, #fdf4c4 0%, #ecd28e 30%, #c09a42 62%, #7d5f1e 100%);
+  box-shadow:
+    0 0 9px rgba(224, 186, 96, 0.55),
+    inset 0 2px 2px rgba(255, 246, 205, 0.7),
+    inset 0 -2px 3px rgba(96, 66, 14, 0.6);
+}
+.floor-topbar .mov-pip.spent {
+  opacity: 0.4;
+}
+
+/* Miniboss warning as a banner strip filling the bar's remaining width. */
+.floor-topbar .map-warning {
+  flex: 1 1 auto;
+  min-width: 200px;
+  margin: 0;
+  padding: 6px 11px;
+  max-width: none;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: #e3b3a9;
+  border: 1px solid rgba(200, 70, 58, 0.4);
+  border-left: 3px solid rgba(220, 90, 74, 0.85);
+  border-radius: 7px;
+  background: linear-gradient(90deg, rgba(110, 30, 24, 0.4), rgba(52, 16, 12, 0.28) 70%, rgba(30, 10, 8, 0.2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: warnGlow 2.4s ease-in-out infinite;
+}
+
+/* Legend chips docked on the map viewport's bottom edge. Right padding
+   clears the corner Lantern end-turn button (~105px, panel-pinned). */
+.floor-panel .legend-chips {
+  flex: 0 0 auto;
+  margin: 0;
+  padding-right: 130px;
+}
+.floor-panel .legend-chip.threat-chip {
+  flex-basis: auto; /* inline chip in the dock, not a full-width row */
 }
 
 /* .mov-gems wraps the pips (needed so they stay flex-sized everywhere). */
@@ -278,9 +443,9 @@
   color: var(--gold-bright, #e6cf7a);
 }
 
-/* Legend as icon chips. Single-class selector on purpose: App.css's
-   landscape-phone `display: none` on .floor-controls .map-legend must
-   still out-rank this. */
+/* Legend as icon chips. These base rules never set `display`, so App.css's
+   landscape-phone `.map-legend { display: none }` still hides the dock on
+   short viewports regardless of specificity. */
 .legend-chips {
   display: flex;
   flex-wrap: wrap;
@@ -314,133 +479,47 @@
   letter-spacing: 0.03em;
 }
 
-@media (min-height: 501px) {
-  .floor-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 11px;
-    align-self: flex-start;
-    padding: 14px 14px 13px;
-    border: 1px solid rgba(200, 162, 74, 0.24);
-    border-radius: 12px;
-    background: linear-gradient(180deg, rgba(24, 18, 12, 0.9), rgba(12, 9, 6, 0.94));
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.06);
-  }
-
-  /* Big MOV gems */
-  .floor-controls .mov-bar {
-    margin: 0;
-    gap: 9px;
-  }
-  .floor-controls .mov-label {
-    font-size: 0.74rem;
-    letter-spacing: 0.22em;
-  }
-  .floor-controls .mov-pip {
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    border: 1px solid rgba(200, 162, 74, 0.5);
-    background: radial-gradient(circle at 35% 30%, rgba(90, 74, 40, 0.55), rgba(22, 17, 10, 0.95) 70%);
-    box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.7);
-    transition: background 0.25s ease, box-shadow 0.25s ease, opacity 0.25s ease;
-  }
-  .floor-controls .mov-pip.full {
-    border-color: rgba(240, 214, 140, 0.85);
-    background: radial-gradient(circle at 32% 28%, #fdf4c4 0%, #ecd28e 30%, #c09a42 62%, #7d5f1e 100%);
-    box-shadow:
-      0 0 9px rgba(224, 186, 96, 0.55),
-      inset 0 2px 2px rgba(255, 246, 205, 0.7),
-      inset 0 -2px 3px rgba(96, 66, 14, 0.6);
-  }
-  .floor-controls .mov-pip.spent {
-    opacity: 0.4;
-  }
-
-  /* Miniboss warning as a banner strip */
-  .floor-controls .map-warning {
-    margin: 0;
-    padding: 8px 11px;
-    max-width: none;
-    font-size: 0.8rem;
-    line-height: 1.35;
-    color: #e3b3a9;
-    border: 1px solid rgba(200, 70, 58, 0.4);
-    border-left: 3px solid rgba(220, 90, 74, 0.85);
-    border-radius: 7px;
-    background: linear-gradient(90deg, rgba(110, 30, 24, 0.4), rgba(52, 16, 12, 0.28) 70%, rgba(30, 10, 8, 0.2));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    animation: warnGlow 2.4s ease-in-out infinite;
-  }
-
-  /* Chunky d-pad */
-  .floor-controls .dpad {
-    margin: 2px auto 0;
-    grid-template-columns: repeat(3, 58px);
-    grid-template-rows: repeat(3, 50px);
-    gap: 6px;
-  }
-  .floor-controls .dpad .btn {
-    font-size: 1.15rem;
-    color: var(--gold-bright, #e6cf7a);
-    border-radius: 9px;
-    border-color: rgba(200, 162, 74, 0.3);
-    background: linear-gradient(180deg, #2b2218 0%, #191309 100%);
-    box-shadow:
-      0 3px 6px rgba(0, 0, 0, 0.5),
-      inset 0 1px 0 rgba(246, 226, 155, 0.12),
-      inset 0 -3px 6px rgba(0, 0, 0, 0.45);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-  }
-  .floor-controls .dpad .btn:hover {
-    border-color: rgba(220, 183, 101, 0.7);
-    color: #f2df9e;
-  }
-  .floor-controls .dpad .btn:active {
-    transform: translateY(1px);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), inset 0 2px 6px rgba(0, 0, 0, 0.5);
-  }
-  .floor-controls .dpad .dpad-hold {
-    font-size: 1.3rem;
-    border-color: rgba(200, 162, 74, 0.5);
-    background: radial-gradient(circle at 50% 32%, #3a2d17 0%, #1c150b 70%);
-  }
-
-  /* Full-width action buttons */
-  .floor-controls .floor-actions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    margin: 0;
-  }
-  .floor-controls .floor-actions .btn {
-    width: 100%;
-    padding: 9px 13px;
-    font-size: 0.88rem;
-    border-radius: 8px;
-    text-align: left;
-  }
-}
-
 @keyframes warnGlow {
   0%, 100% { border-left-color: rgba(220, 90, 74, 0.6); }
   50% { border-left-color: rgba(240, 110, 90, 1); }
 }
 
-/* --- 8 · Landscape phones: stay compact (App.css owns the layout there) ------ */
-/* Placed last so these win over the unconditional rules above. */
+/* --- 8 · Landscape phones: stay compact -------------------------------------- */
+/* Placed last so these win over the unconditional rules above. App.css still
+   hides .map-legend/.map-warning/.subtitle here; the top bar keeps serving
+   the buttons + MOV pips in one slim row. */
 @media (max-height: 500px) {
   .map-grid {
     --cell: 24px;
   }
-  .map-frame {
-    flex: 1 1 auto;
+  .game:not(.battle-mode) .game-main > .panel.floor-panel {
+    padding: 8px 10px 6px;
   }
-  .exp-head,
+  .game-main > .panel.floor-panel > h1.title {
+    font-size: 1rem;
+  }
+  .floor-layout {
+    gap: 5px;
+  }
+  .floor-topbar {
+    padding: 4px 6px;
+    gap: 4px 8px;
+  }
+  .floor-topbar .floor-actions {
+    gap: 4px;
+  }
+  .floor-topbar .floor-actions .btn {
+    padding: 4px 7px;
+    font-size: 0.7rem;
+  }
   .mov-count {
     display: none;
   }
   .mov-gems {
     gap: 3px;
+  }
+  .floor-topbar .mov-pip {
+    width: 11px;
+    height: 11px;
   }
 }

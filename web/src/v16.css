@@ -6,6 +6,30 @@
    so equal-specificity rules here win.
    ========================================================================= */
 
+/* --- v18.13: hover-creep kill switch ------------------------------------ */
+/* Paul's playtest: with a sheet scrolled, the view crept slowly downward
+   while mousing over buttons. A full audit found no layout-shifting hover
+   rules (verified empirically: zero offset/scrollHeight deltas across every
+   hoverable on the character sheet), no scroll-behavior:smooth anywhere, and
+   no scrollTo/scrollIntoView callers outside the map grid + chronicle click.
+   What remains is the browser moving scroll positions on our behalf:
+   1) CSS scroll anchoring inside the app's scrollers chasing late layout
+      deltas (font/image metrics settling, hover transforms + fractional
+      zoom rounding). The app never legitimately grows content above the
+      fold, so anchoring buys nothing here — off.
+   2) UA/programmatic scrolling of the page shell: html/body are
+      overflow:hidden, which STILL permits being scrolled (focus,
+      scrollIntoView, caret). overflow:clip forbids it outright — the shell
+      can never creep; only .game-main may scroll. */
+html,
+body {
+  overflow: clip;
+}
+.game-main,
+.game-log.side-log {
+  overflow-anchor: none;
+}
+
 /* --- Scene layer: the world is always visible behind the interface ------ */
 .scene-layer {
   position: fixed;
@@ -258,10 +282,19 @@
 }
 
 /* --- Gate select: each gate wears its own painting --------------------- */
+/* v18.12: the gate buttons sit inside plain div wrappers, so as inline-level
+   buttons they shrink-wrapped to their text — four different widths. The
+   wrapper becomes a column flex (.gate-row) and every banner is pinned to
+   width:100% with one shared height, art spanning the full row. */
+.gate-row {
+  display: flex;
+  flex-direction: column;
+}
 .gate-card {
   position: relative;
   overflow: hidden;
-  min-height: 128px;
+  width: 100%;
+  min-height: clamp(148px, 17vh, 188px);
   display: flex;
   align-items: flex-end;
   padding: 0;

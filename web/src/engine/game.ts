@@ -1397,7 +1397,9 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
     }
 
     case 'SPEND_ATTRIBUTE': {
-      if (!state.player || state.screen !== 'characterSheet') return state;
+      // 'equipment' is the same sheet reached from the floor's Gear button —
+      // points must be spendable there too (v18 fix: clicks were no-oping).
+      if (!state.player || (state.screen !== 'characterSheet' && state.screen !== 'equipment')) return state;
       const next = cloneCore(state);
       if (!next.player!.spendAttributePoint(action.stat)) return state;
       next.log = pushLog(state.log, `${action.stat} +1.`);
