@@ -23,7 +23,8 @@ export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatc
             <div className={`item-row svc-shop-row${afford ? '' : ' cant'}`} key={def.name}>
               <span className="svc-plate">{def.emoji}</span>
               <div className="item-desc">
-                <b>{def.name}</b> {owned > 0 && <span className="pill">own ×{owned}</span>}
+                <Icon name={`item_${def.name.toLowerCase()}`} emoji={def.emoji} size={16} /> <b>{def.name}</b>{' '}
+                {owned > 0 && <span className="pill">own ×{owned}</span>}
                 <div className="affix-line">{def.description}</div>
               </div>
               <div className="svc-buy">

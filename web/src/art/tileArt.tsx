@@ -33,6 +33,22 @@ function hashCoord(vx: number, vy: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Sparse painted set-dressing (water pools, debris, ruined doorways) scattered
+// across plain floor tiles. Deterministic per (vx, vy) like the decor above —
+// same tile always rolls the same prop, so it doesn't flicker between renders.
+// ---------------------------------------------------------------------------
+
+const TILE_PROPS = ['waterpool', 'debris', 'archway'] as const;
+export type TileProp = (typeof TILE_PROPS)[number];
+
+/** ~1 in 15 floor tiles gets a prop; deterministic, no engine/gameplay effect. */
+export function pickTileProp(vx: number, vy: number): TileProp | null {
+  const hash = hashCoord(vx * 4297, vy * 2999);
+  if (hash % 15 !== 0) return null;
+  return TILE_PROPS[Math.floor(hash / 15) % TILE_PROPS.length];
+}
+
+// ---------------------------------------------------------------------------
 // Floor decoration, per gate. Each takes a 0-3 variant index and returns a
 // low-opacity overlay group so large open rooms don't look like a stamped-out
 // grid of identical squares.

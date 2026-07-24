@@ -3,6 +3,7 @@ import { Character } from '../entities/Character';
 import { MonsterInstance, freshUid } from '../entities/MonsterInstance';
 import { CLASS_DECKS, RACE_CARDS, SPECIES_CARDS, TAME_CARD_ID, getCard } from '../data/cards';
 import { getSkill } from '../data/skills';
+import { STAT_LABEL } from '../data/keywords';
 import { FAMILY_INFO } from '../data/species';
 import { CONSUMABLES } from '../data/items';
 import { BALANCE } from '../data/balance';
@@ -155,11 +156,15 @@ export function effectAmount(effect: CardEffect, hero: Character, source?: Monst
 }
 
 /** Human-readable computed numbers for the card face, e.g. "12×2". */
-export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInstance, upgraded = false): string[] {
+/** `previewTarget`, when given, folds elemental effectiveness into the shown
+ * damage — this is what lets the hand card update its number live as you aim
+ * at a specific enemy, rather than always showing the untargeted base value. */
+export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInstance, upgraded = false, previewTarget?: MonsterInstance): string[] {
   const parts: string[] = [];
   for (const effect of card.effects) {
     if (effect.kind === 'damage') {
-      const n = effectAmount(effect, hero, source, upgraded);
+      const base = effectAmount(effect, hero, source, upgraded);
+      const n = previewTarget ? Math.max(1, Math.round(base * elementMult(effect, previewTarget))) : base;
       parts.push(effect.times && effect.times > 1 ? `⚔${n}×${effect.times}` : `⚔${n}`);
     } else if (effect.kind === 'block') {
       parts.push(`🛡${effectAmount(effect, hero, source, upgraded)}`);
@@ -169,12 +174,72 @@ export function cardNumbers(card: CardDef, hero: Character, source?: MonsterInst
       parts.push(`🃏${effect.count}`);
     } else if (effect.kind === 'energy') {
       parts.push(`◈${effect.amount}`);
+    } else if (effect.kind === 'selfDamage') {
+      parts.push(`💀${effect.amount}`);
+    } else if (effect.kind === 'resolveDamage') {
+      parts.push(`⚔${effect.amount}+${effect.perExhausted}/ex`);
     }
   }
   return parts;
 }
 
-function elementMult(effect: CardEffect, target: MonsterInstance): number {
+/** Whether `previewTarget` is weak/resistant to any damage effect on this
+ * card — lets the UI flag the live-updated number instead of just changing
+ * silently. Null when there's no preview target or no elemental effect. */
+export function cardEffectiveness(card: CardDef, previewTarget?: MonsterInstance): 'boosted' | 'resisted' | null {
+  if (!previewTarget) return null;
+  for (const effect of card.effects) {
+    if (effect.kind === 'damage') {
+      const mult = elementMult(effect, previewTarget);
+      if (mult > 1) return 'boosted';
+      if (mult < 1) return 'resisted';
+    }
+  }
+  return null;
+}
+
+/** One full sentence per effect for the deck screen's card-inspect view (fuller than cardNumbers' glyphs).
+ * Status/stat names in the output are deliberately left unexplained here —
+ * the card-inspect UI highlights them as keywords and shows STATUS_DESC /
+ * STAT_LABEL's fuller descriptions (from ../data/keywords) in a popup
+ * instead of stuffing the sentence itself with a parenthetical. */
+export function describeEffect(effect: CardEffect, hero: Character, source?: MonsterInstance, upgraded = false): string {
+  const scalingNote = (scaling?: CardScaling) => (scaling ? ` (scales with ${scaling})` : '');
+  switch (effect.kind) {
+    case 'damage': {
+      const n = effectAmount(effect, hero, source, upgraded);
+      const times = effect.times && effect.times > 1 ? ` — ${effect.times}× hits` : '';
+      const elem = effect.element && effect.element !== 'None' ? `${effect.element} ` : '';
+      return `Deal ${n} ${elem}damage${times}${scalingNote(effect.scaling)}`;
+    }
+    case 'block':
+      return `Gain ${effectAmount(effect, hero, source, upgraded)} Block${scalingNote(effect.scaling)}`;
+    case 'heal':
+      return `Heal ${effectAmount(effect, hero, source, upgraded)} HP${scalingNote(effect.scaling)}`;
+    case 'drain':
+      return `Deal ${effectAmount(effect, hero, source, upgraded)} damage, heal for half${scalingNote(effect.scaling)}`;
+    case 'status': {
+      const chance = effect.chance !== undefined && effect.chance < 1 ? ` (${Math.round(effect.chance * 100)}% chance)` : '';
+      return `Apply ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}${chance}`;
+    }
+    case 'selfStatus':
+      return `Gain ${effect.status} for ${effect.turns} turn${effect.turns === 1 ? '' : 's'}`;
+    case 'mod':
+      return `${effect.amount >= 0 ? '+' : ''}${effect.amount} ${STAT_LABEL[effect.stat]} for ${effect.turns} turns (${effect.onSelf ? 'self' : 'target'})`;
+    case 'draw':
+      return `Draw ${effect.count} card${effect.count === 1 ? '' : 's'}`;
+    case 'energy':
+      return `Gain ${effect.amount} Energy`;
+    case 'tame':
+      return 'Attempt to tame the target';
+    case 'selfDamage':
+      return `Take ${effect.amount} damage`;
+    case 'resolveDamage':
+      return `Deal ${effect.amount} damage, +${effect.perExhausted} for every exhausted card${scalingNote(effect.scaling)}`;
+  }
+}
+
+export function elementMult(effect: CardEffect, target: MonsterInstance): number {
   if (effect.kind !== 'damage' || !effect.element) return 1;
   return FAMILY_INFO[target.family].resists[effect.element] ?? 1;
 }
@@ -186,7 +251,7 @@ function elementFx(effect: CardEffect): DamageFx {
   const map: Record<Exclude<NonNullable<typeof effect.element>, 'None'>, DamageFx> = {
     Fire: 'fire',
     Ice: 'frost',
-    Bolt: 'bolt',
+    Electric: 'bolt',
     Dark: 'dark',
     Holy: 'holy',
   };
@@ -497,6 +562,27 @@ export function playCard(
         }
         break;
       }
+      case 'selfDamage': {
+        const dealt = hero.takeDamage(effect.amount);
+        fx.push({ fx: 'hit', targetUid: 'hero', amount: dealt });
+        log.push(`${hero.name} pays ${dealt} for it.`);
+        break;
+      }
+      case 'resolveDamage': {
+        const bonus = effect.perExhausted * battle.exhaustPile.length;
+        for (const target of resolveTargets()) {
+          if (!target.isAlive()) continue;
+          const amount = Math.max(
+            1,
+            Math.round((effect.amount + scalingBonus(effect.scaling, hero, source) + bonus) * frozenMult(target))
+          );
+          const dealt = damageEnemy(target, amount, battle);
+          fx.push({ fx: 'hit', targetUid: target.uid, amount: dealt });
+          log.push(`${target.displayName()} suffers ${dealt}.`);
+          if (!target.isAlive()) fx.push({ fx: 'ko', targetUid: target.uid });
+        }
+        break;
+      }
       case 'tame': {
         const target = explicitTarget ?? living[0];
         if (!target) break;
@@ -795,6 +881,18 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
         const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * pct)));
         fx.push({ fx: effect.name === 'Burned' ? 'fire' : 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
         log.push(`${c.displayName()} withers for ${dmg} (${effect.name}).`);
+      }
+      if (effect.name === 'Encroach' && c.isAlive()) {
+        const stacks = effect.stacks ?? 1;
+        const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * BALANCE.encroachPct * stacks)));
+        fx.push({ fx: 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
+        log.push(`${c.displayName()} is swallowed a little more for ${dmg}.`);
+        effect.stacks = stacks + 1;
+      }
+      if (effect.name === 'Fated' && effect.turns === 1 && c.isAlive()) {
+        const dmg = c.takeDamage(Math.max(2, Math.floor(c.maxHp * BALANCE.fatedPct)));
+        fx.push({ fx: 'dark', targetUid: c instanceof Character ? 'hero' : c.uid, amount: dmg });
+        log.push(`${c.displayName()} is finally judged for ${dmg}.`);
       }
       effect.turns--;
     }

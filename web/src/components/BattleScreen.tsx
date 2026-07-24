@@ -4,13 +4,17 @@ import type { CardDef, CardInstance, FxEvent, Intent } from '../engine/types';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
 import { CONSUMABLES } from '../engine/data/items';
+import { CARD_ART } from '../art/cardArt';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
+import { ELEMENT_ICON } from '../art/elementIcons';
+import { familyWeakness } from '../engine/data/species';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
 import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
 import { LanternTurn } from './LanternTurn';
+import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
 
 interface Popup {
@@ -130,6 +134,10 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const needsTarget = selectedCard?.target === 'enemy';
   // v11: self-heal cards can be aimed at a wounded party monster instead.
   const allyAimable = !!selectedCard && selectedCard.target === 'self' && selectedCard.effects.some((e) => e.kind === 'heal');
+  // The hand card's damage number updates live to the actual (elemental-adjusted)
+  // amount once you're aiming at a specific enemy, rather than always showing
+  // the untargeted base value — only while hoveredEnemyUid is live, not just selected.
+  const previewTarget = needsTarget && hoveredEnemyUid ? livingEnemies.find((e) => e.uid === hoveredEnemyUid) : undefined;
 
   // --- FX consumption: STAGGERED playback so the fight reads sequentially ---
   useEffect(() => {
@@ -565,6 +573,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
             const block = battle.enemyBlock[enemy.uid] ?? 0;
+            const weakTo = familyWeakness(enemy.family);
             return (
               <div
                 key={enemy.uid}
@@ -597,6 +606,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   <span className="bf-badge badge-lv">Lv{enemy.level}</span>
                   {!enemy.isBoss && enemy.isAlive() && (
                     <span className="bf-badge badge-tame">tame {enemy.tameChancePercent()}%</span>
+                  )}
+                  {enemy.isAlive() && weakTo && (
+                    <span className="weak-badge" title={`Weak to ${weakTo}`}>
+                      {ELEMENT_ICON[weakTo]}
+                    </span>
                   )}
                   {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
                     <span className="bf-badge-stack">
@@ -782,7 +796,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                       dispatch({ type: 'BATTLE_ITEM', name, targetUid: enemy.uid });
                     }}
                   >
-                    {def.emoji} {name} ×{count} → {enemy.nickname}
+                    <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count} → {enemy.nickname}
                   </button>
                 ));
             }
@@ -796,7 +810,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   dispatch({ type: 'BATTLE_ITEM', name });
                 }}
               >
-                {def.emoji} {name} ×{count}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count}
               </button>
             );
           })}
@@ -825,7 +839,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 onClick={() => playable && selectCard(i)}
                 onTouchStart={() => playable && selectCard(i)}
               >
-                <CardView card={card} hero={player} sourceMonster={source} width={200} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
+                <CardView
+                  card={card}
+                  hero={player}
+                  sourceMonster={source}
+                  width={200}
+                  playable={playable}
+                  selected={selectedIdx === i}
+                  upgraded={!!inst.upgraded}
+                  previewTarget={selectedIdx === i ? previewTarget : undefined}
+                />
                 <span className="hand-key">{i + 1}</span>
               </div>
             );
@@ -875,7 +898,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             ['--ty' as string]: `${g.to.y}px`,
           }}
         >
-          {g.card.emoji}
+          {CARD_ART[g.card.id] ? (
+            <img src={CARD_ART[g.card.id]} alt="" className="card-ghost-img" draggable={false} />
+          ) : (
+            g.card.emoji
+          )}
         </div>
       ))}
     </div>

@@ -5,6 +5,7 @@ import { SPECIES_CARDS } from '../engine/data/cards';
 import { MonsterArt } from '../art/monsterArt';
 import { HeroArt } from '../art/heroArt';
 import { Bar } from './Bars';
+import { Icon } from './Icon';
 
 function StatusTags({ entity }: { entity: Character | MonsterInstance }) {
   if (entity.statusEffects.length === 0 && entity.activeMods.length === 0) return null;
@@ -54,7 +55,8 @@ export function PartySidebar({ hero, party }: { hero: Character; party: MonsterI
             <span className="level-badge">Lv {m.level}</span>
           </div>
           <div className="affix-line">
-            {m.species.name} · {FAMILY_INFO[m.family].emoji} {m.family} · {(SPECIES_CARDS[m.speciesId] ?? []).length} card
+            {m.species.name} · <Icon name={`family_${m.family.toLowerCase()}`} emoji={FAMILY_INFO[m.family].emoji} size={14} /> {m.family} ·{' '}
+            {(SPECIES_CARDS[m.speciesId] ?? []).length} card
             {(SPECIES_CARDS[m.speciesId] ?? []).length === 1 ? '' : 's'}
           </div>
           <Bar label="HP" current={m.hp} max={m.maxHp} kind="hp" />

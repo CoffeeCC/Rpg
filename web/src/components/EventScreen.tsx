@@ -1,5 +1,6 @@
 import type { GameAction, GameState } from '../engine/game';
 import { EVENTS } from '../engine/data/events';
+import { Icon } from './Icon';
 import '../sheets.css';
 
 // v17 (PLAN7 C8): events as dramatic centered narration — big glyph, display
@@ -13,7 +14,7 @@ export function EventScreen({ state, dispatch }: { state: GameState; dispatch: (
     <div className="panel event-screen">
       <div className="event-stage">
         <div className="event-glyph" aria-hidden="true">
-          {event.emoji}
+          <Icon name={`event_${event.id}`} emoji={event.emoji} size={64} />
         </div>
         <h1 className="title event-title">{event.name}</h1>
         <p className="story-paragraph event-text">{event.text}</p>

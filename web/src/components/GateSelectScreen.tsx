@@ -2,6 +2,7 @@ import type { GameAction, GameState } from '../engine/game';
 import { GATES, GATE_ORDER } from '../engine/data/gates';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { NpcHost } from './NpcHost';
+import { Icon } from './Icon';
 
 export function GateSelectScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   return (
@@ -19,30 +20,39 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
           const playerLevel = state.player?.level ?? 1;
           const overreach = playerLevel < lowBand - 1;
           return (
-            <button
-              type="button"
-              key={id}
-              className={`option-card gate-card ${locked ? 'locked' : ''}`}
-              disabled={locked}
-              onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}
-            >
-              {PAINTED_BACKDROPS[id] && (
-                <span className="gate-card-art" aria-hidden="true">
-                  <img src={PAINTED_BACKDROPS[id]} alt="" draggable={false} />
+            <div key={id}>
+              <button
+                type="button"
+                className={`option-card gate-card ${locked ? 'locked' : ''}`}
+                disabled={locked}
+                onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}
+              >
+                {PAINTED_BACKDROPS[id] && (
+                  <span className="gate-card-art" aria-hidden="true">
+                    <img src={PAINTED_BACKDROPS[id]} alt="" draggable={false} />
+                  </span>
+                )}
+                <span className="gate-card-body">
+                  <span className="name">
+                    <Icon name={`gate_${id}`} emoji={gate.emoji} size={22} /> {gate.name} {cleared ? '✅' : ''}
+                    {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
+                  </span>
+                  <span className="desc">{gate.description}</span>
+                  <span className="desc gate-card-meta">
+                    {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
+                    {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
+                  </span>
                 </span>
+              </button>
+              {cleared && (
+                <button type="button" className="option-card wilds-card" onClick={() => dispatch({ type: 'ENTER_WILDS', gateId: id })}>
+                  <div className="name">🌫️ Venture into the Unmapped Wilds</div>
+                  <div className="desc">
+                    Past every floor a cartographer has ever charted. No end, no map — only what your Lantern finds.
+                  </div>
+                </button>
               )}
-              <span className="gate-card-body">
-                <span className="name">
-                  {gate.emoji} {gate.name} {cleared ? '✅' : ''}
-                  {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
-                </span>
-                <span className="desc">{gate.description}</span>
-                <span className="desc gate-card-meta">
-                  {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
-                  {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
-                </span>
-              </span>
-            </button>
+            </div>
           );
         })}
       </div>

@@ -1,7 +1,7 @@
 // Monsters content: family info + full species roster (45 species, 9 families).
 // Authored by the monsters content agent. Export names/shapes are contract.
 // FAMILY_INFO must always cover all 9 families (systems code iterates it).
-import type { FamilyInfo, MonsterFamily, SpeciesDef } from '../types';
+import type { Element, FamilyInfo, MonsterFamily, SpeciesDef } from '../types';
 
 export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
   Slime: {
@@ -20,13 +20,13 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🐺',
     description: 'Muscle, fur, and instinct.',
     trainsStat: 'STR',
-    resists: { Ice: 0.5 },
+    resists: { Ice: 0.5, Electric: 1.5 },
   },
   Bird: {
     emoji: '🦅',
     description: 'Fast, sharp-eyed, and hard to pin down.',
     trainsStat: 'DEX',
-    resists: { Bolt: 1.5 },
+    resists: { Electric: 1.5, Fire: 0.5 },
   },
   Plant: {
     emoji: '🌿',
@@ -38,7 +38,7 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🪲',
     description: 'Skittering swarms with chitin armor.',
     trainsStat: 'DEX',
-    resists: { Fire: 1.5, Dark: 0.5 },
+    resists: { Fire: 1.5, Ice: 0.5 },
   },
   Devil: {
     emoji: '😈',
@@ -56,9 +56,16 @@ export const FAMILY_INFO: Record<MonsterFamily, FamilyInfo> = {
     emoji: '🗿',
     description: 'Animated stone, metal, and stranger things.',
     trainsStat: 'DEF',
-    resists: { Bolt: 0.5, Fire: 0.5 },
+    resists: { Fire: 0.5, Electric: 1.5 },
   },
 };
+
+/** The element a family takes bonus (1.5x) damage from, if any — used to show
+ * players a "weak to" hint rather than making them memorize the resist table. */
+export function familyWeakness(family: MonsterFamily): Exclude<Element, 'None'> | null {
+  const entry = Object.entries(FAMILY_INFO[family].resists).find(([, mult]) => mult > 1);
+  return (entry?.[0] as Exclude<Element, 'None'>) ?? null;
+}
 
 export const SPECIES: Record<string, SpeciesDef> = {
   // ------------------------------------------------------------ Slime (5)

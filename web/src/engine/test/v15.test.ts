@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Character } from '../entities/Character';
 import { MonsterInstance } from '../entities/MonsterInstance';
 import { startBattle, endTurn, collectSpoils } from '../systems/cardBattle';
-import { newExpedition, revealAround, isSeen, openKey, FOG_RADIUS, type Direction } from '../systems/floors';
+import { newExpedition, revealLantern, isRevealed, litTiles, lanternRadius, openKey, type Direction } from '../systems/floors';
 import { SPECIES } from '../data/species';
 import { gameReducer, initialGameState, type GameState } from '../game';
 
@@ -20,19 +20,37 @@ function enterGate(state: GameState): GameState {
 const speciesId = Object.keys(SPECIES)[0];
 
 describe('v15: fog of war', () => {
-  it('a fresh expedition sees only the lantern-light around the start', () => {
+  it('a fresh expedition reveals only the lantern-light around the start', () => {
     const base = initialGameState();
     const exp = newExpedition('verdant', null, base.chronicle, false);
-    expect(exp.seen).toBeDefined();
-    expect(isSeen(exp, exp.x, exp.y)).toBe(true);
-    expect(isSeen(exp, exp.x + FOG_RADIUS, exp.y)).toBe(true);
-    // Well beyond the lantern: dark (pick a far corner that exists on the grid).
-    expect(isSeen(exp, exp.x + FOG_RADIUS + 4, exp.y + FOG_RADIUS + 4)).toBe(false);
+    // newExpedition starts dark; the Lantern does the revealing.
+    expect(exp.revealed).toEqual([]);
+    const hero = new Character('A', 'Human', 'Warrior');
+    const lit = revealLantern(exp, hero);
+    expect(lit.revealed.length).toBeGreaterThan(0);
+    expect(isRevealed(lit, exp.x, exp.y)).toBe(true);
+    // Well beyond the lantern's reach: still dark.
+    const r = lanternRadius(hero);
+    expect(isRevealed(lit, exp.x + r + 4, exp.y + r + 4)).toBe(false);
+  });
+
+  it('entering a gate through the reducer lights the start room', () => {
+    const state = enterGate(createHero());
+    const exp = state.expedition!;
+    expect(exp.revealed.length).toBeGreaterThan(0);
+    expect(isRevealed(exp, exp.x, exp.y)).toBe(true);
+    // Everything currently lit must also be part of the revealed memory.
+    const lit = litTiles(exp, lanternRadius(state.player!));
+    expect(lit.has(`${exp.x},${exp.y}`)).toBe(true);
+    for (const key of lit) {
+      const [x, y] = key.split(',').map(Number);
+      expect(isRevealed(exp, x, y)).toBe(true);
+    }
   });
 
   it('walking reveals new ground through the reducer', () => {
     let state = enterGate(createHero());
-    const before = state.expedition!.seen!.length;
+    const before = state.expedition!.revealed.length;
     for (const dir of ['north', 'south', 'east', 'west'] as Direction[]) {
       const next = gameReducer(state, { type: 'MOVE', dir });
       if (next.expedition && (next.expedition.x !== state.expedition!.x || next.expedition.y !== state.expedition!.y)) {
@@ -40,33 +58,19 @@ describe('v15: fog of war', () => {
         break;
       }
     }
-    expect(state.expedition!.seen!.length).toBeGreaterThanOrEqual(before);
-    expect(isSeen(state.expedition!, state.expedition!.x, state.expedition!.y)).toBe(true);
+    expect(state.expedition!.revealed.length).toBeGreaterThanOrEqual(before);
+    expect(isRevealed(state.expedition!, state.expedition!.x, state.expedition!.y)).toBe(true);
   });
 
-  it('revealAround is idempotent and bounded to the grid', () => {
-    const base = initialGameState();
-    const exp = newExpedition('verdant', null, base.chronicle, false);
-    const once = exp.seen!.length;
-    revealAround(exp);
-    expect(exp.seen!.length).toBe(once);
-    for (const key of exp.seen!) expect(key).toBe(openKey(exp, ...(key.split(':')[2].split(',').map(Number) as [number, number])));
-  });
-
-  it('pre-fog expeditions (no seen array) are treated as fully lit', () => {
-    const base = initialGameState();
-    const exp = newExpedition('verdant', null, base.chronicle, false);
-    delete exp.seen;
-    expect(isSeen(exp, exp.x, exp.y)).toBe(false); // engine says unseen…
-    // …but the reducer must not start fogging a legacy save on MOVE.
-    let state = enterGate(createHero());
-    delete state.expedition!.seen;
-    for (const dir of ['north', 'south', 'east', 'west'] as Direction[]) {
-      const next = gameReducer(state, { type: 'MOVE', dir });
-      if (next !== state) {
-        expect(next.expedition?.seen).toBeUndefined();
-        break;
-      }
+  it('revealLantern merges scoped keys and returns the same reference when nothing is new', () => {
+    const state = enterGate(createHero());
+    const exp = state.expedition!;
+    // The reducer already revealed the lantern circle — nothing new to add.
+    const again = revealLantern(exp, state.player!);
+    expect(again).toBe(exp);
+    // Every remembered key is floor-scoped exactly as openKey scopes it.
+    for (const key of exp.revealed) {
+      expect(key).toBe(openKey(exp, ...(key.split(':')[2].split(',').map(Number) as [number, number])));
     }
   });
 });

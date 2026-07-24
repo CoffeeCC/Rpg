@@ -1,9 +1,11 @@
 import type { GameAction, GameState } from '../engine/game';
 import type { ItemV2 } from '../engine/types';
-import { FAMILY_INFO } from '../engine/data/species';
+import { FAMILY_INFO, familyWeakness } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
 import { MonsterImage } from '../art/MonsterImage';
+import { ELEMENT_ICON } from '../art/elementIcons';
 import { ItemLine } from './ItemLine';
+import { Icon } from './Icon';
 import '../sheets.css';
 
 // v17 (PLAN7 C3): companion sheet matching the hero's — portrait panel with
@@ -95,7 +97,11 @@ export function MonsterSheetScreen({ state, dispatch }: { state: GameState; disp
       <h1 className="title">{monster.nickname}</h1>
       <p className="subtitle">
         {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
-        {FAMILY_INFO[monster.family].emoji} {monster.family} · {inParty ? 'in your party' : 'in the stable'}
+        <Icon name={`family_${monster.family.toLowerCase()}`} emoji={FAMILY_INFO[monster.family].emoji} size={14} /> {monster.family} ·{' '}
+        {inParty ? 'in your party' : 'in the stable'}
+        {familyWeakness(monster.family) && (
+          <> · <span title={`Takes bonus damage from ${familyWeakness(monster.family)}`}>{ELEMENT_ICON[familyWeakness(monster.family)!]} Weak to {familyWeakness(monster.family)}</span></>
+        )}
       </p>
 
       <div className="ms-layout">

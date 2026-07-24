@@ -22,7 +22,10 @@
 .battle-stage {
   position: relative;
   overflow: hidden;
-  min-height: calc(100vh - 210px);
+  /* v15: was min-height: calc(100vh - 210px) — a stale magic number from
+     before .game-main became a fixed-height flex container with its own
+     scroll. That forced extra blank space (via stage-row's flex:1) instead
+     of letting the stage fit the space .game-main actually gives it. */
   display: flex;
   flex-direction: column;
   background:
@@ -977,6 +980,27 @@
   cursor: pointer;
 }
 
+/* v16: idle life — cards breathe gently in hand so they read as held objects,
+   not a static screenshot. Lives on .playing-card (not .hand-slot) because
+   .hand-slot's transform is already spoken for by the fan rotation above;
+   stacking a second transform on the child composes cleanly instead of
+   fighting it. Paused on hover so the deliberate lift gesture stays crisp. */
+@media (prefers-reduced-motion: no-preference) {
+  .hand-fan .hand-slot .playing-card {
+    animation: card-idle-breathe 4.4s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.73s);
+  }
+  .hand-fan .hand-slot:hover .playing-card,
+  .hand-fan .hand-slot:focus-within .playing-card {
+    animation-play-state: paused;
+  }
+}
+
+@keyframes card-idle-breathe {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(0.45deg); }
+}
+
 .hand-key {
   position: absolute;
   bottom: -4px;
@@ -991,10 +1015,24 @@
 }
 
 /* --- The card itself --- */
+/* v16: fine grain so card stock reads as printed material, not a flat vector
+   fill. feTurbulence noise tiled small and blended with 'overlay' so it only
+   perturbs local contrast (readable text untouched) rather than sitting as
+   a visible layer on top. */
+:root {
+  --card-grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
 .playing-card {
   position: relative;
   border-radius: 8px;
-  background: linear-gradient(180deg, #191720 0%, #100e14 100%);
+  background: var(--card-grain), linear-gradient(180deg, #191720 0%, #100e14 100%);
+  background-size: 90px 90px, 100% 100%;
+  background-blend-mode: overlay, normal;
+  /* Real CSS bevel, not the old whole-card picture-frame PNG (see cardFrames.tsx
+     comment) - same border on all 4 sides by construction, so it can't read
+     thicker on one edge than another the way the image overlay did. */
+  border: 3px ridge var(--gold-deep);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65);
   overflow: hidden;
   display: flex;
@@ -1011,15 +1049,66 @@
   filter: grayscale(0.7) brightness(0.6);
 }
 
+/* --- MTG-style layout: name bar, then art window, then type bar, then a
+ * separate rules-text plate — instead of a big art block with all the text
+ * centered below it. These inner dividers stay thin (1px) flat lines; the
+ * heavier framing is the .playing-card outer border and the .card-art-window
+ * bevel, both plain CSS now (see cardFrames.tsx comment for why the old
+ * painted frame image was dropped). */
+.card-name {
+  display: flex;
+  align-items: center;
+  /* Left margin (not padding) clears the cost gem, which now sits on top of
+     the card's corner (see .card-cost): the plate itself starts just past
+     the badge, so its own interior padding stays small and symmetric and
+     the name text still reads as flush-left against the plate it's actually
+     inside, instead of floating in a lopsided gap padding would leave. */
+  margin: 8px 14px 0 30px;
+  padding: 2px 3px 2px 7px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
+  z-index: 2;
+}
+
+.card-name-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #ddd5c2;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .card-art-window {
   position: relative;
-  height: 46%;
-  margin: 8px 8px 0;
-  border-radius: 4px;
+  height: 43%;
+  /* found live: at the small-phone hand-card size (.hand-fan .playing-card
+     forced to 84x118 under the max-height:500px media query below), the text
+     blocks' content-minimum height left no room for a 46%-height flex child
+     and it was shrinking to ~0 — the art vanished entirely on short
+     viewports. flex-shrink:0 keeps the art frame's share fixed; text
+     truncates against .playing-card's overflow:hidden instead, which is
+     the right trade. */
+  flex-shrink: 0;
+  margin: 6px 14px 0;
+  border-radius: 3px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Beveled (not flat 1px) so the art reads as sitting behind a carved
+     window rather than a hard-edged image pasted on top — same border
+     language as .playing-card's outer edge, just inset (groove) instead of
+     raised (ridge) since this edge is a window into the card, not the card's
+     own boundary. */
+  border: 3px groove var(--gold-deep);
 }
 
 .card-art-content {
@@ -1036,25 +1125,29 @@
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.8));
 }
 
-/* v13: cost as a faceted gem inlaid into the card's top-left corner — reads as
-   part of the frame (flush to the edge, beveled crown), not a ball dropped on. */
+/* v18: cost as a faceted gem sitting on the card's own top-left corner,
+   overlapping the outer border like an inset badge, rather than living
+   inside the name bar and eating into its width (that was v13's fix for an
+   even earlier corner-overlay version that sat on the *art* corner instead
+   of the card's — this is the same idea one layer out, anchored to
+   .playing-card's border instead). */
 .card-cost {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 30px;
-  height: 34px;
+  top: 4px;
+  left: 4px;
+  z-index: 4;
+  width: 22px;
+  height: 24px;
   clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%);
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 3px;
+  padding-top: 2px;
   background: linear-gradient(155deg, #f6e6a6 0%, #d9b25a 40%, #9c7a30 72%, #6b5220 100%);
   color: #201705;
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1rem;
-  z-index: 4;
+  font-size: 0.8rem;
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), inset -1px -1px 3px rgba(0, 0, 0, 0.4);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
@@ -1069,24 +1162,38 @@
   pointer-events: none;
 }
 
-.card-name {
-  font-family: var(--font-display);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-align: center;
-  color: #ddd5c2;
-  padding: 5px 8px 2px;
-  line-height: 1.15;
-  z-index: 2;
+/* MTG-style rules-text box — its own bordered plate, distinct from the
+ * frame decoration painted over the whole card, so name/type/numbers/flavor
+ * read as contained content instead of text floating on the frame art. */
+.card-text-plate {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 6px 14px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(180deg, rgba(24, 20, 15, 0.94) 0%, rgba(8, 7, 5, 0.97) 100%);
+  position: relative;
+  overflow: hidden;
 }
 
 .card-type-line {
-  text-align: center;
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
+  margin: 6px 14px 0;
+  padding: 1px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-deep);
+  background: linear-gradient(155deg, #4c4128 0%, #362d1c 55%, #241d10 100%);
+  text-align: left;
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  /* Was --text-faint (a dim brown-gray meant for de-emphasized text like
+     flavor quotes), nearly illegible against this plate's dark gradient.
+     Same cream as .card-name-text, which sits on the identical gradient one
+     bar up and reads fine. */
+  color: #ddd5c2;
   z-index: 2;
 }
 
@@ -1096,21 +1203,21 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 2px 10px 12px;
+  gap: 2px;
+  padding: 2px 8px 8px;
   z-index: 2;
 }
 
 .card-numbers {
   font-family: var(--font-display);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   color: var(--gold-bright);
   letter-spacing: 0.04em;
 }
 
 .card-text {
-  font-size: 0.72rem;
-  line-height: 1.3;
+  font-size: 0.66rem;
+  line-height: 1.22;
   text-align: center;
   color: var(--text-dim);
   font-style: italic;
@@ -1579,7 +1686,18 @@
     min-height: 100px;
     margin-top: -56px;
   }
-  .playing-card {
+  .hand-left, .hand-right {
+    gap: 4px;
+  }
+  .hand-right .lantern-turn {
+    width: 70px;
+    height: 90px;
+  }
+  /* Scoped to the battle hand specifically — .playing-card is shared by the
+     codex, deck screen, and card-inspect overlay too, and this used to force
+     ALL of them down to hand-card size on any short viewport, wrecking their
+     own (much larger) intended card sizes. */
+  .hand-fan .playing-card {
     width: 84px !important;
     height: 118px !important;
   }
@@ -1601,6 +1719,10 @@
   .battle-stage .pile-name {
     font-size: 0.5rem;
     letter-spacing: 0.12em;
+  }
+  .hand-right-row .btn.small {
+    padding: 3px 7px;
+    font-size: 0.7rem;
   }
   .lantern-turn {
     width: 72px !important;
@@ -1778,3 +1900,103 @@
 }
 .lantern-bright .lantern-caption { color: var(--gold-bright, #e0c878); text-shadow: 0 0 8px rgba(255, 190, 90, 0.5); }
 .lantern-dim .lantern-caption { color: var(--text-faint); }
+
+/* --- v17: rarity visual ladder — glow ring + holo sheen + 3D tilt for
+   uncommon/rare cards, on top of the existing type-tinted SVG border
+   (cardFrames.tsx). Placed at file end so these rarity rules win any
+   specificity ties against earlier same-weight selectors (source order). */
+.playing-card.rarity-card-uncommon {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 10px rgba(168, 184, 201, 0.28);
+}
+
+.playing-card.rarity-card-rare {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 16px rgba(201, 162, 39, 0.4);
+  animation: rare-card-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes rare-card-glow {
+  0%, 100% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 14px rgba(201, 162, 39, 0.35); }
+  50% { box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65), 0 0 28px rgba(201, 162, 39, 0.7); }
+}
+
+.card-art-sheen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.playing-card.rarity-card-uncommon .card-art-sheen {
+  background: linear-gradient(120deg, transparent 42%, rgba(255, 255, 255, 0.12) 50%, transparent 58%);
+  mix-blend-mode: overlay;
+}
+
+.playing-card.rarity-card-rare .card-art-sheen {
+  background: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(255, 255, 255, 0.2) 45%,
+    rgba(255, 236, 170, 0.4) 50%,
+    rgba(255, 255, 255, 0.2) 55%,
+    transparent 75%
+  );
+  background-size: 250% 250%;
+  mix-blend-mode: overlay;
+  animation: rare-sheen-sweep 4.5s ease-in-out infinite;
+}
+
+@keyframes rare-sheen-sweep {
+  0% { background-position: 130% -30%; }
+  50% { background-position: -20% 120%; }
+  100% { background-position: 130% -30%; }
+}
+
+/* Mouse-tracked 3D tilt, rare cards only (CardView sets --tiltX/--tiltY and
+   the .tilting class on pointer move). Ties in specificity against the
+   .hand-fan .hand-slot .playing-card idle-breathe animation rule (both
+   0,3,0) — being later in the file wins, so this reliably takes over
+   during hover instead of fighting the paused breathing animation. */
+.playing-card.rarity-card-rare.tilting {
+  animation: none;
+  transition: transform 0.05s linear;
+  transform: perspective(900px) rotateX(var(--tiltX, 0deg)) rotateY(var(--tiltY, 0deg)) scale3d(1.02, 1.02, 1.02);
+  will-change: transform;
+}
+
+/* Elemental weakness hint on an enemy — a small corner glyph rather than
+ * text, so it reads at a glance without eating into the tight battle layout. */
+.weak-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 50%;
+  background: rgba(6, 5, 3, 0.82);
+  border: 1px solid var(--gold-deep, #a8863c);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.enemy-slot.boss .weak-badge {
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+}
+
+/* Live damage-number feedback while aiming a card at a specific enemy —
+ * cardNumbers() already recalculated the value, this just makes the change
+ * readable at a glance instead of a same-colored number quietly shifting. */
+.card-numbers-boosted {
+  color: #ff8a3c;
+  text-shadow: 0 0 6px rgba(255, 138, 60, 0.6);
+}
+.card-numbers-resisted {
+  color: #9fd8f0;
+  text-shadow: 0 0 6px rgba(159, 216, 240, 0.45);
+}

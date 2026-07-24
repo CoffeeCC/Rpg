@@ -3,11 +3,26 @@ import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
 import { getCard } from '../engine/data/cards';
-import { isOpened, isBroken, isSeen, unitAt, movFor, threatTiles, pathToTile, reachableTiles, TILE, type FloorUnit } from '../engine/systems/floors';
+import {
+  isOpened,
+  isBroken,
+  isRevealed,
+  litTiles,
+  lanternRadius,
+  floorOf,
+  unitAt,
+  movFor,
+  threatTiles,
+  pathToTile,
+  reachableTiles,
+  TILE,
+  type FloorUnit,
+} from '../engine/systems/floors';
 import { MonsterImage } from '../art/MonsterImage';
-import { TileFill } from '../art/tileArt';
+import { TileFill, pickTileProp } from '../art/tileArt';
 import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
+import { LanternTurn } from './LanternTurn';
 import '../floor.css';
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
@@ -45,7 +60,11 @@ function UnitToken({ unit }: { unit: FloorUnit }) {
   return (
     <span className={`unit-token ${unit.kind}`} title={`${unit.label} (Lv${unit.level})`}>
       {unit.speciesId && <MonsterImage speciesId={unit.speciesId} size={44} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />}
-      {unit.kind === 'miniboss' && <span className="unit-crown">👑</span>}
+      {unit.kind === 'miniboss' && (
+        <span className="unit-crown">
+          <Icon name="crown" emoji="👑" size={20} />
+        </span>
+      )}
     </span>
   );
 }
@@ -58,7 +77,9 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   return (
     <div className="merchant-mat">
       <div className="merchant-head">
-        <span className="merchant-title">🏮 Traveling Merchant</span>
+        <span className="merchant-title">
+          <Icon name="merchant" emoji="🏮" size={18} /> Traveling Merchant
+        </span>
         <span className="pill">💰 {player.gold}g</span>
         <button className="btn small" onClick={() => dispatch({ type: 'MERCHANT_CLOSE' })}>
           Walk away
@@ -72,7 +93,7 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
           return (
             <div className="item-row" key={`${name}-${i}`}>
               <div className="item-desc">
-                {def.emoji} {def.name} — {def.description}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {def.name} — {def.description}
               </div>
               <button className="btn small" disabled={player.gold < price} onClick={() => dispatch({ type: 'MERCHANT_BUY', what: 'consumable', index: i })}>
                 {price}g
@@ -205,8 +226,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const handleTileTap = (x: number, y: number) => {
     if (merchantOpen || walkingRef.current) return;
     if (x === exp.x && y === exp.y) return;
-    // v15 fog: you can't walk to a tile you haven't seen.
-    if (exp.seen && !isSeen(exp, x, y)) return;
+    // v15 fog: you can't walk to a tile the Lantern has never revealed.
+    if (!isRevealed(exp, x, y)) return;
     const path = pathToTile(exp, x, y, exp.movLeft);
     if (!path || path.length === 0) return;
     walkingRef.current = true;
@@ -218,9 +239,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     });
   };
   const gate = GATES[exp.gateId];
-  const floor = gate.floors[exp.floorIndex];
+  const floor = floorOf(exp); // wild expeditions generate floors past the gate's charted ones
   const mov = movFor(player);
   const threat = threatTiles(exp);
+  const lit = litTiles(exp, lanternRadius(player));
   // v12 click-to-move: tiles you can walk to this turn, and units you can reach
   // and bump (adjacent to you or to a reachable tile).
   const reachable = reachableTiles(exp, exp.movLeft);
@@ -228,7 +250,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     (Math.abs(ux - exp.x) + Math.abs(uy - exp.y) === 1) ||
     [`${ux - 1},${uy}`, `${ux + 1},${uy}`, `${ux},${uy - 1}`, `${ux},${uy + 1}`].some((k) => reachable.has(k));
   const hostiles = exp.units.filter((u) => u.kind !== 'merchant');
-  const waybrands = state.player ? state.player.inventory.filter((n) => n === 'Waybrand').length : 0;
+  const witchwicks = state.player ? state.player.inventory.filter((n) => n === 'Witchwick').length : 0;
   const miniboss = exp.units.find((u) => u.kind === 'miniboss');
 
   const usable = player.inventory.filter((name) => {
@@ -258,12 +280,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   // fringes so the darkness rolls over the terrain instead of stopping on a
   // hard grid line. Purely decorative: pointer-transparent, aria-hidden.
   const fogFringe = (x: number, y: number) => {
-    if (!exp.seen) return null;
     const sides = [
-      !isSeen(exp, x, y - 1) && 'n',
-      !isSeen(exp, x, y + 1) && 's',
-      !isSeen(exp, x - 1, y) && 'w',
-      !isSeen(exp, x + 1, y) && 'e',
+      !isRevealed(exp, x, y - 1) && 'n',
+      !isRevealed(exp, x, y + 1) && 's',
+      !isRevealed(exp, x - 1, y) && 'w',
+      !isRevealed(exp, x + 1, y) && 'e',
     ].filter(Boolean) as string[];
     return sides.map((s) => <span key={s} className={`fog-fringe ${s}`} aria-hidden="true" />);
   };
@@ -271,9 +292,15 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   return (
     <div className="panel">
       <h1 className="title">
-        {gate.emoji} {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}
+        {exp.wild ? (
+          <>🌫️ Unmapped Wilds, beyond the {gate.name} — Depth {exp.floorIndex + 1}</>
+        ) : (
+          <>
+            <Icon name={`gate_${exp.gateId}`} emoji={gate.emoji} size={26} /> {gate.name} — Floor {exp.floorIndex + 1}/{gate.floors.length}
+          </>
+        )}
       </h1>
-      <p className="subtitle">{gate.description}</p>
+      <p className="subtitle">{exp.wild ? 'No cartographer has charted this. Only the Lantern knows what\'s here.' : gate.description}</p>
 
       <div className="floor-layout">
         <div className="map-frame">
@@ -289,10 +316,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             {floor.grid.map((row, y) => (
               <div className="map-row" key={y}>
                 {row.split('').map((ch, x) => {
-                  // v15 fog of war: unseen tiles are darkness — no icons, no
-                  // units, no hints, no clicks. Legacy saves (no seen array)
-                  // keep the fully lit map until the next gate.
-                  if (exp.seen && !isSeen(exp, x, y)) {
+                  // v15 fog of war: tiles the Lantern has never revealed are
+                  // darkness — no icons, no units, no hints, no clicks.
+                  if (!isRevealed(exp, x, y)) {
                     return <span key={x} className="map-cell fog" aria-hidden="true" />;
                   }
                   if (x === exp.x && y === exp.y) {
@@ -307,8 +333,14 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       </span>
                     );
                   }
+                  // v16: the Lantern doesn't give away what's standing in the
+                  // dark. A hidden unit still blocks/bumps into normally (see
+                  // pathToTile) — only the visual is withheld — and once
+                  // withheld it falls through to the plain-tile branch below,
+                  // which already renders 'e'/'M'/'t'/'m' as blank floor
+                  // whenever there's no *shown* unit, so no extra branch needed.
                   const unit = unitAt(exp, x, y);
-                  if (unit) {
+                  if (unit && lit.has(`${x},${y}`)) {
                     const engage = unit.kind !== 'merchant' && canReachUnit(x, y);
                     const reach = unit.kind === 'merchant' && canReachUnit(x, y);
                     return (
@@ -340,14 +372,19 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
                         {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={48} />}
                         {fogFringe(x, y)}
-                        <span className="cell-top">✨</span>
+                        <span className="cell-top">
+                          <Icon name="secret" emoji="✨" size={34} />
+                        </span>
                       </span>
                     );
                   }
                   if (tile === TILE.BOSS && state.defeatedBosses.includes(exp.gateId)) tile = TILE.FLOOR;
                   if ((tile === TILE.ENEMY || tile === TILE.MINIBOSS || tile === TILE.TAMER || tile === TILE.MERCHANT) && !unit) tile = TILE.FLOOR;
                   const view = TILE_VIEW[tile] ?? { emoji: '', cls: 'floor-tile' };
-                  const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
+                  // Threat is live tactical read (where a hostile could step next
+                  // turn) — withhold it in the dark same as the sprite itself.
+                  const danger = lit.has(`${x},${y}`) && tile !== TILE.WALL && threat.has(`${x},${y}`);
+                  const prop = tile === TILE.FLOOR ? pickTileProp(x, y) : null;
                   return (
                     <span
                       key={x}
@@ -361,6 +398,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       {view.emoji && (
                         <span className="cell-top">
                           <Icon name={view.icon} emoji={view.emoji} size={34} />
+                        </span>
+                      )}
+                      {prop && (
+                        <span className="cell-top tile-prop">
+                          <Icon name={prop} emoji="" size={44} />
                         </span>
                       )}
                     </span>
@@ -391,7 +433,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           </div>
           {miniboss && (
             <p className="map-warning" title={miniboss.label}>
-              👑 {miniboss.label} guards the stairs.
+              <Icon name="crown" emoji="👑" size={16} /> {miniboss.label} guards the stairs.
             </p>
           )}
           <div className="dpad">
@@ -421,21 +463,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           </div>
           <div className="btn-row floor-actions">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
-              🧪 Items ({usable.length})
+              <Icon name="itemshop" emoji="🧪" size={18} /> Items ({usable.length})
             </button>
             <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
-              🎒 Gear
+              <Icon name="equipment" emoji="🎒" size={18} /> Gear
             </button>
             <button className="btn small" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
-              💾 Save
+              <Icon name="save" emoji="💾" size={18} /> Save
             </button>
             <button
               className="btn small danger"
               onClick={() => dispatch({ type: 'LEAVE_GATE' })}
-              disabled={waybrands === 0}
-              title={waybrands > 0 ? `Burn a Waybrand to walk home (${waybrands} left)` : 'No Waybrand — walk back to the door you came in by, or buy one from Maribel'}
+              disabled={witchwicks === 0}
+              title={witchwicks > 0 ? `Burn a Witchwick to walk home (${witchwicks} left)` : 'No Witchwick — walk back to the door you came in by, or buy one from Maribel'}
             >
-              🏮 Waybrand home ({waybrands})
+              <Icon name="door" emoji="🕯️" size={18} /> Witchwick home ({witchwicks})
             </button>
           </div>
           <div className="map-legend legend-chips">
@@ -460,13 +502,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             <span className="legend-chip">
               <Icon name="door" emoji="🚪" size={16} /> way back
             </span>
-            <span className="legend-chip">👑 stair-warden</span>
-            <span className="legend-chip">🏮 merchant</span>
+            <span className="legend-chip">
+              <Icon name="crown" emoji="👑" size={16} /> stair-warden
+            </span>
+            <span className="legend-chip">
+              <Icon name="merchant" emoji="🏮" size={16} /> merchant
+            </span>
             <span className="legend-chip">
               <Icon name="boss" emoji="💀" size={16} /> gate warden
             </span>
           </div>
         </div>
+      </div>
+
+      <div className="floor-lantern-turn">
+        <LanternTurn yours onEndTurn={() => dispatch({ type: 'END_MAP_TURN' })} />
       </div>
 
       {state.pendingMerchant && <MerchantMat state={state} dispatch={dispatch} />}
@@ -476,7 +526,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           {usable.map((name, i) => (
             <div className="item-row" key={`${name}-${i}`}>
               <div className="item-desc">
-                {CONSUMABLES[name].emoji} {name} — {CONSUMABLES[name].description}
+                <Icon name={`item_${name.toLowerCase()}`} emoji={CONSUMABLES[name].emoji} size={16} /> {name} — {CONSUMABLES[name].description}
               </div>
               <button
                 className="btn small"

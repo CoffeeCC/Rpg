@@ -1,19 +1,30 @@
 import { useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { CardDef } from '../engine/types';
-import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, SPECIES_CARDS, getCard } from '../engine/data/cards';
+import type { MonsterInstance } from '../engine/entities/MonsterInstance';
+import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, SPECIES_CARDS, cardMatchesQuery, getCard } from '../engine/data/cards';
 import { TYPE_TINT } from '../art/cardFrames';
 import { CardView } from './CardView';
+import { CardDetailOverlay } from './CardDetailOverlay';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import { play as sfx } from '../platform/sfx';
 import '../sheets.css';
 
 // v17 (PLAN7 C2): the deck as a card gallery — responsive grid of readable
 // cards, type/rarity filter chips, a count in the header, hover lift+zoom.
+// Merged with the search box + painted sort modes from the parallel pass:
+// filters, search, and sorting all compose over the same entry list.
 // Presentation only — the single GOTO dispatch is unchanged.
 
 const CARD_TYPES: CardDef['type'][] = ['strike', 'spell', 'guard', 'tactic', 'summon'];
 const CARD_RARITIES: CardDef['rarity'][] = ['starter', 'common', 'uncommon', 'rare'];
+
+interface DeckEntry {
+  card: CardDef;
+  count: number;
+  sourceMonster?: MonsterInstance;
+}
 
 function countIds(ids: string[]): [string, number][] {
   const counts = new Map<string, number>();
@@ -21,50 +32,101 @@ function countIds(ids: string[]): [string, number][] {
   return [...counts.entries()];
 }
 
+function buildEntries(ids: string[], sourceMonster?: MonsterInstance): DeckEntry[] {
+  const out: DeckEntry[] = [];
+  for (const [id, count] of countIds(ids)) {
+    const card = getCard(id);
+    if (card) out.push({ card, count, sourceMonster });
+  }
+  return out;
+}
+
+type SortMode = 'source' | 'name' | 'cost' | 'type' | 'rarity' | 'count';
+
+const SORT_MODES: [SortMode, string, string, string][] = [
+  ['source', 'sort_source', '📚', 'By Source'],
+  ['name', 'sort_name', '🔤', 'Name'],
+  ['cost', 'sort_cost', '◈', 'Cost'],
+  ['type', 'sort_type', '🗂', 'Type'],
+  ['rarity', 'sort_rarity', '✨', 'Rarity'],
+  ['count', 'sort_count', '×', 'Quantity'],
+];
+
+const TYPE_ORDER: CardDef['type'][] = ['strike', 'spell', 'guard', 'tactic', 'summon'];
+const RARITY_ORDER: CardDef['rarity'][] = ['rare', 'uncommon', 'common', 'starter'];
+
+const COMPARATORS: Record<Exclude<SortMode, 'source'>, (a: DeckEntry, b: DeckEntry) => number> = {
+  name: (a, b) => a.card.name.localeCompare(b.card.name),
+  cost: (a, b) => a.card.cost - b.card.cost || a.card.name.localeCompare(b.card.name),
+  type: (a, b) => TYPE_ORDER.indexOf(a.card.type) - TYPE_ORDER.indexOf(b.card.type) || a.card.name.localeCompare(b.card.name),
+  rarity: (a, b) => RARITY_ORDER.indexOf(a.card.rarity) - RARITY_ORDER.indexOf(b.card.rarity) || a.card.name.localeCompare(b.card.name),
+  count: (a, b) => b.count - a.count || a.card.name.localeCompare(b.card.name),
+};
+
 export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; backScreen: Screen; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
   const [typeFilter, setTypeFilter] = useState<'all' | CardDef['type']>('all');
   const [rarityFilter, setRarityFilter] = useState<'all' | CardDef['rarity']>('all');
-  const persistent = [...CLASS_DECKS[player.className], ...RACE_CARDS[player.race], TAME_CARD_ID];
+  const [sortMode, setSortMode] = useState<SortMode>('source');
+  const [reverse, setReverse] = useState(false);
+  const [inspect, setInspect] = useState<DeckEntry | null>(null);
+  const [query, setQuery] = useState('');
 
-  const matches = (id: string): boolean => {
-    const card = getCard(id);
-    if (!card) return false;
-    return (typeFilter === 'all' || card.type === typeFilter) && (rarityFilter === 'all' || card.rarity === rarityFilter);
-  };
+  const persistentEntries = buildEntries([...CLASS_DECKS[player.className], ...RACE_CARDS[player.race], TAME_CARD_ID]);
+  const monsterGroups = state.party.map((m) => ({ monster: m, entries: buildEntries(SPECIES_CARDS[m.speciesId] ?? [], m) }));
+  const expeditionEntries = buildEntries(state.expeditionExtras);
 
-  const totalCards =
-    persistent.length + state.party.reduce((n, m) => n + (SPECIES_CARDS[m.speciesId]?.length ?? 0), 0) + state.expeditionExtras.length;
-  const anyShown = [
-    ...persistent,
-    ...state.party.flatMap((m) => SPECIES_CARDS[m.speciesId] ?? []),
-    ...state.expeditionExtras,
-  ].some(matches);
+  // Filter chips AND search compose: a card must satisfy both to show.
+  const matches = (e: DeckEntry): boolean =>
+    (typeFilter === 'all' || e.card.type === typeFilter) &&
+    (rarityFilter === 'all' || e.card.rarity === rarityFilter) &&
+    cardMatchesQuery(e.card, query);
 
-  const section = (title: string, entries: [string, number][], sourceUid?: string) => {
-    const shown = entries.filter(([id]) => matches(id));
+  const cell = (entry: DeckEntry) => (
+    <button
+      type="button"
+      key={`${entry.card.id}-${entry.sourceMonster?.uid ?? 'x'}`}
+      className="deck-cell"
+      onClick={() => {
+        sfx('uiClick');
+        setInspect(entry);
+      }}
+    >
+      <CardView
+        card={entry.card}
+        hero={player}
+        sourceMonster={entry.sourceMonster}
+        width={180}
+        upgraded={(player.upgradedCounts[entry.card.id] ?? 0) > 0}
+      />
+      {entry.count > 1 && <span className="deck-count">×{entry.count}</span>}
+    </button>
+  );
+
+  const section = (title: string, entries: DeckEntry[]) => {
+    const shown = entries.filter(matches);
     if (shown.length === 0) return null;
     return (
       <>
         <h2 className="sheet-section-title">
-          {title} <span className="sheet-sec-count">{shown.reduce((n, [, c]) => n + c, 0)}</span>
+          {title} <span className="sheet-sec-count">{shown.reduce((n, e) => n + e.count, 0)}</span>
         </h2>
-        <div className="deck-grid-lg">
-          {shown.map(([id, count]) => {
-            const card = getCard(id);
-            if (!card) return null;
-            const source = sourceUid ? state.party.find((m) => m.uid === sourceUid) : undefined;
-            return (
-              <div key={id} className="deck-cell">
-                <CardView card={card} hero={player} sourceMonster={source} width={180} upgraded={(player.upgradedCounts[id] ?? 0) > 0} />
-                {count > 1 && <span className="deck-count">×{count}</span>}
-              </div>
-            );
-          })}
-        </div>
+        <div className="deck-grid-lg">{shown.map(cell)}</div>
       </>
     );
   };
+
+  let flatView: DeckEntry[] = [];
+  if (sortMode !== 'source') {
+    flatView = [...persistentEntries, ...monsterGroups.flatMap((g) => g.entries), ...expeditionEntries].sort(COMPARATORS[sortMode]);
+    if (reverse) flatView.reverse();
+  }
+
+  const allEntries = [...persistentEntries, ...monsterGroups.flatMap((g) => g.entries), ...expeditionEntries];
+  const totalCards = allEntries.reduce((n, e) => n + e.count, 0);
+  const anyShown = allEntries.some(matches);
+  const persistentMatchCount = persistentEntries.filter(matches).length;
+  const flatMatchCount = flatView.filter(matches).length;
 
   return (
     <div className="panel deck-screen">
@@ -100,24 +162,58 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
         ))}
       </div>
 
-      {section(`${player.className} & ${player.race} · ${persistent.length} cards`, countIds(persistent))}
+      <input
+        type="text"
+        className="card-search"
+        placeholder="Search by name, type, or text..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search cards"
+      />
 
-      {state.party.map((m) => (
-        <div key={m.uid}>
-          {section(
-            `${m.species.emoji} ${m.nickname}${m.plus > 0 ? ` +${m.plus}` : ''} · ${m.isAlive() ? 'fighting' : 'KO — cards inactive'}`,
-            countIds(SPECIES_CARDS[m.speciesId] ?? []),
-            m.uid
-          )}
-        </div>
-      ))}
+      <div className="btn-row">
+        {SORT_MODES.map(([id, icon, emoji, label]) => (
+          <button
+            key={id}
+            className={`btn small ${sortMode === id ? 'primary' : ''}`}
+            onClick={() => {
+              sfx('uiClick');
+              setSortMode(id);
+            }}
+          >
+            <Icon name={icon} emoji={emoji} size={16} /> {label}
+          </button>
+        ))}
+        <button
+          className={`btn small ${reverse ? 'primary' : ''}`}
+          disabled={sortMode === 'source'}
+          onClick={() => {
+            sfx('uiClick');
+            setReverse((r) => !r);
+          }}
+        >
+          <Icon name="sort_reverse" emoji="⇅" size={16} /> Reverse
+        </button>
+      </div>
 
-      {state.expeditionExtras.length > 0 && section(`Expedition boons · fade on leaving`, countIds(state.expeditionExtras))}
+      {sortMode === 'source' ? (
+        <>
+          {section(`${player.className} & ${player.race} · ${persistentMatchCount} cards`, persistentEntries)}
+          {monsterGroups.map(({ monster: m, entries }) => (
+            <div key={m.uid}>
+              {section(`${m.species.emoji} ${m.nickname}${m.plus > 0 ? ` +${m.plus}` : ''} · ${m.isAlive() ? 'fighting' : 'KO — cards inactive'}`, entries)}
+            </div>
+          ))}
+          {expeditionEntries.length > 0 && section(`Expedition boons · fade on leaving`, expeditionEntries)}
+        </>
+      ) : (
+        section(`All cards · ${flatMatchCount}`, flatView)
+      )}
 
       {!anyShown && (
         <div className="empty-state">
           <span className="empty-glyph">🃏</span>
-          No cards match that filter.
+          {query ? `No cards match "${query}".` : 'No cards match that filter.'}
         </div>
       )}
 
@@ -125,7 +221,21 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
           Back
         </button>
+        <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'cardCodex' })}>
+          <Icon name="deck" emoji="📖" size={16} /> Card Codex
+        </button>
       </div>
+
+      {inspect && (
+        <CardDetailOverlay
+          card={inspect.card}
+          hero={player}
+          sourceMonster={inspect.sourceMonster}
+          count={inspect.count}
+          upgraded={(player.upgradedCounts[inspect.card.id] ?? 0) > 0}
+          onClose={() => setInspect(null)}
+        />
+      )}
     </div>
   );
 }

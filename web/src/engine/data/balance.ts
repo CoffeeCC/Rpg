@@ -16,6 +16,7 @@ export const BALANCE = {
   encounterChance: 20, // % per step, 12-30
   eventChance: 5, // % per step, 3-10
   artifactChestChance: 35, // % per chest on the right floor, 20-60
+  lanternRadius: 4, // BFS tiles from the hero the Lantern lights, 3-6
 
   // --- Wild spawns ---
   rareSpawnPct: 5, // 1-6
@@ -57,6 +58,8 @@ export const BALANCE = {
   burnPct: 0.06,
   poisonPct: 0.08,
   frozenTakenMult: 1.25,
+  encroachPct: 0.05, // per stack, compounds each tick (Encroach)
+  fatedPct: 0.3, // single burst on expiry (Fated)
 
   // --- Spoils & defeat ---
   dropChanceCommon: 10, // % (PLAN3: gear is scarce)
