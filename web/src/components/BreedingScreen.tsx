@@ -5,7 +5,35 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { canBreed, offspringSpecies, skillPool, MIN_BREEDING_LEVEL } from '../engine/systems/breeding';
 import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
+import { MonsterImage } from '../art/MonsterImage';
 import { Icon } from './Icon';
+import '../services.css';
+
+/** One side of the ritual: a filled parent socket or a waiting hollow. */
+function ParentSocket({ monster, label }: { monster: MonsterInstance | null; label: string }) {
+  return (
+    <div className={`breed-socket${monster ? ' filled' : ''}`}>
+      <div className="breed-socket-frame">
+        {monster ? (
+          <MonsterImage speciesId={monster.speciesId} size={72} rarity={monster.rarity} />
+        ) : (
+          <span className="breed-socket-glyph dim">?</span>
+        )}
+      </div>
+      {monster ? (
+        <>
+          <span className="breed-socket-name">
+            {monster.nickname}
+            {monster.plus > 0 ? ` +${monster.plus}` : ''}
+          </span>
+          <span className="breed-socket-label">Lv{monster.level} · {monster.family}</span>
+        </>
+      ) : (
+        <span className="breed-socket-label">{label}</span>
+      )}
+    </div>
+  );
+}
 
 export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [parentA, setParentA] = useState<string | null>(null);
@@ -49,35 +77,69 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
         boost, and up to 3 skills you choose.
       </p>
 
-      <div className="option-list">
-        {owned.length < 2 && <p className="subtitle">You need at least two monsters. Go tame something!</p>}
+      <div className="breed-ritual">
+        <ParentSocket monster={a} label="First parent" />
+        <span className="breed-heart" aria-hidden>
+          ♥
+        </span>
+        <ParentSocket monster={b} label="Second parent" />
+        <span className="breed-arrow" aria-hidden>
+          ➤
+        </span>
+        <div className={`breed-socket breed-result${preview ? ' filled' : ''}`}>
+          <div className="breed-socket-frame">
+            <span className={`breed-socket-glyph${preview ? '' : ' dim'}`}>{preview ? preview.emoji : '🥚'}</span>
+          </div>
+          {preview ? (
+            <>
+              <span className="breed-socket-name">{preview.name}</span>
+              <span className="breed-socket-label">
+                {preview.family} · tier {preview.tier}
+              </span>
+            </>
+          ) : (
+            <span className="breed-socket-label">Offspring</span>
+          )}
+        </div>
+      </div>
+
+      {a && b && pairCheck && !pairCheck.ok && <p className="breed-reason">⚠️ {pairCheck.reason}</p>}
+
+      <div className="option-list breed-pick">
+        {owned.length < 2 && (
+          <div className="empty-state">
+            <span className="empty-glyph">🥚</span>
+            <span>You need at least two monsters. Go tame something!</span>
+          </div>
+        )}
         {owned.map((m) => {
           const selected = m.uid === parentA || m.uid === parentB;
           return (
             <button type="button" key={m.uid} className={`option-card ${selected ? 'selected' : ''}`} onClick={() => toggleParent(m.uid)}>
-              <div className="name">
-                {m.species.emoji} {m.nickname}
-                {m.plus > 0 ? ` +${m.plus}` : ''} <span className="pill">Lv{m.level}</span>
-                <span className="pill">
-                  {FAMILY_INFO[m.family].emoji} {m.family}
-                </span>
-                {m.level < MIN_BREEDING_LEVEL && <span className="pill">too young</span>}
+              <span className="breed-thumb">
+                <MonsterImage speciesId={m.speciesId} size={48} rarity={m.rarity} />
+              </span>
+              <div className="option-card-body">
+                <div className="name">
+                  {m.nickname}
+                  {m.plus > 0 ? ` +${m.plus}` : ''} <span className="pill">Lv{m.level}</span>
+                  <span className="pill">
+                    {FAMILY_INFO[m.family].emoji} {m.family}
+                  </span>
+                  {m.level < MIN_BREEDING_LEVEL && <span className="pill">too young</span>}
+                  {selected && <span className="pill breed-chosen-pill">parent</span>}
+                </div>
+                <div className="desc">{m.knownSkills.map((id) => getSkill(id)?.name ?? id).join(', ') || 'no skills'}</div>
               </div>
-              <div className="desc">{m.knownSkills.map((id) => getSkill(id)?.name ?? id).join(', ') || 'no skills'}</div>
             </button>
           );
         })}
       </div>
 
-      {a && b && pairCheck && !pairCheck.ok && <p className="subtitle" style={{ marginTop: 10 }}>⚠️ {pairCheck.reason}</p>}
-
       {preview && (
-        <div style={{ marginTop: 12 }}>
-          <h2 className="title" style={{ fontSize: '1rem' }}>
-            Offspring: {preview.emoji} {preview.name} <span className="pill">{preview.family} · tier {preview.tier}</span>
-          </h2>
-          <p className="subtitle">{preview.description}</p>
-          <p className="subtitle">Choose up to 3 skills ({chosenSkills.length}/3):</p>
+        <div className="breed-outcome">
+          <p className="subtitle" style={{ margin: '0 0 8px' }}>{preview.description}</p>
+          <p className="subtitle" style={{ margin: '0 0 6px' }}>Choose up to 3 skills ({chosenSkills.length}/3):</p>
           <div className="btn-row">
             {pool.map((id) => {
               const skill = getSkill(id);

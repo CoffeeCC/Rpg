@@ -29,7 +29,8 @@ describe('v8: personalities & instincts', () => {
     const mpBefore = ally.mp;
     const hpBefore = foe.hp;
     endTurn(hero, [ally], battle);
-    expect(ally.mp).toBe(mpBefore - 3);
+    // v15: instinct costs 3 MP, then the ally catches its breath (+1) at the new turn.
+    expect(ally.mp).toBe(mpBefore - 3 + 1);
     expect(foe.hp).toBeLessThan(hpBefore);
   });
 

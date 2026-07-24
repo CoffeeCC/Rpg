@@ -1,0 +1,320 @@
+/* =========================================================================
+   v16 — AAA presentation layer.
+   Scene backdrops behind every screen, disciplined panels (constrained,
+   centered, glass over the painting), sidebar-integrated chronicle log,
+   portrait grids, and a consistent control language. Loaded after v5.css
+   so equal-specificity rules here win.
+   ========================================================================= */
+
+/* --- Scene layer: the world is always visible behind the interface ------ */
+.scene-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.scene-layer img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(7px) brightness(0.5) saturate(0.9);
+  transform: scale(1.06); /* hide blur edge fringe */
+}
+
+/* Fog must be SEAMLESS darkness: cover the grid gaps so the lit terrain
+   never draws a board outline through the unknown. */
+.map-cell.fog {
+  border-radius: 0;
+  outline: 2px solid #05030a;
+}
+.scene-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 28%, transparent 30%, rgba(5, 3, 8, 0.72) 100%),
+    linear-gradient(180deg, rgba(5, 3, 8, 0.3) 0%, rgba(5, 3, 8, 0.6) 100%);
+}
+.game-header,
+.game-main,
+.game-sidebar,
+.game-log {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Shell: log lives in the sidebar outside battle; main gets the rest -- */
+@media (min-width: 781px) {
+  .game:not(.battle-mode) {
+    grid-template-areas:
+      'header header'
+      'main sidebar';
+    grid-template-rows: auto 1fr;
+  }
+  .game-sidebar {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: calc(100vh - 40px);
+  }
+  .game-log.side-log {
+    grid-area: auto;
+    margin-top: auto;
+    min-height: 120px;
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* --- Header plaque ------------------------------------------------------- */
+.game-header.hud {
+  background: linear-gradient(180deg, rgba(32, 24, 15, 0.95), rgba(15, 11, 8, 0.97));
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.07);
+}
+
+/* --- Panel discipline ---------------------------------------------------- */
+.game:not(.battle-mode) .game-main > .panel {
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  min-height: min(76vh, 920px);
+  display: flex;
+  flex-direction: column;
+  padding: 26px 32px 22px;
+  background: linear-gradient(180deg, rgba(17, 13, 10, 0.88) 0%, rgba(10, 7, 6, 0.93) 100%);
+  border: 1px solid rgba(200, 162, 74, 0.22);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(246, 226, 155, 0.05);
+}
+/* Final action row (Back, confirms) anchors to the panel's bottom edge. */
+.game:not(.battle-mode) .game-main > .panel > .btn-row:last-child {
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid rgba(200, 162, 74, 0.12);
+}
+
+/* Location plaque: every screen announces itself the same way. */
+.game-main > .panel > h1.title {
+  font-size: 1.45rem;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.game-main > .panel > h1.title::after {
+  content: '';
+  display: block;
+  height: 2px;
+  margin-top: 9px;
+  background: linear-gradient(90deg, var(--gold-deep, #8a6423), rgba(200, 162, 74, 0.08) 55%, transparent);
+}
+.game-main > .panel > .subtitle {
+  margin: 8px 0 20px;
+  font-size: 0.95rem;
+}
+
+/* --- Control language ---------------------------------------------------- */
+.btn {
+  border-radius: 8px;
+}
+.btn.primary {
+  background: linear-gradient(180deg, #c59a3f 0%, #8a6423 100%);
+  border-color: #dcb765;
+  color: #190f04;
+  font-weight: 700;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.3);
+}
+.btn.primary:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.btn:focus-visible {
+  outline: 2px solid rgba(220, 183, 101, 0.8);
+  outline-offset: 2px;
+}
+
+/* --- Rows & lists -------------------------------------------------------- */
+.option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.item-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border: 1px solid rgba(200, 162, 74, 0.14);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(30, 23, 16, 0.5), rgba(16, 12, 9, 0.55));
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.item-row:hover {
+  border-color: rgba(200, 162, 74, 0.42);
+  background: linear-gradient(180deg, rgba(40, 31, 20, 0.55), rgba(21, 16, 10, 0.6));
+}
+.item-row .item-desc {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Sidebar party rail + chronicle log ---------------------------------- */
+.game-sidebar .party-card {
+  background: linear-gradient(180deg, rgba(24, 18, 13, 0.92), rgba(13, 10, 7, 0.94));
+  border: 1px solid rgba(200, 162, 74, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.game-log {
+  background: linear-gradient(180deg, rgba(17, 13, 10, 0.9), rgba(10, 7, 6, 0.94));
+  border: 1px solid rgba(200, 162, 74, 0.16);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.game-log.side-log::before {
+  content: 'The Chronicle';
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(200, 162, 74, 0.75);
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(200, 162, 74, 0.14);
+  padding-bottom: 5px;
+}
+
+/* --- Tavern: townsfolk as a portrait gallery ----------------------------- */
+.tavern > .option-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px;
+}
+.tavern > .option-list .option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 10px 13px;
+  text-align: center;
+  border: 1px solid rgba(200, 162, 74, 0.16);
+  border-radius: 12px;
+  background: rgba(20, 15, 11, 0.62);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.tavern > .option-list .option-card:hover,
+.tavern > .option-list .option-card.selected {
+  transform: translateY(-4px);
+  border-color: rgba(200, 162, 74, 0.5);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+.npc-thumb {
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(200, 162, 74, 0.38);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  flex: none;
+}
+.npc-thumb img,
+.npc-thumb svg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- Empty states: a moment, not a shrug --------------------------------- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 20px;
+  text-align: center;
+  border: 1px dashed rgba(200, 162, 74, 0.22);
+  border-radius: 12px;
+  color: var(--text-dim, #9a8f85);
+  font-style: italic;
+}
+.empty-state .empty-glyph {
+  font-size: 2rem;
+  filter: grayscale(0.4) opacity(0.8);
+  font-style: normal;
+}
+
+/* Global back chip in the HUD — no screen can strand you again. */
+.hud-back {
+  flex: none;
+  margin-right: 4px;
+  border-color: rgba(200, 162, 74, 0.45);
+  white-space: nowrap;
+}
+
+/* --- Gate select: each gate wears its own painting --------------------- */
+.gate-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 128px;
+  display: flex;
+  align-items: flex-end;
+  padding: 0;
+  border: 1px solid rgba(200, 162, 74, 0.25);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  text-align: left;
+}
+.gate-card:hover:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: rgba(220, 183, 101, 0.65);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+.gate-card-art {
+  position: absolute;
+  inset: 0;
+}
+.gate-card-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 35%;
+  transition: transform 0.4s ease;
+}
+.gate-card:hover:not(:disabled) .gate-card-art img {
+  transform: scale(1.04);
+}
+.gate-card-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 34px 18px 12px;
+  background: linear-gradient(180deg, transparent 0%, rgba(6, 4, 8, 0.55) 35%, rgba(6, 4, 8, 0.92) 100%);
+}
+.gate-card .name {
+  font-family: var(--font-display);
+  font-size: 1.08rem;
+  letter-spacing: 0.04em;
+}
+.gate-card .desc {
+  font-size: 0.85rem;
+  color: var(--text-dim, #b3a898);
+}
+.gate-card-meta {
+  opacity: 0.9;
+}
+.gate-card.locked .gate-card-art img {
+  filter: grayscale(0.85) brightness(0.5);
+}
+.gate-card:disabled {
+  cursor: not-allowed;
+}

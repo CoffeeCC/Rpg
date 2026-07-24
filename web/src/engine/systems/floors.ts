@@ -58,6 +58,10 @@ export interface Expedition {
   units: FloorUnit[];
   movLeft: number;
   minibossDown: boolean;
+  /** v15 fog of war: openKey()s the player has laid eyes on. Optional so
+   * pre-v15 saves keep working — an expedition without it shows the full map
+   * until a fresh gate is entered. */
+  seen?: string[];
 }
 
 const ENEMY_MOV = 3;
@@ -96,6 +100,33 @@ export function isOpened(exp: Expedition, x: number, y: number): boolean {
 
 export function isBroken(exp: Expedition, x: number, y: number): boolean {
   return exp.broken.includes(openKey(exp, x, y));
+}
+
+// ---------------------------------------------------------------------------
+// v15 fog of war
+// ---------------------------------------------------------------------------
+
+/** Chebyshev sight radius: how far the lantern light reaches. */
+export const FOG_RADIUS = 2;
+
+export function isSeen(exp: Expedition, x: number, y: number): boolean {
+  return exp.seen !== undefined && exp.seen.includes(openKey(exp, x, y));
+}
+
+/** Reveal every tile within FOG_RADIUS of the player (walls included, so the
+ * room's shape reads). Call after any change to the player's position. */
+export function revealAround(exp: Expedition, radius = FOG_RADIUS) {
+  const seen = (exp.seen ??= []);
+  const floor = floorOf(exp);
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const x = exp.x + dx;
+      const y = exp.y + dy;
+      if (y < 0 || y >= floor.grid.length || x < 0 || x >= floor.grid[y].length) continue;
+      const key = openKey(exp, x, y);
+      if (!seen.includes(key)) seen.push(key);
+    }
+  }
 }
 
 export function floorHasMiniboss(floor: FloorDef): boolean {
@@ -360,23 +391,26 @@ export function spawnFloorUnits(
 
 export function newExpedition(gateId: GateId, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const start = findStart(GATES[gateId].floors[0]);
-  return {
+  const exp: Expedition = {
     gateId,
     floorIndex: 0,
     x: start.x,
     y: start.y,
     opened: [],
     broken: [],
+    seen: [],
     units: spawnFloorUnits(gateId, 0, world, chronicle, hasTamed),
     movLeft: 4,
     minibossDown: false,
   };
+  revealAround(exp);
+  return exp;
 }
 
 export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const nextIndex = Math.min(exp.floorIndex + 1, GATES[exp.gateId].floors.length - 1);
   const start = findStart(GATES[exp.gateId].floors[nextIndex]);
-  return {
+  const next: Expedition = {
     ...exp,
     floorIndex: nextIndex,
     x: start.x,
@@ -384,12 +418,14 @@ export function descend(exp: Expedition, world: GeneratedWorld | null, chronicle
     units: spawnFloorUnits(exp.gateId, nextIndex, world, chronicle, hasTamed),
     minibossDown: false,
   };
+  revealAround(next);
+  return next;
 }
 
 export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle: ChronicleState, hasTamed: boolean): Expedition {
   const prevIndex = Math.max(0, exp.floorIndex - 1);
   const start = findStart(GATES[exp.gateId].floors[prevIndex]);
-  return {
+  const next: Expedition = {
     ...exp,
     floorIndex: prevIndex,
     x: start.x,
@@ -397,6 +433,8 @@ export function ascend(exp: Expedition, world: GeneratedWorld | null, chronicle:
     units: spawnFloorUnits(exp.gateId, prevIndex, world, chronicle, hasTamed),
     minibossDown: true, // already earned the way down once
   };
+  revealAround(next);
+  return next;
 }
 
 /**

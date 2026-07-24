@@ -2,6 +2,7 @@ import { useEffect, useReducer, useRef, useState } from 'react';
 import './App.css';
 import './battle.css';
 import './v5.css';
+import './v16.css';
 import { gameReducer, initialGameState, type Screen } from './engine/game';
 import { CreateScreen } from './components/CreateScreen';
 import { TownScreen } from './components/TownScreen';
@@ -29,6 +30,7 @@ import { PartySidebar } from './components/PartySidebar';
 import { LogPanel } from './components/LogPanel';
 import { Icon } from './components/Icon';
 import { HeroImage } from './art/MonsterImage';
+import { PAINTED_BACKDROPS, PAINTED_TOWN } from './art/painted';
 import { play as sfx, setMuted, isMuted } from './platform/sfx';
 
 type Banner = { text: string; kind: 'victory' | 'death' | 'tamed' } | null;
@@ -69,6 +71,22 @@ function App() {
   const backScreen: Screen = state.expedition ? 'floor' : 'town';
   const inBattle = state.screen === 'battle';
 
+  // v15: level-ups get a full-stage moment (delayed so it follows the victory
+  // banner instead of fighting it), plus a pointer at the unspent points.
+  const prevLevel = useRef<number | null>(null);
+  useEffect(() => {
+    const level = state.player?.level ?? null;
+    const prev = prevLevel.current;
+    prevLevel.current = level;
+    if (level === null || prev === null || level <= prev) return;
+    const t = setTimeout(() => {
+      sfx('victory');
+      setBanner({ text: `LEVEL ${level}`, kind: 'victory' });
+      setTimeout(() => setBanner(null), 2200);
+    }, 1700);
+    return () => clearTimeout(t);
+  }, [state.player?.level]);
+
   if (!player || state.screen === 'create') {
     return (
       <div className="game no-shell">
@@ -77,9 +95,42 @@ function App() {
     );
   }
 
+  // v16: the world stays visible behind every interface screen — the current
+  // gate's painting mid-expedition, the town square otherwise. Town and battle
+  // draw their own crisp backdrops.
+  const sceneSrc =
+    inBattle || state.screen === 'town'
+      ? null
+      : (state.expedition && PAINTED_BACKDROPS[state.expedition.gateId]) || PAINTED_TOWN;
+
+  // v16: screens you can always step back out of via the HUD chip. Floor,
+  // battle, events, and rewards manage their own exits.
+  const backable: Screen[] = [
+    'stable', 'breeding', 'questBoard', 'tavern', 'chronicle', 'deck', 'smith',
+    'characterSheet', 'equipment', 'saveLoad', 'monsterSheet', 'shopItems', 'shopGear', 'gateSelect',
+  ];
+  const showBack = backable.includes(state.screen);
+
   return (
     <div className={`game ${inBattle ? 'battle-mode' : ''}`}>
+      {sceneSrc && (
+        <div className="scene-layer" aria-hidden="true">
+          <img src={sceneSrc} alt="" draggable={false} />
+        </div>
+      )}
       <header className="game-header hud">
+        {showBack && (
+          <button
+            className="btn small hud-back"
+            title={state.expedition ? 'Back to the expedition' : 'Back to town'}
+            onClick={() => {
+              sfx('uiClick');
+              dispatch({ type: 'GOTO', screen: backScreen });
+            }}
+          >
+            ↩ {state.expedition ? 'Expedition' : 'Town'}
+          </button>
+        )}
         <div className="hud-hero">
           <div className="hud-crest">
             <HeroImage className={player.className} size={46} />
@@ -165,15 +216,18 @@ function App() {
         {state.screen === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
       </main>
 
-      {!inBattle && (
+      {!inBattle ? (
         <aside className="game-sidebar">
           <PartySidebar hero={player} party={state.party} />
+          <div className="game-log side-log">
+            <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
+          </div>
         </aside>
+      ) : (
+        <div className="game-log">
+          <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
+        </div>
       )}
-
-      <div className="game-log">
-        <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
-      </div>
 
       {state.pendingStory !== null && <StoryOverlay state={state} dispatch={dispatch} />}
 

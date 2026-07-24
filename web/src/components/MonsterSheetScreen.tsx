@@ -4,6 +4,12 @@ import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
 import { MonsterImage } from '../art/MonsterImage';
 import { ItemLine } from './ItemLine';
+import '../sheets.css';
+
+// v17 (PLAN7 C3): companion sheet matching the hero's — portrait panel with
+// HP/MP/EXP/bond bars on the left, attribute orbs + skills + accessory
+// sockets on the right. Presentation only — the context-aware back button
+// (expedition vs stable) and the EXP readout are preserved exactly.
 
 const STAT_ORDER = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'] as const;
 
@@ -23,7 +29,7 @@ function AccessorySlot({
   dispatch: (a: GameAction) => void;
 }) {
   return (
-    <div className="accessory-slot">
+    <div className={`accessory-slot ${worn ? 'filled' : ''}`}>
       <div className="accessory-head">
         <span className="accessory-label">🧿 {label}</span>
         {worn && (
@@ -58,12 +64,16 @@ function AccessorySlot({
 
 export function MonsterSheetScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const monster = [...state.party, ...state.stable].find((m) => m.uid === state.selectedMonsterUid);
+  // Mid-run this sheet must return to the floor — "Back to the Stable" from an
+  // expedition walks away from the run entirely.
+  const backScreen = state.expedition ? 'floor' : 'stable';
+  const backLabel = state.expedition ? '← Back to the expedition' : 'Back to the Stable';
   if (!monster) {
     return (
       <div className="panel">
         <p className="subtitle">That companion is no longer with you.</p>
-        <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'stable' })}>
-          Back to the Stable
+        <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
+          {backLabel}
         </button>
       </div>
     );
@@ -74,66 +84,111 @@ export function MonsterSheetScreen({ state, dispatch }: { state: GameState; disp
   const charms = state.player!.items.filter((i) => i.slot === 'charm');
   const trinkets = state.player!.items.filter((i) => i.slot === 'trinket');
 
+  const hpPct = Math.max(0, Math.min(100, Math.round((monster.hp / monster.maxHp) * 100)));
+  const mpPct = monster.maxMp > 0 ? Math.max(0, Math.min(100, Math.round((monster.mp / monster.maxMp) * 100))) : 0;
+  const expPct = Math.min(100, Math.round((monster.exp / monster.expToNext()) * 100));
+  const bondPct = Math.min(100, Math.round((monster.bond / 25) * 100));
+  const bondWord = monster.bond >= 25 ? '(devoted)' : monster.bond >= 10 ? '(loyal)' : '';
+
   return (
     <div className="panel monster-sheet">
-      <div className="monster-sheet-head">
-        <div className="monster-sheet-portrait">
-          <MonsterImage speciesId={monster.speciesId} size={180} rarity={monster.rarity} />
-        </div>
-        <div className="monster-sheet-title">
-          <h1 className="title" style={{ marginBottom: 4 }}>
-            {monster.nickname}
-          </h1>
-          <p className="subtitle" style={{ margin: 0 }}>
-            {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
-            {FAMILY_INFO[monster.family].emoji} {monster.family} · {inParty ? 'in your party' : 'in the stable'}
-          </p>
+      <h1 className="title">{monster.nickname}</h1>
+      <p className="subtitle">
+        {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
+        {FAMILY_INFO[monster.family].emoji} {monster.family} · {inParty ? 'in your party' : 'in the stable'}
+      </p>
+
+      <div className="ms-layout">
+        <aside className="sheet-figure-panel ms-side">
+          <div className="figure-plinth">
+            <MonsterImage speciesId={monster.speciesId} size={190} rarity={monster.rarity} />
+          </div>
+          <div className="ms-bars">
+            <div className="ms-bar">
+              <span className="ms-bar-label">HP</span>
+              <div className="ms-bar-track">
+                <div className="ms-bar-fill hp" style={{ width: `${hpPct}%` }} />
+              </div>
+              <span className="ms-bar-val">
+                {monster.hp}/{monster.maxHp}
+              </span>
+            </div>
+            <div className="ms-bar">
+              <span className="ms-bar-label">MP</span>
+              <div className="ms-bar-track">
+                <div className="ms-bar-fill mp" style={{ width: `${mpPct}%` }} />
+              </div>
+              <span className="ms-bar-val">
+                {monster.mp}/{monster.maxMp}
+              </span>
+            </div>
+            <div className="ms-bar">
+              <span className="ms-bar-label">EXP</span>
+              <div className="ms-bar-track">
+                <div className="ms-bar-fill exp" style={{ width: `${expPct}%` }} />
+              </div>
+              <span className="ms-bar-val">
+                {monster.exp}/{monster.expToNext()}
+              </span>
+            </div>
+            <div className="ms-bar" title="Battles survived at your side. Instincts strengthen with bond.">
+              <span className="ms-bar-label">Bond</span>
+              <div className="ms-bar-track">
+                <div className="ms-bar-fill bond" style={{ width: `${bondPct}%` }} />
+              </div>
+              <span className="ms-bar-val">
+                🤝 {monster.bond} {bondWord}
+              </span>
+            </div>
+          </div>
+        </aside>
+
+        <div className="ms-main">
           {a && (
-            <p className="affix-line" title={a.blurb}>
+            <p className="affix-line ms-aspect" title={a.blurb}>
               ✶ <b>{a.name}</b> — {a.blurb}
             </p>
           )}
           {p && (
-            <p className="affix-line">
+            <p className="affix-line ms-personality">
               <b className="personality-pill">{p.name}</b> — {p.blurb} <i>Instinct: {p.instinctText}</i>
             </p>
           )}
-          <p className="affix-line">
-            🤝 Bond {monster.bond} {monster.bond >= 25 ? '(devoted)' : monster.bond >= 10 ? '(loyal)' : ''} · HP {monster.hp}/{monster.maxHp} · MP{' '}
-            {monster.mp}/{monster.maxMp}
-          </p>
-        </div>
-      </div>
 
-      <div className="monster-sheet-cols">
-        <div>
-          <h2 className="title" style={{ fontSize: '1rem' }}>
-            Stats
-          </h2>
-          {STAT_ORDER.map((s) => (
-            <div className="stat-row" key={s}>
-              <span>{s}</span>
-              <span>{monster.stats[s]}</span>
+          <h2 className="sheet-section-title">Stats</h2>
+          <div className="ms-orb-grid">
+            {STAT_ORDER.map((s) => (
+              <div className="attr-orb" key={s}>
+                <span className="attr-orb-val">{monster.stats[s]}</span>
+                <span className="attr-orb-name">{s}</span>
+              </div>
+            ))}
+          </div>
+
+          <h2 className="sheet-section-title">Skills</h2>
+          {monster.knownSkills.length > 0 ? (
+            <div className="ms-skills">
+              {monster.knownSkills.map((id) => (
+                <span className="ms-skill" key={id}>
+                  {getSkill(id)?.name ?? id}
+                </span>
+              ))}
             </div>
-          ))}
-          <h2 className="title" style={{ fontSize: '1rem', marginTop: 12 }}>
-            Skills
-          </h2>
-          <div className="affix-line">{monster.knownSkills.map((id) => getSkill(id)?.name ?? id).join(' · ') || 'No learned skills.'}</div>
-        </div>
+          ) : (
+            <p className="affix-line">No learned skills.</p>
+          )}
 
-        <div>
-          <h2 className="title" style={{ fontSize: '1rem' }}>
-            Accessories
-          </h2>
-          <AccessorySlot label="Charm" slot="charm" worn={monster.charm} bag={charms} monsterUid={monster.uid} dispatch={dispatch} />
-          <AccessorySlot label="Trinket" slot="trinket" worn={monster.trinket} bag={trinkets} monsterUid={monster.uid} dispatch={dispatch} />
+          <h2 className="sheet-section-title">Accessories</h2>
+          <div className="ms-acc-grid">
+            <AccessorySlot label="Charm" slot="charm" worn={monster.charm} bag={charms} monsterUid={monster.uid} dispatch={dispatch} />
+            <AccessorySlot label="Trinket" slot="trinket" worn={monster.trinket} bag={trinkets} monsterUid={monster.uid} dispatch={dispatch} />
+          </div>
         </div>
       </div>
 
       <div className="btn-row">
-        <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'stable' })}>
-          Back to the Stable
+        <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
+          {backLabel}
         </button>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import type { GameAction, GameState } from '../engine/game';
 import { GATES, GATE_ORDER } from '../engine/data/gates';
+import { PAINTED_BACKDROPS } from '../art/painted';
 import { NpcHost } from './NpcHost';
 
 export function GateSelectScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
@@ -21,19 +22,26 @@ export function GateSelectScreen({ state, dispatch }: { state: GameState; dispat
             <button
               type="button"
               key={id}
-              className="option-card"
+              className={`option-card gate-card ${locked ? 'locked' : ''}`}
               disabled={locked}
               onClick={() => dispatch({ type: 'ENTER_GATE', gateId: id })}
             >
-              <div className="name">
-                {gate.emoji} {gate.name} {cleared ? '✅' : ''}
-                {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
-              </div>
-              <div className="desc">{gate.description}</div>
-              <div className="desc">
-                {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
-                {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
-              </div>
+              {PAINTED_BACKDROPS[id] && (
+                <span className="gate-card-art" aria-hidden="true">
+                  <img src={PAINTED_BACKDROPS[id]} alt="" draggable={false} />
+                </span>
+              )}
+              <span className="gate-card-body">
+                <span className="name">
+                  {gate.emoji} {gate.name} {cleared ? '✅' : ''}
+                  {locked ? ` 🔒 (needs ${gate.requiredOrbs} orbs)` : ''}
+                </span>
+                <span className="desc">{gate.description}</span>
+                <span className="desc gate-card-meta">
+                  {gate.floors.length} floors · Danger Lv {lowBand}–{highBand} · Warden: {cleared ? gate.bossName : '???'}
+                  {overreach && <span className="pill danger-pill"> ☠️ beyond you, for now</span>}
+                </span>
+              </span>
             </button>
           );
         })}

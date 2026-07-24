@@ -6,17 +6,20 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { FAMILY_INFO } from '../engine/data/species';
 import { MonsterImage } from '../art/MonsterImage';
 import { Icon } from './Icon';
+import '../services.css';
 
-function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; actions: React.ReactNode; onView: () => void }) {
+function MonsterCard({ monster, actions, onView }: { monster: MonsterInstance; actions: React.ReactNode; onView: () => void }) {
   const p = monster.personality;
   return (
-    <div className="item-row monster-row">
-      <button className="monster-row-view" onClick={onView} title="Open character sheet">
-        <MonsterImage speciesId={monster.speciesId} size={54} rarity={monster.rarity} />
+    <div className="stable-card">
+      <button className="stable-card-portrait" onClick={onView} title="Open character sheet">
+        <MonsterImage speciesId={monster.speciesId} size={88} rarity={monster.rarity} />
       </button>
-      <div className="item-desc" style={{ flex: 1 }}>
-        <b>{monster.nickname}</b>
+      <div className="stable-card-name">
+        {monster.nickname}
         {monster.plus > 0 && <span className="pill">+{monster.plus}</span>}
+      </div>
+      <div className="stable-card-pills">
         <span className="pill">Lv{monster.level}</span>
         <span className="pill">
           {FAMILY_INFO[monster.family].emoji} {monster.family}
@@ -29,12 +32,12 @@ function MonsterRow({ monster, actions, onView }: { monster: MonsterInstance; ac
         <span className="pill" title="Bond grows with every battle survived.">
           🤝 {monster.bond}
         </span>
-        <div className="affix-line">
-          HP {monster.hp}/{monster.maxHp} · STR {monster.stats.STR} DEF {monster.stats.DEF} DEX {monster.stats.DEX} INT {monster.stats.INT}
-          {(monster.charm || monster.trinket) && <span> · 🧿 {[monster.charm, monster.trinket].filter(Boolean).length} worn</span>}
-        </div>
       </div>
-      <div className="monster-row-actions">
+      <div className="affix-line stable-card-stats">
+        HP {monster.hp}/{monster.maxHp} · STR {monster.stats.STR} DEF {monster.stats.DEF} DEX {monster.stats.DEX} INT {monster.stats.INT}
+        {(monster.charm || monster.trinket) && <span> · 🧿 {[monster.charm, monster.trinket].filter(Boolean).length} worn</span>}
+      </div>
+      <div className="stable-card-actions">
         <button className="btn small" onClick={onView}>
           View ▸
         </button>
@@ -56,17 +59,21 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
         ))}
         <p className="covenant-text covenant-ott">“{OTT_COVENANT_LINES[(state.party.length + state.stable.length) % OTT_COVENANT_LINES.length]}” — Ott</p>
       </details>
-      <p className="subtitle">
-        Active party {state.party.length}/{state.player!.traits.partyCap} · Stable {state.stable.length}/{STABLE_CAP} · click a companion to open its page
-      </p>
+      <p className="subtitle">Click a companion to open its page.</p>
 
-      <h2 className="title" style={{ fontSize: '1rem' }}>
-        Active Party
+      <h2 className="svc-section">
+        Active Party <span className="pill">{state.party.length}/{state.player!.traits.partyCap}</span>
       </h2>
-      <div className="option-list">
-        {state.party.length === 0 && <p className="subtitle">No monsters in the party.</p>}
+      <div className="option-list stable-grid">
+        {state.party.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-glyph">🐾</span>
+            <span>No companions walk beside you yet.</span>
+            <span style={{ fontSize: '0.82rem' }}>Weaken a wild monster in battle, then play Reach Out to tame it.</span>
+          </div>
+        )}
         {state.party.map((m) => (
-          <MonsterRow
+          <MonsterCard
             key={m.uid}
             monster={m}
             onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
@@ -79,13 +86,18 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
         ))}
       </div>
 
-      <h2 className="title" style={{ fontSize: '1rem', marginTop: 14 }}>
-        In the Stable
+      <h2 className="svc-section">
+        In the Stable <span className="pill">{state.stable.length}/{STABLE_CAP}</span>
       </h2>
-      <div className="option-list">
-        {state.stable.length === 0 && <p className="subtitle">The stable is empty.</p>}
+      <div className="option-list stable-grid">
+        {state.stable.length === 0 && (
+          <div className="empty-state">
+            <span className="empty-glyph">🏚️</span>
+            <span>Empty stalls, waiting on you, tamer.</span>
+          </div>
+        )}
         {state.stable.map((m) => (
-          <MonsterRow
+          <MonsterCard
             key={m.uid}
             monster={m}
             onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}

@@ -21,6 +21,18 @@ export interface PersonalityDef {
 
 export const INSTINCT_MP_COST = 3;
 
+/** Short action-banner labels for each instinct (v15 battle readability). */
+export const INSTINCT_LABEL: Record<InstinctKind, string> = {
+  strike: 'Strikes on instinct',
+  maul: 'Mauls wildly',
+  mend: 'Tends the wounded',
+  wardHero: 'Stands guard',
+  cower: 'Shows you where to hide',
+  hex: 'Weaves a hex',
+  rally: 'Rallies you',
+  venom: 'Spits venom',
+};
+
 export const PERSONALITIES: PersonalityDef[] = [
   {
     id: 'valiant',

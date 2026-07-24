@@ -2,6 +2,11 @@ import type { GameAction, GameState } from '../engine/game';
 import { getCard } from '../engine/data/cards';
 import { CardView } from './CardView';
 import { play as sfx } from '../platform/sfx';
+import '../sheets.css';
+
+// v17 (PLAN7 C9): cards keep their 300px reading size; each boon now sits on
+// a breathing rarity glow, and the pick flashes gold as it's taken.
+// Presentation only; the CHOOSE_REWARD dispatches are unchanged.
 
 export function CardRewardScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player;
@@ -18,13 +23,13 @@ export function CardRewardScreen({ state, dispatch }: { state: GameState; dispat
             <button
               type="button"
               key={cardId}
-              className="reward-card"
+              className={`reward-card reward-rarity-${card.rarity}`}
               onClick={() => {
                 sfx('gold');
                 dispatch({ type: 'CHOOSE_REWARD', cardId });
               }}
             >
-              <CardView card={card} hero={player} width={170} />
+              <CardView card={card} hero={player} width={300} />
             </button>
           );
         })}

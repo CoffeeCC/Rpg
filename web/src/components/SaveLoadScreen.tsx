@@ -4,6 +4,11 @@ import { isSavable } from '../engine/systems/saveGame';
 import { SLOT_COUNT, saveToSlot, loadFromSlot, deleteSlot, getSlotSummary, exportSaveToFile, importSaveFromFile } from '../platform/browserSave';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import '../sheets.css';
+
+// v17 (PLAN7 C4): slots as save-crystal cards — gem, hero name, level, realm,
+// timestamp — with export/import demoted to secondary actions. Presentation
+// only; every handler is unchanged.
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -55,44 +60,57 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
   }
 
   return (
-    <div className="panel">
+    <div className="panel saveload-screen">
       <h1 className="title title-with-icon"><Icon name="save" size={26} emoji="" /> Save / Load</h1>
       <NpcHost npcId="fennick" state={state} />
       {!canSave && <p className="subtitle">Saving is only possible in town or while exploring (not mid-battle or mid-event).</p>}
-      {message && <p className="subtitle">{message}</p>}
+      {message && <p className="sl-message">{message}</p>}
 
-      <div className="option-list">
+      <div className="sl-grid">
         {Array.from({ length: SLOT_COUNT }, (_, i) => i + 1).map((slot) => {
           const summary = getSlotSummary(slot);
           return (
-            <div key={slot} className="item-row">
-              <div className="item-desc">
-                <b>Slot {slot}</b>
-                <div className="affix-line">
-                  {summary
-                    ? `${summary.name} · Lv${summary.level} · ${summary.where} · ${summary.orbs}/4 orbs · ${formatDate(summary.savedAt)}`
-                    : '(empty)'}
-                </div>
+            <div key={slot} className={`sl-crystal ${summary ? 'filled' : 'empty'}`}>
+              <div className="sl-gem" aria-hidden="true" />
+              <div className="sl-slotnum">Slot {slot}</div>
+              {summary ? (
+                <>
+                  <div className="sl-name">{summary.name}</div>
+                  <div className="sl-meta">
+                    Lv{summary.level} · {summary.where}
+                  </div>
+                  <div className="sl-meta">{summary.orbs}/4 orbs</div>
+                  <div className="sl-date">{formatDate(summary.savedAt)}</div>
+                </>
+              ) : (
+                <div className="sl-empty-label">(empty)</div>
+              )}
+              <div className="sl-actions">
+                <button className="btn small" disabled={!canSave} onClick={() => handleSave(slot)}>
+                  Save
+                </button>
+                <button className="btn small" disabled={!summary} onClick={() => handleLoad(slot)}>
+                  Load
+                </button>
+                <button className="btn small danger" disabled={!summary} onClick={() => handleDelete(slot)}>
+                  Delete
+                </button>
               </div>
-              <button className="btn small" disabled={!canSave} onClick={() => handleSave(slot)}>
-                Save
-              </button>
-              <button className="btn small" disabled={!summary} onClick={() => handleLoad(slot)}>
-                Load
-              </button>
-              <button className="btn small danger" disabled={!summary} onClick={() => handleDelete(slot)}>
-                Delete
-              </button>
             </div>
           );
         })}
       </div>
 
-      <div className="btn-row">
-        <button className="btn" disabled={!canSave} onClick={() => setMessage(exportSaveToFile(savableState) ? 'Save file downloaded.' : 'Cannot export right now.')}>
+      <div className="sl-io">
+        <span className="sl-io-note">Carry a telling elsewhere:</span>
+        <button
+          className="btn small"
+          disabled={!canSave}
+          onClick={() => setMessage(exportSaveToFile(savableState) ? 'Save file downloaded.' : 'Cannot export right now.')}
+        >
           ⬇️ Export to File
         </button>
-        <button className="btn" onClick={() => fileInputRef.current?.click()}>
+        <button className="btn small" onClick={() => fileInputRef.current?.click()}>
           ⬆️ Import from File
         </button>
         <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={handleImportFile} />

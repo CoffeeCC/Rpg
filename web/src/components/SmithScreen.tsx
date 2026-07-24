@@ -5,6 +5,7 @@ import { CardView } from './CardView';
 import { play as sfx } from '../platform/sfx';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import '../services.css';
 
 export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
@@ -17,43 +18,60 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
     <div className="panel">
       <h1 className="title title-with-icon"><Icon name="smith" size={26} emoji="" /> The Forge</h1>
       <NpcHost npcId="grude" state={state} />
-      <p className="subtitle">
-        <span className="gold">☉ {player.gold}</span> · Reforging improves ONE copy of a card at a time. Monster cards sharpen with their monster
-        instead.
+      <div className="svc-stock-head">
+        <span className="svc-stock-title">Grude's anvil</span>
+        <span className="price-chip svc-purse" title="Your purse">☉ {player.gold}g</span>
+      </div>
+
+      <h2 className="svc-section">Accessories</h2>
+      <div className="forge-plates">
+        <div className={`forge-plate${player.gold < charmCost ? ' cant' : ''}`}>
+          <span className="svc-plate">🧿</span>
+          <div className="forge-plate-body">
+            <div className="forge-plate-name">Forge a charm</div>
+            <div className="affix-line">A trinket for a monster to wear. Two blessings, minimum. No refunds, no promises.</div>
+          </div>
+          <div className="svc-buy">
+            <span className="price-chip">☉ {charmCost}g</span>
+            <button
+              className="btn small primary"
+              disabled={player.gold < charmCost}
+              onClick={() => {
+                sfx('gold');
+                dispatch({ type: 'FORGE_CHARM' });
+              }}
+            >
+              Forge
+            </button>
+          </div>
+        </div>
+
+        <div className={`forge-plate${player.gold < trinketCost ? ' cant' : ''}`}>
+          <span className="svc-plate">🧿</span>
+          <div className="forge-plate-body">
+            <div className="forge-plate-name">Forge a trinket</div>
+            <div className="affix-line">A monster's second accessory. Two blessings or three, if the metal is willing.</div>
+          </div>
+          <div className="svc-buy">
+            <span className="price-chip">☉ {trinketCost}g</span>
+            <button
+              className="btn small primary"
+              disabled={player.gold < trinketCost}
+              onClick={() => {
+                sfx('gold');
+                dispatch({ type: 'FORGE_TRINKET' });
+              }}
+            >
+              Forge
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <h2 className="svc-section">Reforge</h2>
+      <p className="subtitle" style={{ margin: '0 0 10px' }}>
+        Reforging improves ONE copy of a card at a time. Monster cards sharpen with their monster instead.
       </p>
-
-      <div className="item-row" style={{ marginBottom: 12 }}>
-        <div className="item-desc">
-          🧿 <b>Forge a charm</b> — a trinket for a monster to wear. Two blessings, minimum. No refunds, no promises.
-        </div>
-        <button
-          className="btn small primary"
-          disabled={player.gold < charmCost}
-          onClick={() => {
-            sfx('gold');
-            dispatch({ type: 'FORGE_CHARM' });
-          }}
-        >
-          {charmCost}g
-        </button>
-      </div>
-
-      <div className="item-row" style={{ marginBottom: 12 }}>
-        <div className="item-desc">
-          🧿 <b>Forge a trinket</b> — a monster's second accessory. Two blessings or three, if the metal is willing.
-        </div>
-        <button
-          className="btn small primary"
-          disabled={player.gold < trinketCost}
-          onClick={() => {
-            sfx('gold');
-            dispatch({ type: 'FORGE_TRINKET' });
-          }}
-        >
-          {trinketCost}g
-        </button>
-      </div>
-
       <div className="deck-grid">
         {ids.map((id) => {
           const card = getCard(id);

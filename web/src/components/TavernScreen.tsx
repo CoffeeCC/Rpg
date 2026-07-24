@@ -8,6 +8,7 @@ import { NpcPortrait, NPC_ACCENTS } from '../art/npcArt';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
 import { play as sfx, isMuted } from '../platform/sfx';
 import { Icon } from './Icon';
+import '../services.css';
 
 const AUDIO_BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '';
 
@@ -65,6 +66,13 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
               dispatch({ type: 'TALK', npcId: npc.id });
             }}
           >
+            <div className="npc-thumb">
+              {PAINTED_NPCS[npc.id] ? (
+                <img src={PAINTED_NPCS[npc.id]} alt="" draggable={false} />
+              ) : (
+                <NpcPortrait npcId={npc.id} size={92} />
+              )}
+            </div>
             <div className="name">
               {npc.emoji} {npc.name}
             </div>
@@ -85,27 +93,30 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
             ? `This is the ${tellingOrdinal(meta.telling)} telling of your story, by the Chronicler's count. Verses banked: ${meta.verses}.`
             : `The Chronicler writes everything down. Verses banked: ${meta.verses}. They hint, without quite saying it, that stories here do not stay finished.`}
         </p>
-        <div className="option-list">
+        <div className="option-list ledger-list">
           {CHRONICLER_BOONS.map((boon) => {
             const owned = meta.purchased.includes(boon.id);
             return (
-              <div className="item-row" key={boon.id}>
-                <div className="item-desc">
-                  <b>{boon.name}</b>
+              <div className={`ledger-row${owned ? ' owned' : ''}${!owned && meta.verses < boon.cost ? ' cant' : ''}`} key={boon.id}>
+                <div className="ledger-row-body">
+                  <b className="ledger-name">{boon.name}</b>
                   {owned && <span className="pill slain-pill">written in</span>}
                   <div className="affix-line">{boon.text}</div>
                 </div>
                 {!owned && (
-                  <button
-                    className="btn small"
-                    disabled={meta.verses < boon.cost}
-                    onClick={() => {
-                      const updated = purchaseBoon(boon.id);
-                      if (updated) setMeta(updated);
-                    }}
-                  >
-                    ✒️ {boon.cost}
-                  </button>
+                  <div className="svc-buy">
+                    <span className="price-chip verse-chip" title="Cost in verses">✒️ {boon.cost}</span>
+                    <button
+                      className="btn small"
+                      disabled={meta.verses < boon.cost}
+                      onClick={() => {
+                        const updated = purchaseBoon(boon.id);
+                        if (updated) setMeta(updated);
+                      }}
+                    >
+                      Inscribe
+                    </button>
+                  </div>
                 )}
               </div>
             );

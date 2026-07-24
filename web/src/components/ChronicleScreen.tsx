@@ -7,6 +7,11 @@ import { ChronicleText, type ChronRef } from './ChronicleText';
 import { NpcHost } from './NpcHost';
 import { loadTellings, loadFallenTellings } from '../platform/tellings';
 import { PRESENT_TELLING_LINES, ordinal } from '../engine/data/tellingsLore';
+import '../sheets.css';
+
+// v17 (PLAN7 C5): the Chronicle reads like a tome — tab bar styled as book
+// tabs riding the top edge of the page, entries as ledger lines with year
+// pills. Presentation only; tab state and dispatches unchanged.
 
 type Tab = 'timeline' | 'figures' | 'beasts' | 'artifacts' | 'deeds';
 
@@ -53,7 +58,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       <h1 className="title">The Chronicle of {world.name}</h1>
       <NpcHost npcId="chronicler" state={state} />
 
-      <div className="btn-row">
+      <div className="chron-tabs" role="tablist">
         {(
           [
             ['timeline', '📜 Timeline'],
@@ -63,12 +68,13 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
             ['deeds', '✒️ Your Deeds'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
-          <button key={id} className={`btn small ${tab === id ? 'primary' : ''}`} onClick={() => setTab(id)}>
+          <button key={id} role="tab" aria-selected={tab === id} className={`chron-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
             {label}
           </button>
         ))}
       </div>
 
+      <div className="chron-page">
       {tab === 'timeline' && (
         <div className="chronicle-scroll">
           {world.eras.map((era) => (
@@ -201,6 +207,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
           ))}
         </div>
       )}
+      </div>
 
       <div className="btn-row">
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'town' })}>

@@ -2,6 +2,7 @@
 // filigree corner flourishes, double hairline borders, and a top-center gem.
 // Tinted by card type, intensity by rarity ('rare' = gold glow).
 // CardArtBackdrop fills the art window with type-tinted fog over near-black.
+import { useId } from 'react';
 import type { CardRarity, CardType } from '../engine/types';
 
 export const TYPE_TINT: Record<CardType, string> = {
@@ -26,16 +27,41 @@ const RARITY_STYLE: Record<CardRarity, RarityStyle> = {
   rare: { line: '#c9a227', opacity: 1, width: 0.9, glow: true },
 };
 
-/** One curled filigree flourish for the top-left corner; mirrored for the rest. */
+/** Corner flourish for the top-left corner; mirrored for the other three.
+ *  The old design ended in two asymmetric curls that terminated mid-air —
+ *  under mirroring they read as a snapped/broken bracket at the exposed
+ *  top-right corner (the cost gem hid the same artifact at the top-left).
+ *  This geometry is symmetric about the corner diagonal (every point (x,y)
+ *  has its twin (y,x)) and every open end either sits exactly ON the inner
+ *  border line (4.6) or runs along it, so all four mirror placements are
+ *  pixel-identical at any render size. */
 const CORNER =
-  'M3.5 17 C 3.5 9.5 9.5 3.5 17 3.5 M5.8 15 C 5.8 9.9 9.9 5.8 15 5.8 ' +
-  'M17 3.5 c 3.2 0 5.4 1.7 5.4 4.1 c 0 2 -1.5 3.2 -3.2 3.2 c -1.3 0 -2.2 -0.9 -2.2 -2.1 ' +
-  'M3.5 17 c 0 3.2 1.7 5.4 4.1 5.4 c 2 0 3.2 -1.5 3.2 -3.2 c 0 -1.3 -0.9 -2.2 -2.1 -2.2';
+  // outer bracket arc, springing from the inner border at both ends
+  'M4.6 20 C 4.6 11.5 11.5 4.6 20 4.6 ' +
+  // inner echo arc, concentric with the bracket
+  'M7.2 17.4 C 7.2 11.8 11.8 7.2 17.4 7.2 ' +
+  // serif tails running ALONG the inner border from each arc footing
+  'M4.6 20 L4.6 25 M20 4.6 L25 4.6';
+
+/** Small filled diamond accent seated on the corner diagonal. */
+const CORNER_GEM = 'M11.2 8.4 L14 11.2 L11.2 14 L8.4 11.2 Z';
+
+/** The four mirrored placements of CORNER inside the 100x140 frame. */
+const CORNER_TRANSFORMS = [
+  undefined,
+  'translate(100 0) scale(-1 1)',
+  'translate(0 140) scale(1 -1)',
+  'translate(100 140) scale(-1 -1)',
+];
 
 export function CardOrnament({ type, rarity }: { type: CardType; rarity: CardRarity }) {
   const tint = TYPE_TINT[type];
   const r = RARITY_STYLE[rarity];
-  const fid = `cfg-${rarity}-${type}`;
+  // useId: the glow filter id must be unique PER CARD — a shared static id
+  // (`cfg-rare-strike`) meant every rare card referenced whichever card's
+  // <filter> happened to be first in the DOM, breaking glow when that card
+  // left play. Colons are stripped: they are invalid inside url(#…) refs.
+  const fid = `cfg-${useId().replace(/:/g, '')}`;
   return (
     <svg
       viewBox="0 0 100 140"
@@ -75,12 +101,16 @@ export function CardOrnament({ type, rarity }: { type: CardType; rarity: CardRar
           opacity={r.opacity * 0.75}
         />
 
-        {/* filigree corner flourishes */}
+        {/* filigree corner flourishes — one path, four exact mirrors */}
         <g fill="none" stroke={r.line} strokeWidth={r.width} strokeLinecap="round" opacity={r.opacity}>
-          <path d={CORNER} />
-          <path d={CORNER} transform="translate(100 0) scale(-1 1)" />
-          <path d={CORNER} transform="translate(0 140) scale(1 -1)" />
-          <path d={CORNER} transform="translate(100 140) scale(-1 -1)" />
+          {CORNER_TRANSFORMS.map((t, i) => (
+            <path key={i} d={CORNER} transform={t} />
+          ))}
+        </g>
+        <g fill={r.line} opacity={r.opacity * 0.85}>
+          {CORNER_TRANSFORMS.map((t, i) => (
+            <path key={i} d={CORNER_GEM} transform={t} />
+          ))}
         </g>
 
         {/* top-center diamond gem, type-tinted with rarity setting */}
@@ -88,8 +118,8 @@ export function CardOrnament({ type, rarity }: { type: CardType; rarity: CardRar
         <path d="M50 3.2 L52.4 6.5 L50 9.8 L47.6 6.5 Z" fill={r.line} opacity={r.opacity * 0.9} />
         <path d="M42 6.5 L45 6.5 M55 6.5 L58 6.5" stroke={r.line} strokeWidth={r.width * 0.7} opacity={r.opacity * 0.7} />
 
-        {/* bottom-center diamond echo */}
-        <path d="M50 133.5 L52.8 137 L50 140.2 L47.2 137 Z" fill={r.line} opacity={r.opacity * 0.7} />
+        {/* bottom-center diamond echo (tip kept inside the 140-unit viewBox) */}
+        <path d="M50 133.6 L52.8 136.8 L50 139.6 L47.2 136.8 Z" fill={r.line} opacity={r.opacity * 0.7} />
       </g>
     </svg>
   );

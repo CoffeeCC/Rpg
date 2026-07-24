@@ -31,6 +31,17 @@
     linear-gradient(178deg, #16151b 0%, #100f14 55%, #0b0a0e 100%);
 }
 
+/* v17 cascade repair: v5.css's `.battle-stage > *:not(.stage-backdrop)`
+   (specificity 0,2,0, loaded later) silently forced position:relative onto
+   every absolutely-positioned direct child of the stage — overlays were
+   participating in flex layout and reflowing the fight. These 0,3,0 selectors
+   win regardless of file order and restore the intended stacking. */
+.panel.battle-stage > .battle-enter-flash { position: absolute; z-index: 50; }
+.panel.battle-stage > .battle-enter-iris { position: absolute; z-index: 49; }
+.panel.battle-stage > .target-line-layer { position: absolute; z-index: 6; }
+.panel.battle-stage > .card-ghost { position: absolute; z-index: 30; }
+.panel.battle-stage > .mercy-overlay { position: absolute; z-index: 20; }
+
 .stage-shake {
   animation: stageShake 0.4s ease;
 }
@@ -94,10 +105,293 @@
   to { width: 260vmax; height: 260vmax; }
 }
 
-/* --- Souls boss bar --- */
-.boss-bar {
+/* =========================================================
+   v17: MTG-Arena battlefield — enemy row on TOP facing down,
+   party row on the BOTTOM above the hand, duel portraits on
+   the center axis, vigor candles down the left edge.
+   ========================================================= */
+
+.battlefield {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 24px 0 96px; /* left inset clears the candle rail */
+}
+
+.bf-row {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 36px;
+}
+
+.enemy-row {
+  flex: 1 1 200px;
+  min-height: 190px;
+  padding-top: 76px; /* room for the top duel portrait + intent chips */
+}
+
+.party-row {
+  flex: 1 1 180px;
+  min-height: 170px;
+  padding-bottom: 2px;
+}
+
+/* The gap between the rows — action banner + phase indicator land here. */
+.bf-gap {
+  position: relative;
+  flex: 0 0 44px;
+  z-index: 8;
+}
+
+.bf-gap .action-banner,
+.bf-gap .phase-indicator {
+  top: 6px; /* v5 absolutely positions these; anchor them inside the gap */
+}
+
+/* --- Battlefield units: figure + corner badges + nameplate + HP groove --- */
+.bf-unit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  border-radius: 12px;
+  transition: opacity 0.35s ease, filter 0.35s ease, transform 0.18s ease;
+}
+
+.bf-figure {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.enemy-row .bf-figure { min-height: 150px; }
+.enemy-slot.boss .bf-figure { min-height: 250px; }
+.party-row .bf-figure { min-height: 132px; }
+
+.bf-plate {
+  min-width: 150px;
+  max-width: 210px;
+  padding: 4px 12px 6px;
   text-align: center;
-  padding: 4px 8%;
+  background: linear-gradient(180deg, rgba(17, 13, 10, 0.88), rgba(10, 8, 6, 0.93));
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.07);
+}
+
+.bf-name {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+  color: #ddd5c2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bf-plate .souls-track {
+  margin: 4px auto 0;
+  max-width: none;
+  height: 5px;
+  border-radius: 3px;
+}
+
+.bf-hp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bf-hp-row span:only-child {
+  margin: 0 auto;
+}
+
+/* MTG-counter badges pinned to the figure corners */
+.bf-badge {
+  position: absolute;
+  z-index: 4;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(17, 13, 10, 0.88);
+  border: 1px solid rgba(200, 162, 74, 0.4);
+  color: #e2d6b8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.badge-block {
+  top: -2px;
+  left: -8px;
+  color: #b0c4de;
+  border-color: #5f7391;
+  background: rgba(22, 28, 38, 0.9);
+}
+
+.badge-lv {
+  top: -2px;
+  right: -8px;
+}
+
+.badge-tame {
+  bottom: -2px;
+  right: -8px;
+  font-size: 0.6rem;
+  color: #9fd39a;
+  border-color: rgba(120, 190, 110, 0.45);
+}
+
+.bf-badge-stack {
+  position: absolute;
+  bottom: -2px;
+  left: -8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 96px;
+  pointer-events: none;
+}
+
+.bf-badge-stack .status-tag {
+  font-size: 0.58rem;
+}
+
+/* Enemy units keep the full targeting affordances of the old slots. */
+.bf-unit.felled {
+  opacity: 0.25;
+  filter: grayscale(0.9);
+  pointer-events: none;
+}
+
+.enemy-slot.targetable {
+  cursor: crosshair;
+}
+
+.enemy-slot.targetable .bf-figure {
+  animation: targetGlow 1.3s ease-in-out infinite;
+}
+
+.enemy-slot.targetable:hover,
+.enemy-slot.kb-target {
+  filter: drop-shadow(0 0 14px rgba(200, 162, 74, 0.85));
+  transform: translateY(-3px);
+}
+
+.enemy-slot.targetable:hover .bf-plate,
+.enemy-slot.kb-target .bf-plate {
+  border-color: var(--gold-bright, #e0c878);
+}
+
+@keyframes targetGlow {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(179, 84, 30, 0.25)); }
+  50% { filter: drop-shadow(0 0 12px rgba(179, 84, 30, 0.65)); }
+}
+
+/* --- Duel portraits on the center axis (MTG avatar-vs-avatar) --- */
+.duel-chip {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.duel-top { top: 2px; }
+.duel-bottom { bottom: -4px; }
+
+.duel-ring {
+  position: relative;
+  width: 68px;
+  height: 68px;
+}
+
+.duel-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.duel-ring-track {
+  fill: rgba(17, 13, 10, 0.88);
+  stroke: rgba(64, 54, 40, 0.9);
+  stroke-width: 5;
+}
+
+.duel-ring-fill {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.duel-top .duel-ring-fill {
+  stroke: #a8402f;
+  filter: drop-shadow(0 0 5px rgba(168, 64, 47, 0.6));
+}
+
+.duel-bottom .duel-ring-fill {
+  stroke: var(--gold, #c8a24a);
+  filter: drop-shadow(0 0 5px rgba(200, 162, 74, 0.55));
+}
+
+.duel-art {
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 35%, #241e28 0%, #0d0b10 80%);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+.duel-art img,
+.duel-art svg {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.duel-hp {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: #e2d6b8;
+  background: rgba(17, 13, 10, 0.88);
+  border: 1px solid rgba(200, 162, 74, 0.3);
+  border-radius: 9px;
+  padding: 1px 9px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+/* --- Boss bar, folded into the top duel portrait --- */
+.duel-boss .boss-bar {
+  width: min(430px, 46vw);
+  text-align: center;
+  padding: 0;
 }
 
 .boss-name {
@@ -107,13 +401,32 @@
   color: #d8cfb8;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
   margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .boss-track {
-  height: 7px;
+  position: relative;
+  height: 12px;
   border: 1px solid #4a4136;
   background: #0c0a08;
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* segment ticks every 10% */
+.boss-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent calc(10% - 1px),
+    rgba(0, 0, 0, 0.6) calc(10% - 1px),
+    rgba(0, 0, 0, 0.6) 10%
+  );
+  pointer-events: none;
 }
 
 .boss-fill {
@@ -123,65 +436,163 @@
   transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* --- Stage row --- */
-.stage-row {
-  flex: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  padding: 10px 18px 6px;
-  min-height: 300px;
-}
-
-.hero-side {
+/* --- Vigor: the candle rail on the LEFT edge --- */
+.vigor-rail {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 7;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
+  padding: 14px 9px 10px;
+  background: linear-gradient(180deg, rgba(17, 13, 10, 0.85), rgba(17, 13, 10, 0.62));
+  border: 1px solid rgba(200, 162, 74, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.08);
 }
 
-.combatant-figure {
-  position: relative;
-}
-
-.enemy-side {
+/* column-reverse: candle 0 at the bottom, so spending snuffs the TOP one */
+.vigor-candles {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 22px;
-  flex-wrap: wrap;
+  flex-direction: column-reverse;
+  gap: 9px;
 }
 
-.enemy-figure {
+.candle {
   position: relative;
-  text-align: center;
-  transition: transform 0.18s, filter 0.3s, opacity 0.5s;
-  border-radius: 10px;
-  padding: 6px;
-  border: 1px solid transparent;
+  width: 26px;
+  height: 46px;
 }
 
-.enemy-figure.felled {
-  opacity: 0.18;
-  filter: grayscale(1);
+.candle-wax {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 26px;
+  border-radius: 4px 4px 3px 3px;
+  background: linear-gradient(180deg, #f0e2c0 0%, #d8c49a 30%, #b49b74 100%);
+  box-shadow: inset -2px -3px 5px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.55);
+  transition: filter 0.5s ease;
 }
 
-.enemy-figure.targetable {
-  cursor: crosshair;
-  animation: targetGlow 1.3s ease-in-out infinite;
+.candle-wick {
+  position: absolute;
+  left: 50%;
+  bottom: 25px;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 5px;
+  background: #241c12;
+  border-radius: 1px;
 }
 
-.enemy-figure.targetable:hover,
-.enemy-figure.kb-target {
-  border-color: var(--ember);
-  box-shadow: var(--glow-ember);
-  transform: translateY(-4px);
+.candle-flame {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  width: 12px;
+  height: 18px;
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  border-radius: 50% 50% 50% 50% / 68% 68% 32% 32%;
+  background: radial-gradient(
+    circle at 50% 78%,
+    #fff7d8 0%,
+    #ffd977 34%,
+    #f6a53a 62%,
+    rgba(214, 106, 34, 0.55) 82%,
+    transparent 100%
+  );
+  filter: drop-shadow(0 0 6px rgba(255, 190, 90, 0.85)) drop-shadow(0 0 14px rgba(255, 160, 60, 0.4));
+  opacity: 0;
 }
 
-@keyframes targetGlow {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(179, 84, 30, 0.25)); }
-  50% { filter: drop-shadow(0 0 12px rgba(179, 84, 30, 0.65)); }
+.candle.lit .candle-flame {
+  opacity: 1;
+  animation: candleLight 0.3s ease-out both, candleFlicker 1.7s ease-in-out 0.3s infinite;
+}
+
+@keyframes candleLight {
+  from { opacity: 0; transform: translateX(-50%) scale(0.2); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes candleFlicker {
+  0%, 100% { transform: translateX(-50%) scale(1) rotate(0deg); }
+  30% { transform: translateX(-52%) scale(1.06, 0.94) rotate(-2deg); }
+  55% { transform: translateX(-48%) scale(0.94, 1.08) rotate(2deg); }
+  80% { transform: translateX(-50%) scale(1.02, 0.98); }
+}
+
+/* spending: the flame gutters out and a wisp of smoke curls away */
+.candle.out .candle-flame {
+  animation: flameGutter 0.45s ease-in both;
+}
+
+@keyframes flameGutter {
+  0% { opacity: 1; transform: translateX(-50%) scale(1); }
+  40% { opacity: 0.9; transform: translateX(-54%) scale(1.15, 0.7) rotate(-8deg); }
+  100% { opacity: 0; transform: translateX(-50%) scale(0.1, 0.3); }
+}
+
+.candle.out .candle-wax {
+  filter: brightness(0.55) saturate(0.7);
+}
+
+.candle-smoke {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(190, 185, 175, 0.5);
+  filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.candle.out .candle-smoke {
+  animation: smokeRise 1.4s ease-out 0.2s both;
+}
+
+@keyframes smokeRise {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.6); }
+  20% { opacity: 0.8; }
+  100% { opacity: 0; transform: translate(calc(-50% + 7px), -30px) scale(2.4); }
+}
+
+.vigor-count {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-display);
+  line-height: 1;
+  color: var(--gold-bright, #e0c878);
+}
+
+.vigor-count b {
+  font-size: 1.7rem;
+  font-weight: 700;
+  text-shadow: 0 0 12px rgba(224, 200, 120, 0.45);
+}
+
+.vigor-count span {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.vigor-word {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 /* Hit flashes by element */
@@ -201,22 +612,23 @@
 @keyframes flashHoly { 30% { filter: brightness(2.6) sepia(0.5) hue-rotate(15deg); } }
 @keyframes flashKo { 40% { filter: brightness(3) grayscale(1); } }
 
-/* --- Intent badge --- */
+/* --- Intent badge: a proper telegraph plate above the enemy --- */
 .intent {
   position: absolute;
-  top: -6px;
+  top: -16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 4px;
-  background: rgba(10, 9, 13, 0.85);
+  gap: 6px;
+  background: rgba(17, 13, 10, 0.88);
   border: 1px solid var(--border-bright);
-  border-radius: 14px;
-  padding: 2px 10px;
-  z-index: 3;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  border-radius: 16px;
+  padding: 4px 14px;
+  z-index: 5;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
   animation: intentBob 2.4s ease-in-out infinite;
+  white-space: nowrap;
 }
 
 @keyframes intentBob {
@@ -224,7 +636,7 @@
   50% { transform: translateX(-50%) translateY(-4px); }
 }
 
-.intent-icon { font-size: 0.95rem; }
+.intent-icon { font-size: 1.15rem; }
 
 /* v11: ally-aim mode — party members glow when a heal can be pointed at them */
 .ally-aimable {
@@ -270,31 +682,12 @@
 
 .intent-num {
   font-family: var(--font-display);
-  font-size: 0.85rem;
+  font-size: 1.02rem;
   color: #e0b4a8;
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Figure plates & souls hp bars --- */
-.figure-plate {
-  margin-top: 2px;
-  font-size: 0.82rem;
-  min-width: 150px;
-}
-
-.figure-name {
-  font-family: var(--font-display);
-  font-size: 0.8rem;
-  letter-spacing: 0.05em;
-  color: #cfc8b8;
-}
-
-.figure-hp {
-  color: var(--text-faint);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-}
-
+/* --- Souls hp grooves --- */
 .souls-track {
   height: 6px;
   border: 1px solid #443c33;
@@ -310,35 +703,6 @@
   transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.block-badge {
-  display: inline-block;
-  background: rgba(95, 115, 145, 0.18);
-  border: 1px solid #5f7391;
-  color: #b0c4de;
-  border-radius: 10px;
-  padding: 0 8px;
-  font-size: 0.72rem;
-  margin-left: 6px;
-}
-
-/* --- Party minis --- */
-.party-minis {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.party-mini {
-  position: relative;
-  width: 60px;
-  text-align: center;
-}
-
-.party-mini.ko {
-  opacity: 0.35;
-  filter: grayscale(1);
-}
-
 .ko-label {
   position: absolute;
   top: 30%;
@@ -348,18 +712,6 @@
   color: var(--danger);
   font-size: 0.8rem;
   letter-spacing: 0.15em;
-}
-
-.mini-hp {
-  height: 4px;
-  background: #0b0908;
-  border: 1px solid #3a332c;
-}
-
-.mini-fill {
-  height: 100%;
-  background: #a8402f;
-  transition: width 0.4s;
 }
 
 /* --- Targeting line: card → cursor, snapping onto a hovered enemy --- */
@@ -487,17 +839,17 @@
 }
 
 /* --- Hand zone --- */
-/* v13: the command bar — an ornate framed rail along the bottom (PoE-style),
-   with deck/vigor on the left, tools/lantern on the right, and the hand of
-   cards floating just above the bar's top edge. */
+/* v17: the command bar. Deck bottom-LEFT at MTG scale, Embers/Ashes bottom-
+   RIGHT, the Lantern in the corner, and the hand fanned over the bar, its
+   cards overlapping the party row's baseline. */
 .hand-zone {
   position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px 22px 14px;
-  min-height: 150px;
+  gap: 14px;
+  padding: 8px 16px 10px 20px;
+  min-height: 176px;
   background:
     linear-gradient(180deg, rgba(26, 20, 12, 0.5) 0%, rgba(14, 10, 6, 0.96) 34%, rgba(10, 7, 4, 0.98) 100%);
   border-top: 2px solid var(--gold-deep, #a8863c);
@@ -519,71 +871,18 @@
 
 .hand-left, .hand-right {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 12px;
   flex-shrink: 0;
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   z-index: 2;
 }
 
-/* v13: vigor as a row of faceted crystal pips set INTO the bar, not an orb */
-.energy-gauge {
+.hand-right-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-}
-
-.energy-pips {
-  display: flex;
-  gap: 4px;
-}
-
-.energy-pip {
-  width: 13px;
-  height: 18px;
-  clip-path: polygon(50% 0, 100% 32%, 82% 100%, 18% 100%, 0 32%);
-  transition: filter 0.2s ease, opacity 0.2s ease;
-}
-
-.energy-pip.lit {
-  background: linear-gradient(180deg, #f4e29a 0%, #d9b25a 45%, #a8863c 100%);
-  box-shadow: 0 0 7px rgba(224, 200, 120, 0.75), inset 0 1px 1px rgba(255, 255, 255, 0.6);
-}
-
-.energy-pip.spent {
-  background: linear-gradient(180deg, #2a2418 0%, #171208 100%);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.8);
-  opacity: 0.7;
-}
-
-.energy-label {
-  display: flex;
-  align-items: baseline;
-  gap: 3px;
-  font-family: var(--font-display);
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.energy-label b {
-  font-size: 0.95rem;
-  color: var(--gold-bright, #e0c878);
-}
-
-.pile-count {
-  font-size: 0.8rem;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.end-turn {
-  font-family: var(--font-display);
-  letter-spacing: 0.1em;
-  padding: 12px 20px;
+  gap: 10px;
 }
 
 .hand-right-row {
@@ -591,14 +890,76 @@
   gap: 6px;
 }
 
-/* --- Hand fan --- cards float above the bar, overlapping its top rail */
+/* --- MTG-scale pile widgets: real stacked card backs with a big count --- */
+.battle-stage .pile-widget {
+  position: relative;
+  background: none;
+  border: none;
+  padding: 0 6px 0 0;
+  min-width: 0;
+  gap: 4px;
+}
+
+.battle-stage .pile-widget:hover {
+  box-shadow: none;
+  transform: translateY(-3px);
+}
+
+.battle-stage .pile-widget:hover .pile-cardback {
+  box-shadow:
+    3px 3px 0 -1px #241d14,
+    3px 3px 0 0 rgba(200, 162, 74, 0.3),
+    6px 6px 0 -1px #1a1510,
+    6px 6px 0 0 rgba(200, 162, 74, 0.22),
+    0 0 18px rgba(200, 162, 74, 0.35),
+    0 10px 24px rgba(0, 0, 0, 0.6);
+}
+
+/* stacked-edge shadows make the pile read as a deck, not a chip */
+.battle-stage .pile-cardback {
+  position: relative;
+  display: block;
+  border-radius: 7px;
+  box-shadow:
+    3px 3px 0 -1px #241d14,
+    3px 3px 0 0 rgba(200, 162, 74, 0.25),
+    6px 6px 0 -1px #1a1510,
+    6px 6px 0 0 rgba(200, 162, 74, 0.18),
+    0 10px 24px rgba(0, 0, 0, 0.6);
+  transition: box-shadow 0.18s ease;
+}
+
+.battle-stage .pile-count-num {
+  position: absolute;
+  top: -10px;
+  right: -4px;
+  z-index: 2;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--gold-bright, #e0c878);
+  background: rgba(17, 13, 10, 0.92);
+  border: 1px solid rgba(200, 162, 74, 0.5);
+  border-radius: 12px;
+  padding: 2px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-stage .pile-name {
+  font-size: 0.64rem;
+  letter-spacing: 0.2em;
+  margin-top: 3px;
+}
+
+/* --- Hand fan: bigger cards, stronger arc, rising over the battlefield --- */
 .hand-fan {
   flex: 1;
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  min-height: 150px;
-  margin-top: -96px;
+  min-height: 168px;
+  margin-top: -118px;
   position: relative;
   z-index: 3;
   pointer-events: none;
@@ -611,15 +972,9 @@
 .hand-slot {
   position: relative;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-  transform: rotate(calc((var(--i) - (var(--n) - 1) / 2) * 3.2deg))
-    translateY(calc(max(var(--i) - (var(--n) - 1) / 2, (var(--n) - 1) / 2 - var(--i)) * 7px));
-  margin: 0 calc(-8px - var(--n) * 1.5px);
+  transform: rotate(calc((var(--i) - (var(--n) - 1) / 2) * 4.2deg))
+    translateY(calc(max(var(--i) - (var(--n) - 1) / 2, (var(--n) - 1) / 2 - var(--i)) * 11px));
   cursor: pointer;
-}
-
-.hand-slot:hover {
-  transform: rotate(0deg) translateY(-42px) scale(1.22);
-  z-index: 20;
 }
 
 .hand-key {
@@ -993,110 +1348,7 @@
   overflow: hidden;
 }
 
-/* ===== v7: FF-style stage — fixed slots, status boxes ===== */
-.stage-row.ffrow {
-  display: flex;
-  justify-content: space-between;
-  align-items: stretch;
-  gap: 20px;
-  flex: 1;
-  min-height: 360px;
-  padding: 34px 26px 6px;
-  position: relative;
-  z-index: 1;
-}
-.party-column {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-start;
-  gap: 8px;
-}
-.ally-fig {
-  margin-left: 42px;
-}
-.enemy-column {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: flex-end;
-  gap: 6px;
-}
-.enemy-slot {
-  width: 250px;
-  height: 168px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  position: relative;
-  transition: opacity 0.35s ease, filter 0.35s ease;
-}
-.enemy-slot.boss {
-  width: 300px;
-  height: 248px;
-}
-.enemy-slot.felled {
-  opacity: 0.25;
-  filter: grayscale(0.9);
-  pointer-events: none;
-}
-.enemy-slot.targetable {
-  cursor: crosshair;
-}
-.enemy-slot.kb-target {
-  filter: drop-shadow(0 0 14px rgba(200, 162, 74, 0.85));
-}
-.ff-boxes {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  flex-wrap: wrap;
-  position: relative;
-  z-index: 2;
-  padding: 4px 6px 8px;
-}
-.ff-gap {
-  flex: 1;
-}
-.ff-box {
-  min-width: 172px;
-  max-width: 230px;
-  border: 1px solid var(--border-bright);
-  border-radius: 6px;
-  background: linear-gradient(180deg, rgba(26, 22, 15, 0.94), rgba(12, 10, 7, 0.96));
-  padding: 7px 10px 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(246, 226, 155, 0.08);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.3s ease;
-}
-.ff-box .ff-name {
-  font-family: var(--font-display);
-  font-size: 0.76rem;
-  letter-spacing: 0.04em;
-  color: #ddd5c2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-bottom: 4px;
-}
-.ff-hp-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  margin-top: 3px;
-  gap: 6px;
-}
-.ff-box.foe.targetable {
-  cursor: crosshair;
-}
-.ff-box.foe.kb-target {
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 12px rgba(200, 162, 74, 0.5);
-}
-.ff-box.dead {
-  opacity: 0.45;
-}
+/* (v7 ff-box strip removed in v17 — its info lives on the battlefield units) */
 
 /* Hand cards glide instead of snapping when the fan re-lays */
 .hand-slot {
@@ -1158,115 +1410,217 @@
   overflow: hidden;
 }
 .hand-fan .hand-slot + .hand-slot {
-  margin-left: -46px; /* cards overlap to spend the width on ART, not gaps */
-}
-.hand-fan .hand-slot:hover,
-.hand-fan .hand-slot:focus-within {
-  transform: translateY(-22px) scale(1.05);
-  z-index: 30;
+  margin-left: -52px; /* cards overlap to spend the width on ART, not gaps */
 }
 .hand-fan .hand-slot {
   position: relative;
   z-index: 1;
 }
-.enemy-slot {
-  width: 300px;
-  height: 210px;
-}
-.enemy-slot.boss {
-  width: 360px;
-  height: 300px;
+/* rise + scale on hover, selection, or keyboard focus */
+.hand-fan .hand-slot:hover,
+.hand-fan .hand-slot.sel,
+.hand-fan .hand-slot:focus-within {
+  transform: rotate(0deg) translateY(-64px) scale(1.16);
+  z-index: 30;
 }
 
-/* --- Landscape phone: shrink the whole battle stage to fit a short viewport
-   with no scrolling. Card/figure sizes come in as inline styles from JS
-   defaults (or earlier fixed-size rules in this same file), so !important is
-   needed to win. Placed at the very end of the file so plain declarations
-   don't win the cascade by source order alone. --- */
-@media (max-height: 500px) {
-  .stage-row {
-    min-height: 90px;
-    padding: 4px 10px 2px;
-    gap: 8px;
+/* --- Compact desktop/tablet: shrink figures, gap, and hand under 860px of
+   viewport height so the battlefield never scrolls. Figure/card sizes come in
+   as inline width/height attributes from JS defaults, so !important wins. --- */
+@media (max-height: 860px) {
+  .enemy-row {
+    min-height: 150px;
+    padding-top: 64px;
   }
-  .hero-fig img, .hero-fig svg,
-  .ally-fig img, .ally-fig svg {
-    width: 46px !important;
+  .enemy-row .bf-figure { min-height: 118px; }
+  .enemy-row .bf-figure img,
+  .enemy-row .bf-figure svg {
+    width: 118px !important;
     height: auto !important;
   }
-  .enemy-slot {
-    width: 84px !important;
-    height: 84px !important;
+  .enemy-slot.boss .bf-figure { min-height: 190px; }
+  .enemy-slot.boss .bf-figure img,
+  .enemy-slot.boss .bf-figure svg {
+    width: 190px !important;
   }
-  .enemy-slot.boss {
-    width: 120px !important;
-    height: 120px !important;
+  .party-row {
+    min-height: 132px;
   }
-  .enemy-slot img, .enemy-slot svg {
+  .party-row .bf-figure { min-height: 102px; }
+  .party-row .bf-figure img,
+  .party-row .bf-figure svg {
+    width: 102px !important;
+    height: auto !important;
+  }
+  .bf-gap { flex-basis: 36px; }
+  .bf-plate {
+    min-width: 128px;
+    padding: 3px 10px 5px;
+  }
+  .bf-name { font-size: 0.72rem; }
+  .duel-ring {
+    width: 56px;
+    height: 56px;
+  }
+  .duel-art { inset: 6px; }
+  .vigor-rail {
+    transform: translateY(-50%) scale(0.85);
+    transform-origin: left center;
+  }
+  .battlefield { padding-left: 80px; }
+  .hand-zone { min-height: 150px; }
+  .hand-fan {
+    min-height: 140px;
+    margin-top: -96px;
+  }
+  .hand-fan .playing-card {
+    width: 164px !important;
+    height: 230px !important;
+  }
+  .hand-fan .hand-slot + .hand-slot { margin-left: -44px; }
+  .hand-fan .hand-slot:hover,
+  .hand-fan .hand-slot.sel,
+  .hand-fan .hand-slot:focus-within {
+    transform: rotate(0deg) translateY(-48px) scale(1.16);
+  }
+  .battle-stage .pile-cardback svg {
     width: 64px !important;
     height: auto !important;
   }
-  .enemy-slot.boss img, .enemy-slot.boss svg {
-    width: 90px !important;
+  .battle-stage .pile-count-num { font-size: 0.9rem; }
+  .lantern-turn {
+    width: 96px !important;
+    height: 122px !important;
   }
-  .boss-bar {
-    padding: 2px 8%;
+}
+
+/* --- Landscape phone: shrink the whole battle stage to fit a short viewport
+   with no scrolling. Placed after the 860px block so it wins when both apply. --- */
+@media (max-height: 500px) {
+  .enemy-row {
+    min-height: 74px;
+    padding-top: 42px;
   }
+  .enemy-row .bf-figure { min-height: 56px; }
+  .enemy-row .bf-figure img,
+  .enemy-row .bf-figure svg {
+    width: 56px !important;
+    height: auto !important;
+  }
+  .enemy-slot.boss .bf-figure { min-height: 88px; }
+  .enemy-slot.boss .bf-figure img,
+  .enemy-slot.boss .bf-figure svg {
+    width: 88px !important;
+  }
+  .party-row {
+    min-height: 66px;
+  }
+  .party-row .bf-figure { min-height: 46px; }
+  .party-row .bf-figure img,
+  .party-row .bf-figure svg {
+    width: 46px !important;
+    height: auto !important;
+  }
+  .bf-row { gap: 14px; }
+  .bf-gap { flex-basis: 22px; }
+  .bf-plate {
+    min-width: 92px;
+    max-width: 130px;
+    padding: 2px 6px 3px;
+  }
+  .bf-name { font-size: 0.62rem; }
+  .bf-hp-row { font-size: 0.56rem; }
+  .bf-badge {
+    font-size: 0.5rem;
+    padding: 2px 5px;
+  }
+  .bf-badge-stack .status-tag { font-size: 0.48rem; }
+  .intent {
+    top: -10px;
+    padding: 2px 8px;
+    gap: 3px;
+  }
+  .intent-icon { font-size: 0.8rem; }
+  .intent-num { font-size: 0.75rem; }
+  .intent-move {
+    font-size: 0.52rem;
+    max-width: 90px;
+  }
+  .duel-ring {
+    width: 40px;
+    height: 40px;
+  }
+  .duel-art { inset: 4px; }
+  .duel-hp {
+    font-size: 0.58rem;
+    padding: 0 6px;
+  }
+  .duel-boss .boss-bar { width: min(280px, 40vw); }
   .boss-name {
     font-size: 0.75rem;
     margin-bottom: 1px;
   }
-  .ff-boxes {
-    gap: 4px;
-    padding: 2px 4px 4px;
+  .boss-track { height: 8px; }
+  .vigor-rail {
+    left: 4px;
+    transform: translateY(-50%) scale(0.6);
+    transform-origin: left center;
   }
-  .ff-box {
-    min-width: 110px;
-    max-width: 160px;
-    padding: 3px 6px 4px;
-  }
-  .ff-box .ff-name {
-    font-size: 0.68rem;
+  .battlefield {
+    padding-left: 48px;
+    padding-right: 8px;
   }
   .hand-zone {
-    min-height: 130px;
+    min-height: 110px;
     padding: 4px 8px 6px;
     gap: 6px;
   }
   .hand-fan {
-    min-height: 120px;
-    margin-top: -66px;
+    min-height: 100px;
+    margin-top: -56px;
   }
   .playing-card {
     width: 84px !important;
     height: 118px !important;
   }
-  .energy-pip {
-    width: 10px;
-    height: 14px;
+  .hand-fan .hand-slot + .hand-slot { margin-left: -28px; }
+  .hand-fan .hand-slot:hover,
+  .hand-fan .hand-slot.sel,
+  .hand-fan .hand-slot:focus-within {
+    transform: rotate(0deg) translateY(-26px) scale(1.14);
   }
-  .energy-label {
-    font-size: 0.55rem;
+  .battle-stage .pile-cardback svg {
+    width: 40px !important;
+    height: auto !important;
   }
-  .end-turn {
-    padding: 6px 12px;
-    font-size: 0.8rem;
+  .battle-stage .pile-count-num {
+    font-size: 0.72rem;
+    padding: 1px 6px;
+    top: -8px;
   }
-  .pile-widget {
-    transform: scale(0.7);
-    transform-origin: center;
+  .battle-stage .pile-name {
+    font-size: 0.5rem;
+    letter-spacing: 0.12em;
   }
+  .lantern-turn {
+    width: 72px !important;
+    height: 90px !important;
+  }
+  .lantern-caption { font-size: 0.52rem; }
   .target-hint {
     font-size: 0.7rem;
     margin: 2px 0;
   }
 }
 
-/* --- v12: the Last Lantern as turn marker (replaces the End Turn button) --- */
+/* --- v12: the Last Lantern as turn marker (replaces the End Turn button) ---
+   v17: anchored as the bottom-right CORNER control (MTG-style), bigger hit
+   target, and an unmistakable gold ring while the turn is yours. --- */
 .lantern-turn {
   position: relative;
-  width: 118px;
-  height: 150px;
+  width: 128px;
+  height: 158px;
+  margin: 0 -2px -4px 0;
   padding: 0;
   border: none;
   background: none;
@@ -1274,10 +1628,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
   transition: filter 0.4s ease, transform 0.15s ease;
 }
 .lantern-turn:disabled { cursor: default; }
-.lantern-turn:not(:disabled):hover { transform: translateY(-2px); }
+.lantern-turn:not(:disabled):hover { transform: translateY(-3px) scale(1.03); }
+
+/* your-turn ring: a slow gold pulse that says "press me" */
+.lantern-turn.lantern-bright::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 112px;
+  height: 112px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgba(224, 200, 120, 0.55);
+  box-shadow: 0 0 18px rgba(255, 190, 90, 0.35), inset 0 0 14px rgba(255, 190, 90, 0.2);
+  animation: lanternRing 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes lanternRing {
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(1); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.07); }
+}
 
 .lantern-img {
   position: relative;

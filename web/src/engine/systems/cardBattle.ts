@@ -9,7 +9,7 @@ import { BALANCE } from '../data/balance';
 import { talentsFor } from '../data/traits';
 import { generateItem } from './lootGen';
 import { randInt } from '../random';
-import { INSTINCT_MP_COST, bondPowerMult } from '../data/personalities';
+import { INSTINCT_MP_COST, INSTINCT_LABEL, bondPowerMult } from '../data/personalities';
 import { FAMILY_KITS, BOSS_KITS, ELITE_KIT, type EnemyKit, type EnemyMove } from '../data/enemyAi';
 
 export const HAND_SIZE = BALANCE.handSize;
@@ -565,10 +565,17 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
   for (const ally of party) {
     if (!ally.isAlive() || !ally.isTamed) continue;
     const p = ally.personality;
-    if (!p || ally.mp < INSTINCT_MP_COST) continue;
+    if (!p) continue;
+    // v15: an out-of-breath companion says so instead of silently doing nothing.
+    if (ally.mp < INSTINCT_MP_COST) {
+      fx.push({ fx: 'status', targetUid: ally.uid, label: 'winded' });
+      log.push(`${ally.nickname} is winded — no breath left to act. (MP ${ally.mp}/${ally.maxMp})`);
+      continue;
+    }
     const living = battle.enemies.filter((e) => e.isAlive());
     if (living.length === 0) break;
     ally.mp -= INSTINCT_MP_COST;
+    fx.push({ fx: 'actor', uid: ally.uid, label: INSTINCT_LABEL[p.instinct], side: 'ally' });
     const power = bondPowerMult(ally.bond);
     const strongest = [...living].sort((a, b) => b.getAttack() - a.getAttack())[0];
     switch (p.instinct) {
@@ -647,9 +654,19 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
     const intent = battle.intents[enemy.uid];
     if (!intent) continue;
     if (enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen')) {
+      fx.push({ fx: 'actor', uid: enemy.uid, label: 'Staggered — loses its turn', side: 'enemy' });
       log.push(`${enemy.displayName()} is staggered and does nothing.`);
       continue;
     }
+    const INTENT_VERB: Record<Intent['kind'], string> = {
+      attack: 'Attacks',
+      defend: 'Hardens',
+      heal: 'Mends',
+      howl: 'Howls',
+      buff: 'Gathers strength',
+      debuff: 'Curses',
+    };
+    fx.push({ fx: 'actor', uid: enemy.uid, label: intent.label ?? INTENT_VERB[intent.kind], side: 'enemy' });
     if (intent.label) log.push(`${enemy.displayName()} — ${intent.label}!`);
     let intentDealt = 0; // v11: total damage this intent, for drain moves
     switch (intent.kind) {
@@ -803,6 +820,11 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
   log.push(`⸻ turn ${battle.turn} ⸻`);
   if (!hero.traits.wardPersists) battle.heroBlock = 0;
   battle.energy = battle.maxEnergy;
+  // v15: companions catch their breath — instincts stay alive through long
+  // fights instead of going silent once their MP pool empties.
+  for (const ally of party) {
+    if (ally.isAlive() && ally.isTamed) ally.restoreMp(1);
+  }
   draw(battle, handSizeFor(hero), fx);
   rollAllIntents(battle, hero);
   return { outcome: 'ongoing', log, fx };
@@ -896,6 +918,8 @@ export function collectSpoils(hero: Character, party: MonsterInstance[], battle:
   for (const m of party) {
     m.statusEffects = [];
     m.activeMods = [];
+    // v15: companions rest between fights — full breath back for their instincts.
+    if (m.isAlive()) m.mp = m.maxMp;
   }
   return { log, drops, expGained: exp, trained };
 }

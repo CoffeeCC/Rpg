@@ -1,0 +1,635 @@
+/* =========================================================================
+   services.css — PLAN7 section D: Town & services presentation layer.
+   Imported by TownScreen, ShopScreens, SmithScreen, StableScreen,
+   BreedingScreen and TavernScreen, so it executes AFTER the global sheets
+   (App.css → battle.css → v5.css → v16.css) and wins equal-specificity ties.
+   Tokens: gold rgba(200,162,74,*), var(--font-display), radius 10-12px.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- shared */
+
+/* Section headers: small-caps plaque line with a fading gold rule. */
+.svc-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 10px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(230, 207, 122, 0.9);
+}
+.svc-section:first-of-type {
+  margin-top: 4px;
+}
+.svc-section::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(200, 162, 74, 0.4), rgba(200, 162, 74, 0.06) 70%, transparent);
+}
+.svc-section .pill {
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+/* Icon plates: a 56px socket that makes any emoji or sprite feel mounted. */
+.svc-plate {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  font-size: 1.7rem;
+  line-height: 1;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  background:
+    radial-gradient(circle at 35% 28%, rgba(64, 51, 32, 0.85), rgba(16, 13, 9, 0.92) 75%);
+  box-shadow: inset 0 1px 0 rgba(246, 226, 155, 0.09), inset 0 -6px 12px rgba(0, 0, 0, 0.45),
+    0 3px 8px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.7);
+}
+
+/* Price chips + the buy cluster grouped on a row's right edge. */
+.svc-buy {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.svc-buy .btn.small {
+  padding: 6px 16px;
+  border-radius: 8px;
+}
+.price-chip {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--gold-bright, #e6cf7a);
+  background: rgba(200, 162, 74, 0.1);
+  border: 1px solid rgba(200, 162, 74, 0.32);
+  border-radius: 999px;
+  padding: 3px 12px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+/* Any container flagged .cant (can't afford) turns its chip red and dims. */
+.cant .price-chip,
+.price-chip.cant {
+  color: #e88a80;
+  border-color: rgba(179, 74, 64, 0.5);
+  background: rgba(179, 74, 64, 0.09);
+}
+.item-row.cant,
+.forge-plate.cant,
+.ledger-row.cant {
+  opacity: 0.72;
+}
+.item-row.cant .svc-plate,
+.item-row.cant .gear-icon {
+  filter: grayscale(0.45) brightness(0.85);
+}
+
+/* Stock header: shop-counter strip with purse + rotation hint. */
+.svc-stock-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 2px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(200, 162, 74, 0.18);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(30, 23, 15, 0.55), rgba(15, 11, 8, 0.6));
+}
+.svc-stock-title {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(230, 207, 122, 0.85);
+}
+.svc-hint {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-dim, #948d7e);
+  border: 1px dashed rgba(200, 162, 74, 0.28);
+  border-radius: 999px;
+  padding: 2px 11px;
+  white-space: nowrap;
+}
+.svc-purse {
+  margin-left: auto;
+  font-size: 0.92rem;
+  padding: 4px 14px;
+}
+
+/* ------------------------------------------------------------- town dock */
+
+/* The bottom strip becomes a proper dock: gates CTA + captioned groups. */
+.town-dock {
+  margin-top: auto;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 13px 15px;
+  border: 1px solid rgba(200, 162, 74, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(26, 20, 13, 0.9), rgba(12, 9, 6, 0.94));
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(246, 226, 155, 0.08);
+}
+
+/* "The Gates" — the one primary verb in town. */
+.town-dock-gates {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 172px;
+  padding: 12px 24px;
+  border-radius: 10px;
+  box-shadow: 0 0 22px rgba(200, 162, 74, 0.28), 0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 240, 200, 0.35);
+}
+.town-dock-gates .ui-icon {
+  width: 34px;
+  height: 34px;
+}
+.town-dock-gates .ui-icon-emoji {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+.town-dock-gates-label {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+.town-dock-gates-sub {
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+/* Captioned button groups, divided by faint gold rules. */
+.town-dock-group {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(200, 162, 74, 0.16);
+}
+.town-dock-caption {
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(200, 162, 74, 0.62);
+}
+.town-dock-btns {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.town-dock-btn {
+  flex: 1 1 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px 9px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  text-align: center;
+  line-height: 1.25;
+}
+.town-dock-btn .ui-icon {
+  width: 26px;
+  height: 26px;
+}
+.town-dock-btn .ui-icon-emoji {
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+/* NPC cast cards: the portrait warms to meet you. */
+.town-cast-card {
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.town-cast-card:hover,
+.town-cast-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+.town-cast-portrait {
+  transition: filter 0.25s ease;
+}
+.town-cast-card:hover .town-cast-portrait,
+.town-cast-card:focus-visible .town-cast-portrait {
+  filter: brightness(1.16) saturate(1.06);
+}
+
+/* ----------------------------------------------------------------- shops */
+
+.svc-shop-row {
+  gap: 14px;
+}
+.svc-shop-row .gear-icon {
+  border-radius: 10px;
+  padding: 3px;
+  background: radial-gradient(circle at 35% 28%, rgba(56, 45, 28, 0.8), rgba(12, 10, 7, 0.92) 78%);
+}
+.svc-shop-row .item-desc b {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+}
+
+/* ----------------------------------------------------------------- smith */
+
+.forge-plates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.forge-plate {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(200, 162, 74, 0.22);
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(179, 84, 30, 0.14), transparent 55%),
+    linear-gradient(180deg, rgba(32, 24, 15, 0.62), rgba(15, 11, 8, 0.7));
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.forge-plate:hover {
+  border-color: rgba(200, 162, 74, 0.45);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+}
+.forge-plate-body {
+  flex: 1;
+  min-width: 0;
+}
+.forge-plate-name {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  color: var(--gold-bright, #e6cf7a);
+  margin-bottom: 2px;
+}
+.forge-plate .svc-plate {
+  font-size: 1.9rem;
+}
+
+/* ---------------------------------------------------------------- stable */
+
+.option-list.stable-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(192px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.option-list.stable-grid .empty-state {
+  grid-column: 1 / -1;
+}
+.stable-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 12px 12px;
+  border: 1px solid rgba(200, 162, 74, 0.16);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(28, 22, 15, 0.6), rgba(14, 11, 8, 0.68));
+  text-align: center;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+.stable-card:hover {
+  border-color: rgba(200, 162, 74, 0.42);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+.stable-card-portrait {
+  width: 104px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(200, 162, 74, 0.24);
+  background: radial-gradient(circle at 50% 40%, rgba(60, 48, 30, 0.55), rgba(10, 8, 6, 0.25) 74%);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.stable-card-portrait:hover {
+  border-color: rgba(220, 183, 101, 0.6);
+  box-shadow: 0 0 16px rgba(200, 162, 74, 0.32), inset 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.stable-card-name {
+  font-family: var(--font-display);
+  font-size: 0.96rem;
+  color: var(--gold-bright, #e6cf7a);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stable-card-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+.stable-card-pills .pill {
+  margin-left: 0;
+}
+.stable-card-stats {
+  font-size: 0.74rem;
+}
+.stable-card-actions {
+  margin-top: auto;
+  padding-top: 7px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+/* -------------------------------------------------------------- breeding */
+
+/* The ritual: two parent sockets, a heartbeat, and the egg to come. */
+.breed-ritual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 18px 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(200, 162, 74, 0.22);
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(200, 162, 74, 0.09), transparent 62%),
+    linear-gradient(180deg, rgba(26, 20, 13, 0.6), rgba(12, 9, 6, 0.7));
+}
+.breed-socket {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 138px;
+  text-align: center;
+}
+.breed-socket-frame {
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px dashed rgba(200, 162, 74, 0.3);
+  background: rgba(0, 0, 0, 0.28);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.breed-socket.filled .breed-socket-frame {
+  border-style: solid;
+  border-color: rgba(200, 162, 74, 0.55);
+  background: radial-gradient(circle at 50% 40%, rgba(60, 48, 30, 0.5), rgba(10, 8, 6, 0.4) 78%);
+  box-shadow: 0 0 16px rgba(200, 162, 74, 0.22), inset 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.breed-socket-glyph {
+  font-size: 2.1rem;
+  line-height: 1;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.6));
+}
+.breed-socket-glyph.dim {
+  opacity: 0.5;
+  filter: grayscale(0.5);
+}
+.breed-socket-name {
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  color: var(--gold-bright, #e6cf7a);
+  max-width: 134px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breed-socket-label {
+  font-size: 0.64rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-faint, #635e54);
+}
+.breed-heart {
+  font-size: 1.5rem;
+  color: #c95f6e;
+  text-shadow: 0 0 12px rgba(201, 95, 110, 0.5);
+  animation: breedPulse 1.8s ease-in-out infinite;
+}
+@keyframes breedPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.78;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+.breed-arrow {
+  font-size: 1.25rem;
+  color: rgba(200, 162, 74, 0.6);
+}
+
+/* Why the pair is refused — the disabled state explains itself. */
+.breed-reason {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 9px 14px;
+  border: 1px solid rgba(179, 74, 64, 0.42);
+  border-radius: 10px;
+  background: rgba(179, 74, 64, 0.1);
+  color: #e0a49c;
+  font-style: italic;
+  font-size: 0.88rem;
+}
+
+/* Candidate pick-list becomes a thumbnail grid. */
+.option-list.breed-pick {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 10px;
+}
+.option-list.breed-pick .empty-state {
+  grid-column: 1 / -1;
+}
+.breed-pick .option-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border-radius: 10px;
+}
+.breed-thumb {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 162, 74, 0.18);
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+.breed-pick .option-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.breed-chosen-pill {
+  color: var(--gold-bright, #e6cf7a);
+  border-color: rgba(200, 162, 74, 0.5);
+}
+
+/* Offspring details: skill choice + the commit CTA in one framed block. */
+.breed-outcome {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(200, 162, 74, 0.25);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(28, 22, 14, 0.65), rgba(14, 11, 7, 0.72));
+}
+
+/* ------------------------------------------------- tavern: chronicler desk */
+
+.chronicler-desk {
+  padding: 14px 16px;
+  border-radius: 12px;
+}
+.ledger-list {
+  gap: 0;
+  margin: 6px 0 10px;
+  padding: 3px 14px;
+  border: 1px solid rgba(184, 160, 224, 0.24);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(184, 160, 224, 0.06), transparent 8%),
+    rgba(9, 7, 13, 0.5);
+}
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 2px;
+  border-bottom: 1px dashed rgba(184, 160, 224, 0.2);
+}
+.ledger-row:last-child {
+  border-bottom: none;
+}
+.ledger-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.ledger-name {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  color: #d8cdf0;
+}
+.ledger-row.owned .ledger-name {
+  color: var(--text-dim, #948d7e);
+}
+.verse-chip {
+  color: #cdbbee;
+  border-color: rgba(184, 160, 224, 0.45);
+  background: rgba(184, 160, 224, 0.08);
+}
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 640px) {
+  .town-dock {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .town-dock-gates {
+    flex-direction: row;
+    width: 100%;
+    min-width: 0;
+    padding: 11px 16px;
+  }
+  .town-dock-gates-sub {
+    display: none;
+  }
+  .town-dock-group {
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
+/* Landscape-phone height crunch: keep the dock on one screen. */
+@media (max-height: 500px) {
+  .town-dock {
+    gap: 8px;
+    padding: 7px 9px;
+  }
+  .town-dock-gates {
+    min-width: 120px;
+    padding: 6px 14px;
+    gap: 2px;
+  }
+  .town-dock-gates .ui-icon {
+    width: 22px;
+    height: 22px;
+  }
+  .town-dock-gates-label {
+    font-size: 0.9rem;
+  }
+  .town-dock-gates-sub {
+    display: none;
+  }
+  .town-dock-caption {
+    display: none;
+  }
+  .town-dock-group {
+    padding-left: 8px;
+    gap: 0;
+  }
+  .town-dock-btn {
+    flex-direction: row;
+    flex-basis: auto;
+    padding: 5px 10px;
+    font-size: 0.76rem;
+    gap: 6px;
+  }
+  .town-dock-btn .ui-icon {
+    width: 17px;
+    height: 17px;
+  }
+  .breed-ritual {
+    padding: 8px;
+    gap: 8px;
+  }
+  .breed-socket-frame {
+    width: 60px;
+    height: 60px;
+  }
+}

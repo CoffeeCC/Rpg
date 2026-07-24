@@ -346,7 +346,10 @@ export type FxEvent =
   | { fx: 'status'; targetUid: string; label: string }
   | { fx: 'ko'; targetUid: string }
   | { fx: 'tameTry'; targetUid: string; success: boolean }
-  | { fx: 'shake' };
+  | { fx: 'shake' }
+  /** v15: announces whose action the following events belong to, so the
+   * battle UI can banner the actor and pace the playback readably. */
+  | { fx: 'actor'; uid: string; label: string; side: 'ally' | 'enemy' };
 
 // =========================================================================
 // v4: Generated world & history (DF-style; see PLAN2.md)

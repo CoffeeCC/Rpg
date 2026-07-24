@@ -4,6 +4,7 @@ import { Icon } from './Icon';
 import { PAINTED_TOWN } from '../art/painted';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
 import { pickBark } from './NpcHost';
+import '../services.css';
 
 // v10: the town is people, not buttons. World services hang off the person
 // who runs them; only self-management (you, gates, save) stays as a strip.
@@ -134,30 +135,56 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
           })}
         </div>
 
-        <div className="menu-grid town-quick-strip">
-          <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}>
-            <Icon name="gates" emoji="🚪" size={22} /> The Gates
+        <div className="town-dock">
+          <button className="btn primary town-dock-gates" onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}>
+            <Icon name="gates" emoji="🚪" size={34} />
+            <span className="town-dock-gates-label">The Gates</span>
+            <span className="town-dock-gates-sub">Venture into the dusk</span>
           </button>
-          <button className="btn" onClick={() => dispatch({ type: 'REST' })} disabled={!!state.player && state.player.gold < restCost(state.player)}>
-            <Icon name="rest" emoji="🛏️" size={22} /> Rest ({state.player ? restCost(state.player) : 0}g)
-          </button>
-          {state.blessingChapter < state.storyChapter && (
-            <button className="btn" onClick={() => dispatch({ type: 'BLESSING' })} title="Brother Casque mends the party. Free, once per chapter.">
-              <Icon name="rest" emoji="🕯️" size={22} /> Casque's Blessing (free)
-            </button>
-          )}
-          <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'characterSheet' })}>
-            <Icon name="character" emoji="🧝" size={22} /> Character{state.player && state.player.attributePoints > 0 ? ` (${state.player.attributePoints})` : ''}
-          </button>
-          <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
-            <Icon name="equipment" emoji="🎒" size={22} /> Equipment{state.player && state.player.items.length > 0 ? ` (${state.player.items.length})` : ''}
-          </button>
-          <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'deck' })}>
-            <Icon name="deck" emoji="🃏" size={22} /> Deck
-          </button>
-          <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
-            <Icon name="save" emoji="💾" size={22} /> Save / Load
-          </button>
+          <div className="town-dock-group">
+            <span className="town-dock-caption">Respite</span>
+            <div className="town-dock-btns">
+              <button
+                className="btn town-dock-btn"
+                onClick={() => dispatch({ type: 'REST' })}
+                disabled={!!state.player && state.player.gold < restCost(state.player)}
+              >
+                <Icon name="rest" emoji="🛏️" size={26} />
+                <span>Rest ({state.player ? restCost(state.player) : 0}g)</span>
+              </button>
+              {state.blessingChapter < state.storyChapter && (
+                <button
+                  className="btn town-dock-btn"
+                  onClick={() => dispatch({ type: 'BLESSING' })}
+                  title="Brother Casque mends the party. Free, once per chapter."
+                >
+                  <Icon name="rest" emoji="🕯️" size={26} />
+                  <span>Casque's Blessing (free)</span>
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="town-dock-group">
+            <span className="town-dock-caption">Your Effects</span>
+            <div className="town-dock-btns">
+              <button className="btn town-dock-btn" onClick={() => dispatch({ type: 'GOTO', screen: 'characterSheet' })}>
+                <Icon name="character" emoji="🧝" size={26} />
+                <span>Character{state.player && state.player.attributePoints > 0 ? ` (${state.player.attributePoints})` : ''}</span>
+              </button>
+              <button className="btn town-dock-btn" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
+                <Icon name="equipment" emoji="🎒" size={26} />
+                <span>Equipment{state.player && state.player.items.length > 0 ? ` (${state.player.items.length})` : ''}</span>
+              </button>
+              <button className="btn town-dock-btn" onClick={() => dispatch({ type: 'GOTO', screen: 'deck' })}>
+                <Icon name="deck" emoji="🃏" size={26} />
+                <span>Deck</span>
+              </button>
+              <button className="btn town-dock-btn" onClick={() => dispatch({ type: 'GOTO', screen: 'saveLoad' })}>
+                <Icon name="save" emoji="💾" size={26} />
+                <span>Save / Load</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

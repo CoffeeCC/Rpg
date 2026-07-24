@@ -1206,3 +1206,143 @@
   .char-main { grid-template-columns: 1fr; }
   .char-rail { flex-direction: row; flex-wrap: wrap; justify-content: center; }
 }
+
+/* =========================================================================
+   v15 — playability pass: fog of war, battle readability, boon cards
+   ========================================================================= */
+
+/* --- Fog of war ------------------------------------------------------- */
+.map-cell.fog {
+  background: #05030a;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
+  cursor: default !important;
+}
+.map-cell.fog::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 40%, rgba(38, 30, 54, 0.28), transparent 75%);
+  pointer-events: none;
+}
+
+/* Painted terrain must show through walkable + object tiles — opaque cell
+   backgrounds were blacking out chests/shrines/events against lit ground. */
+.map-grid { position: relative; }
+.map-grid.textured .map-cell.floor-tile,
+.map-grid.textured .map-cell.special {
+  background: transparent;
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.35);
+}
+.map-grid.textured .map-cell.floor-tile::after {
+  display: none;
+}
+/* Objects sit on a soft ground shadow so they read as ON the terrain. */
+.map-grid.textured .map-cell.special .cell-top {
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.65));
+}
+
+/* Desktop: cap the grid so tall floors scroll INSIDE it (camera-follow
+   scrolls this box only — never the page). Mobile keeps its own cap. */
+@media (min-width: 781px) {
+  .map-grid {
+    max-height: min(72vh, 860px);
+    overflow: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* --- Battle: action banner + actor glow -------------------------------- */
+.action-banner {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 18px 8px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(14, 10, 8, 0.92), rgba(8, 6, 5, 0.88));
+  border: 1px solid rgba(200, 162, 74, 0.35);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
+  z-index: 40;
+  pointer-events: none;
+  animation: bannerIn 0.22s ease-out;
+  white-space: nowrap;
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.action-banner .action-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+.action-banner .action-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+.action-banner.action-ally { border-color: rgba(120, 200, 170, 0.45); }
+.action-banner.action-ally .action-name { color: #9fe3c3; }
+.action-banner.action-enemy { border-color: rgba(212, 84, 74, 0.5); }
+.action-banner.action-enemy .action-name { color: #e8938a; }
+
+.combatant-figure.acting,
+.enemy-slot.acting {
+  filter: drop-shadow(0 0 14px rgba(240, 210, 130, 0.55)) brightness(1.12);
+  transform: scale(1.05);
+  transition: transform 0.18s ease, filter 0.18s ease;
+  z-index: 5;
+}
+.enemy-slot.acting {
+  filter: drop-shadow(0 0 14px rgba(212, 84, 74, 0.6)) brightness(1.12);
+}
+
+/* --- Aim mode: hint occupies fixed space so nothing reflows ------------ */
+.target-hint {
+  min-height: 22px;
+  margin: 6px 0 2px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  visibility: hidden;
+}
+.target-hint.on {
+  visibility: visible;
+}
+
+/* --- Choose Thy Boon: cards you can actually read ---------------------- */
+.reward-screen .reward-row {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 28px;
+  flex-wrap: wrap;
+  margin: 22px 0 26px;
+}
+.reward-card {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: transform 0.16s ease, filter 0.16s ease;
+}
+.reward-card:hover,
+.reward-card:focus-visible {
+  transform: translateY(-8px) scale(1.03);
+  filter: drop-shadow(0 10px 24px rgba(200, 162, 74, 0.35));
+  outline: none;
+}
+/* Scale the type up with the bigger frame. */
+.reward-screen .playing-card .card-name { font-size: 1.05rem; }
+.reward-screen .playing-card .card-text { font-size: 0.95rem; line-height: 1.35; }
+.reward-screen .playing-card .card-numbers { font-size: 1.05rem; }
+.reward-screen .playing-card .card-type-line { font-size: 0.8rem; }
+.reward-screen .playing-card .card-cost { font-size: 1.2rem; }
+@media (max-width: 780px) {
+  .reward-screen .reward-row { gap: 14px; }
+}

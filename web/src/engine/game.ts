@@ -39,6 +39,7 @@ import {
   movFor,
   advanceHostiles,
   floorHasMiniboss,
+  revealAround,
   TILE,
   type Direction,
   type Expedition,
@@ -858,6 +859,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         exp.x = tx;
         exp.y = ty;
         exp.movLeft = Math.max(0, exp.movLeft - 1);
+        if (exp.seen) revealAround(exp);
         if (roll >= 62 && roll < 70) {
           next.log = pushLog(state.log, ...lines);
           offerReward(next);
@@ -871,6 +873,8 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       exp.x = tx;
       exp.y = ty;
       exp.movLeft = Math.max(0, exp.movLeft - 1);
+      // v15 fog: walking reveals. Guarded so pre-fog saves stay fully lit.
+      if (exp.seen) revealAround(exp);
 
       switch (tile) {
         case TILE.STAIRS: {

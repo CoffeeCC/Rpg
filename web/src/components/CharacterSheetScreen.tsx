@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { Stat, ItemV2 } from '../engine/types';
 import type { EquipKey } from '../engine/entities/Character';
@@ -10,11 +10,14 @@ import { gearImage } from '../art/gearArt';
 import { ItemHover, type CompareMetric } from './ItemHover';
 import { ItemLine } from './ItemLine';
 import { NpcHost } from './NpcHost';
+import '../sheets.css';
 
-// v12: one PoE2/Diablo-style "character" screen — paperdoll in the middle,
-// derived combat stats across the top, attributes down the right rail, bag
-// below, and the deeper stuff (oaths, talents, party) folded underneath. Both
-// the Character and Equipment town buttons land here.
+// v17 (PLAN7 C1): one AAA character screen — hero portrait panel with level
+// ring + EXP bar on the left, gear sockets (paperdoll) in the middle,
+// attribute orbs with a prominent points CTA on the right, derived combat
+// stats across the top, bag below, and the deeper stuff (oaths, talents,
+// party) folded underneath. Both the Character and Equipment town buttons
+// land here. Presentation only — every dispatch is unchanged from v12.
 
 const STATS: Stat[] = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'];
 
@@ -140,44 +143,65 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
     );
   };
 
+  const expPct = Math.min(100, Math.round((player.exp / player.expToNext()) * 100));
+
   return (
     <div className="panel char-screen">
-      <div className="char-frame">
-        <div className="char-header">
-          <div>
-            <h1 className="title" style={{ margin: 0 }}>
-              {player.name}
-            </h1>
-            <p className="subtitle" style={{ margin: 0 }}>
-              Level {player.level} {player.race} {player.className} · EXP {player.exp}/{player.expToNext()}
-            </p>
-          </div>
-          <button className="btn small" onClick={() => setCodex(true)}>
-            📖 The Arrangement
-          </button>
+      <div className="sheet-head">
+        <div>
+          <h1 className="title" style={{ margin: 0 }}>
+            {player.name}
+          </h1>
+          <p className="subtitle" style={{ margin: '6px 0 0' }}>
+            Level {player.level} {player.race} {player.className} · EXP {player.exp}/{player.expToNext()}
+          </p>
         </div>
+        <button className="btn small" onClick={() => setCodex(true)}>
+          📖 The Arrangement
+        </button>
+      </div>
 
-        <NpcHost npcId="rowan" state={state} />
+      <NpcHost npcId="rowan" state={state} />
 
-        <div className="char-topbar">
-          {topStats.map(([label, value, how]) => (
-            <div className="char-stat-tile" key={label} title={how}>
-              <span className="char-stat-val">{value}</span>
-              <span className="char-stat-label">{label}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="char-main">
-          <div className="paperdoll">
-            <div className="doll-figure">
-              <HeroImage className={player.className} size={225} />
-            </div>
-            {(Object.keys(SLOT_AREA) as EquipKey[]).map(renderSlot)}
+      <div className="char-topbar">
+        {topStats.map(([label, value, how]) => (
+          <div className="char-stat-tile" key={label} title={how}>
+            <span className="char-stat-val">{value}</span>
+            <span className="char-stat-label">{label}</span>
           </div>
+        ))}
+      </div>
 
-          <div className="char-rail">
-            {player.attributePoints > 0 && <div className="char-points">✨ {player.attributePoints} points</div>}
+      <div className="cs-layout">
+        <aside className="sheet-figure-panel cs-hero-panel">
+          <div className="cs-level-ring" style={{ '--ring-pct': `${expPct}%` } as CSSProperties} title={`EXP ${player.exp}/${player.expToNext()}`}>
+            <span className="cs-level-num">{player.level}</span>
+            <span className="cs-level-word">Level</span>
+          </div>
+          <div className="figure-plinth">
+            <HeroImage className={player.className} size={200} />
+          </div>
+          <div className="cs-hero-id">
+            {player.race} {player.className}
+          </div>
+          <div className="cs-exp">
+            <div className="cs-exp-track">
+              <div className="cs-exp-fill" style={{ width: `${expPct}%` }} />
+            </div>
+            <span className="cs-exp-label">
+              <span>EXP</span>
+              <span>
+                {player.exp}/{player.expToNext()}
+              </span>
+            </span>
+          </div>
+        </aside>
+
+        <div className="paperdoll cs-doll">{(Object.keys(SLOT_AREA) as EquipKey[]).map(renderSlot)}</div>
+
+        <aside className="cs-attrs">
+          {player.attributePoints > 0 && <div className="cs-points">✨ {player.attributePoints} points</div>}
+          <div className="cs-orb-grid">
             {STATS.map((stat) => {
               const v = player.effectiveStat(stat);
               return (
@@ -193,53 +217,53 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
               );
             })}
           </div>
-        </div>
+        </aside>
+      </div>
 
-        <div className="equip-bag">
-          <div className="equip-bag-head">
-            <h2 className="title" style={{ fontSize: '0.95rem', margin: 0 }}>
-              Bag ({gearItems.length}) {bagFilter !== 'all' && <span className="pill">{bagFilter}</span>}
-            </h2>
-            {bagFilter !== 'all' && (
-              <button className="btn small" onClick={() => setBagFilter('all')}>
-                Show all
-              </button>
-            )}
-          </div>
-          {bag.length === 0 && <p className="subtitle">Nothing {bagFilter === 'all' ? 'in the bag' : 'fits that slot'}. The gates provide.</p>}
-          <div className="option-list">
-            {bag.map((item) => {
-              const cmp = metricsFor(item);
-              return (
-                <ItemHover item={item} metrics={cmp.metrics} replaces={cmp.replaces} key={item.uid}>
-                  <div className="item-row">
-                    <div className="item-desc">
-                      <ItemLine item={item} showAffixes={false} iconSize={36} />
-                    </div>
-                    <button className="btn small primary" onClick={() => dispatch({ type: 'EQUIP', uid: item.uid })}>
-                      Equip
-                    </button>
-                    <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
-                      Sell
-                    </button>
-                  </div>
-                </ItemHover>
-              );
-            })}
-            {accessories.length > 0 && bagFilter === 'all' && accessories.map((item) => (
-              <ItemHover item={item} key={item.uid}>
+      <div className="equip-bag">
+        <div className="equip-bag-head">
+          <h2 className="sheet-section-title" style={{ margin: 0 }}>
+            Bag <span className="sheet-sec-count">{gearItems.length}</span> {bagFilter !== 'all' && <span className="pill">{bagFilter}</span>}
+          </h2>
+          {bagFilter !== 'all' && (
+            <button className="btn small" onClick={() => setBagFilter('all')}>
+              Show all
+            </button>
+          )}
+        </div>
+        {bag.length === 0 && <p className="subtitle">Nothing {bagFilter === 'all' ? 'in the bag' : 'fits that slot'}. The gates provide.</p>}
+        <div className="option-list">
+          {bag.map((item) => {
+            const cmp = metricsFor(item);
+            return (
+              <ItemHover item={item} metrics={cmp.metrics} replaces={cmp.replaces} key={item.uid}>
                 <div className="item-row">
                   <div className="item-desc">
                     <ItemLine item={item} showAffixes={false} iconSize={36} />
-                    <span className="pill">monster accessory — fit it from a monster's sheet</span>
                   </div>
+                  <button className="btn small primary" onClick={() => dispatch({ type: 'EQUIP', uid: item.uid })}>
+                    Equip
+                  </button>
                   <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
                     Sell
                   </button>
                 </div>
               </ItemHover>
-            ))}
-          </div>
+            );
+          })}
+          {accessories.length > 0 && bagFilter === 'all' && accessories.map((item) => (
+            <ItemHover item={item} key={item.uid}>
+              <div className="item-row">
+                <div className="item-desc">
+                  <ItemLine item={item} showAffixes={false} iconSize={36} />
+                  <span className="pill">monster accessory — fit it from a monster's sheet</span>
+                </div>
+                <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
+                  Sell
+                </button>
+              </div>
+            </ItemHover>
+          ))}
         </div>
       </div>
 

@@ -83,6 +83,7 @@ function fxSound(fx: FxEvent): SfxName | null {
       return fx.success ? 'tameSuccess' : 'tameFail';
     case 'status':
     case 'shake':
+    case 'actor':
       return null;
   }
 }
@@ -97,6 +98,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [impactFx, setImpactFx] = useState<Record<string, ImpactKind>>({});
   const [shaking, setShaking] = useState(false);
   const [locked, setLocked] = useState(false);
+  // v15 readability: whose action is resolving right now (banner + figure glow).
+  const [actorBanner, setActorBanner] = useState<{ name: string; label: string; side: 'ally' | 'enemy' } | null>(null);
+  const [actingUid, setActingUid] = useState<string | null>(null);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredEnemyUid, setHoveredEnemyUid] = useState<string | null>(null);
@@ -132,14 +136,28 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     if (!state.lastFx.length || processedFx.current === state.lastFx) return;
     processedFx.current = state.lastFx;
     const fxList = state.lastFx;
-    const step = Math.min(190, Math.max(90, 2200 / fxList.length));
-    const total = fxList.length * step + 350;
+    // v15 pacing: slow enough to READ. ~½s a beat, compressing gently on long
+    // rounds so the whole phase still lands inside ~10s.
+    const step = Math.min(560, Math.max(240, 10000 / fxList.length));
+    const total = fxList.length * step + 500;
     setLocked(true);
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     fxList.forEach((fx, i) => {
       timers.push(
         setTimeout(() => {
+          if (fx.fx === 'actor') {
+            // Banner whose turn this is; the figure lights up with it.
+            const name =
+              fx.uid === 'hero'
+                ? state.player?.name ?? 'You'
+                : state.party.find((m) => m.uid === fx.uid)?.nickname ??
+                  state.battle?.enemies.find((e) => e.uid === fx.uid)?.displayName() ??
+                  '';
+            setActorBanner({ name, label: fx.label, side: fx.side });
+            setActingUid(fx.uid);
+            return;
+          }
           const sound = fxSound(fx);
           if (sound) sfx(sound);
           if (fx.fx === 'shake') {
@@ -158,7 +176,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           if (popup) {
             const p = popup;
             setPopups((prev) => [...prev, p]);
-            setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== p.id)), 950);
+            setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== p.id)), 1250);
           }
           const flashClass = fx.fx === 'ko' ? 'flash-ko' : fx.fx === 'status' ? '' : `flash-${fx.fx}`;
           if (flashClass) {
@@ -182,8 +200,15 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       );
     });
 
-    timers.push(setTimeout(() => setLocked(false), total));
+    timers.push(
+      setTimeout(() => {
+        setLocked(false);
+        setActorBanner(null);
+        setActingUid(null);
+      }, total)
+    );
     return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- names resolve from the same dispatch that produced the fx
   }, [state.lastFx]);
 
   useEffect(() => {
@@ -324,7 +349,25 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   if (!player || !battle) return null;
 
   const boss = battle.isBossFight ? battle.enemies[0] : null;
+  // The face of the opposition for the top duel portrait: the boss, else the pack leader.
+  const leadEnemy = boss ?? livingEnemies[0] ?? battle.enemies[0];
   const popupsFor = (uid: string) => popups.filter((p) => p.targetUid === uid);
+
+  // MTG-style duel portrait HP ring.
+  const RING_C = 2 * Math.PI * 30;
+  const hpRing = (frac: number) => (
+    <svg className="duel-ring-svg" viewBox="0 0 68 68" aria-hidden="true">
+      <circle className="duel-ring-track" cx="34" cy="34" r="30" />
+      <circle
+        className="duel-ring-fill"
+        cx="34"
+        cy="34"
+        r="30"
+        strokeDasharray={RING_C}
+        strokeDashoffset={RING_C * (1 - Math.max(0, Math.min(1, frac)))}
+      />
+    </svg>
+  );
 
   const renderPopups = (uid: string) => (
     <div className="popup-layer">
@@ -353,7 +396,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           setPileView((v) => (v === pile ? null : pile));
         }}
       >
-        <span className="pile-cardback"><CardBack width={30} /></span>
+        <span className="pile-cardback">
+          <CardBack width={84} />
+        </span>
         <span className="pile-count-num">{cards.length}</span>
         <span className="pile-name">{PILE_LABEL[pile]}</span>
       </button>
@@ -443,16 +488,6 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
       )}
       {battle.tamerName && <div className="tamer-banner">⚔️ {battle.tamerName} — a rival's beasts answer the whistle</div>}
-      {boss && (
-        <div className="boss-bar">
-          <div className="boss-name">{boss.displayName()}</div>
-          <div className="boss-track">
-            <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
-          </div>
-        </div>
-      )}
-
-      {locked && <div className="phase-indicator">the dark moves…</div>}
 
       {battle.mercy && !locked && (
         <div className="mercy-overlay">
@@ -472,33 +507,55 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
       )}
 
-      <div className="stage-row ffrow">
-        <div className="party-column">
-          <div
-            className={`combatant-figure hero-fig ${flashing['hero'] ?? ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
-            onClick={() => allyAimable && !locked && playSelected('hero')}
-            title={allyAimable ? 'Aim the mending here' : undefined}
-          >
-            <HeroImage className={player.className} size={185} />
-            {renderPopups('hero')}
-            {renderImpact('hero')}
+      {/* ===== MTG-Arena battlefield: enemies in the TOP row, party in the BOTTOM row.
+           Each combatant is a battlefield unit — figure, corner badges, nameplate,
+           HP groove — replacing the old ff-box strip entirely. ===== */}
+      <div className="battlefield">
+        {/* Vigor: a rail of candles down the LEFT edge. One candle per max vigor;
+            spending a card snuffs one (flame gutters, smoke curls, wax dims). */}
+        <div className="vigor-rail" title={`Vigor — ${battle.energy} of ${battle.maxEnergy} left to spend on cards`}>
+          <div className="vigor-candles">
+            {Array.from({ length: battle.maxEnergy }, (_, i) => (
+              <span key={i} className={`candle ${i < battle.energy ? 'lit' : 'out'}`}>
+                <span className="candle-smoke" aria-hidden="true" />
+                <span className="candle-flame" aria-hidden="true" />
+                <span className="candle-wick" aria-hidden="true" />
+                <span className="candle-wax" aria-hidden="true" />
+              </span>
+            ))}
           </div>
-          {state.party.map((m: MonsterInstance) => (
-            <div
-              key={m.uid}
-              className={`combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
-              onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
-              title={allyAimable && m.isAlive() ? `Aim the mending at ${m.nickname} (${m.hp}/${m.maxHp})` : undefined}
-            >
-              <MonsterImage speciesId={m.speciesId} size={110} facing="right" />
-              {!m.isAlive() && <span className="ko-label">FALLEN</span>}
-              {renderPopups(m.uid)}
-              {renderImpact(m.uid)}
-            </div>
-          ))}
+          <span className="vigor-count">
+            <b>{battle.energy}</b>
+            <span>/{battle.maxEnergy}</span>
+          </span>
+          <span className="vigor-word">vigor</span>
         </div>
 
-        <div className="enemy-column">
+        {/* Enemy duel portrait, top-center. Boss fights fold the boss bar in here. */}
+        {leadEnemy && (
+          <div className={`duel-chip duel-top ${boss ? 'duel-boss' : ''}`}>
+            <div className="duel-ring">
+              {hpRing(leadEnemy.hp / leadEnemy.maxHp)}
+              <span className="duel-art">
+                <MonsterImage speciesId={leadEnemy.speciesId} size={52} rarity={leadEnemy.rarity} />
+              </span>
+            </div>
+            {boss ? (
+              <div className="boss-bar">
+                <div className="boss-name">{boss.displayName()}</div>
+                <div className="boss-track">
+                  <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
+                </div>
+              </div>
+            ) : (
+              <span className="duel-hp">
+                {leadEnemy.hp}/{leadEnemy.maxHp}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="bf-row enemy-row">
           {battle.enemies.map((enemy) => {
             const intent = battle.intents[enemy.uid];
             const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
@@ -507,15 +564,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-            const size = enemy.isBoss ? 280 : 190;
+            const block = battle.enemyBlock[enemy.uid] ?? 0;
             return (
               <div
                 key={enemy.uid}
                 ref={(el) => {
                   if (el) enemyRefs.current.set(enemy.uid, el);
                 }}
-                className={`enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${flashing[enemy.uid] ?? ''}`}
+                className={`bf-unit enemy-slot ${enemy.isBoss ? 'boss' : ''} ${enemy.isAlive() ? '' : 'felled'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''} ${actingUid === enemy.uid ? 'acting' : ''} ${flashing[enemy.uid] ?? ''}`}
                 data-enemy-uid={enemy.isAlive() ? enemy.uid : undefined}
+                title={enemy.aspect ? `${enemy.aspect.name} — ${enemy.aspect.blurb}` : undefined}
                 onClick={() => targetable && playSelected(enemy.uid)}
                 onMouseEnter={() => {
                   if (targetable) {
@@ -533,108 +591,153 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                     {iv.move && <span className="intent-move">{iv.move}</span>}
                   </div>
                 )}
-                <MonsterImage speciesId={enemy.speciesId} size={size} rarity={enemy.rarity} boss={enemy.isBoss} />
-                {renderPopups(enemy.uid)}
-                {renderImpact(enemy.uid)}
+                <div className="bf-figure">
+                  <MonsterImage speciesId={enemy.speciesId} size={enemy.isBoss ? 250 : 150} rarity={enemy.rarity} boss={enemy.isBoss} />
+                  {block > 0 && <span className="bf-badge badge-block">🛡 {block}</span>}
+                  <span className="bf-badge badge-lv">Lv{enemy.level}</span>
+                  {!enemy.isBoss && enemy.isAlive() && (
+                    <span className="bf-badge badge-tame">tame {enemy.tameChancePercent()}%</span>
+                  )}
+                  {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
+                    <span className="bf-badge-stack">
+                      {enemy.statusEffects.map((st) => (
+                        <span key={st.name} className="status-tag">
+                          {st.name}
+                        </span>
+                      ))}
+                      {enemy.activeMods.map((m, i) => (
+                        <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                          {m.stat}
+                          {m.amount > 0 ? '↑' : '↓'}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                  {renderPopups(enemy.uid)}
+                  {renderImpact(enemy.uid)}
+                </div>
+                <div className="bf-plate">
+                  <div className="bf-name">{enemy.displayName()}</div>
+                  {!enemy.isBoss && (
+                    <div className="souls-track hp">
+                      <div className="souls-fill" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} />
+                    </div>
+                  )}
+                  <div className="bf-hp-row">
+                    <span>
+                      {enemy.hp}/{enemy.maxHp}
+                    </span>
+                  </div>
+                </div>
               </div>
             );
           })}
         </div>
-      </div>
 
-      <div className="ff-boxes">
-        <div className="ff-box ally">
-          <div className="ff-name">
-            {player.name}
-            {battle.heroBlock > 0 && <span className="block-badge">🛡 {battle.heroBlock}</span>}
-          </div>
-          <div className="souls-track hp">
-            <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
-          </div>
-          <div className="ff-hp-row">
-            <span>HP</span>
-            <span>
-              {player.hp}/{player.maxHp}
-            </span>
-          </div>
-          {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
-            <div className="status-tags">
-              {player.statusEffects.map((st) => (
-                <span key={st.name} className="status-tag">
-                  {st.name}
-                </span>
-              ))}
-              {player.activeMods.map((m, i) => (
-                <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
-                  {m.stat}
-                  {m.amount > 0 ? '↑' : '↓'}
-                </span>
-              ))}
+        {/* The banner gap between the rows — whose action is resolving. */}
+        <div className="bf-gap">
+          {locked && !actorBanner && <div className="phase-indicator">the dark moves…</div>}
+          {actorBanner && (
+            <div className={`action-banner action-${actorBanner.side}`}>
+              <span className="action-name">{actorBanner.name}</span>
+              <span className="action-label">{actorBanner.label}</span>
             </div>
           )}
         </div>
-        {state.party.map((m: MonsterInstance) => (
-          <div key={m.uid} className={`ff-box ally ${m.isAlive() ? '' : 'dead'}`} title={m.aspect ? `${m.aspect.name} — ${m.aspect.blurb}` : undefined}>
-            <div className="ff-name">{m.nickname}</div>
-            <div className="souls-track hp">
-              <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
-            </div>
-            <div className="ff-hp-row">
-              <span>{m.isAlive() ? 'HP' : 'FALLEN'}</span>
-              <span>
-                {m.hp}/{m.maxHp}
-              </span>
-            </div>
-          </div>
-        ))}
-        <div className="ff-gap" />
-        {battle.enemies.map((enemy) => {
-          const targetable = needsTarget && enemy.isAlive() && !locked;
-          const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-          const block = battle.enemyBlock[enemy.uid] ?? 0;
-          return (
-            <div
-              key={enemy.uid}
-              className={`ff-box foe ${enemy.isAlive() ? '' : 'dead'} ${targetable ? 'targetable' : ''} ${isTarget ? 'kb-target' : ''}`}
-              title={enemy.aspect ? `${enemy.aspect.name} — ${enemy.aspect.blurb}` : undefined}
-              onClick={() => targetable && playSelected(enemy.uid)}
-            >
-              <div className="ff-name">
-                {enemy.displayName()} <span className="pill">Lv{enemy.level}</span>
-                {block > 0 && <span className="block-badge">🛡 {block}</span>}
-              </div>
-              {!enemy.isBoss && (
-                <div className="souls-track hp">
-                  <div className="souls-fill" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} />
-                </div>
-              )}
-              <div className="ff-hp-row">
-                <span>
-                  {enemy.hp}/{enemy.maxHp}
-                </span>
-                {!enemy.isBoss && enemy.isAlive() && <span className="pill">tame {enemy.tameChancePercent()}%</span>}
-              </div>
-              {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
-                <div className="status-tags">
-                  {enemy.statusEffects.map((st) => (
+
+        <div className="bf-row party-row">
+          <div
+            className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
+            onClick={() => allyAimable && !locked && playSelected('hero')}
+            title={allyAimable ? 'Aim the mending here' : undefined}
+          >
+            <div className="bf-figure">
+              <HeroImage className={player.className} size={132} />
+              {battle.heroBlock > 0 && <span className="bf-badge badge-block">🛡 {battle.heroBlock}</span>}
+              {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
+                <span className="bf-badge-stack">
+                  {player.statusEffects.map((st) => (
                     <span key={st.name} className="status-tag">
                       {st.name}
                     </span>
                   ))}
-                  {enemy.activeMods.map((m, i) => (
+                  {player.activeMods.map((m, i) => (
                     <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
                       {m.stat}
                       {m.amount > 0 ? '↑' : '↓'}
                     </span>
                   ))}
-                </div>
+                </span>
               )}
+              {renderPopups('hero')}
+              {renderImpact('hero')}
             </div>
-          );
-        })}
+            <div className="bf-plate">
+              <div className="bf-name">{player.name}</div>
+              <div className="souls-track hp">
+                <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
+              </div>
+              <div className="bf-hp-row">
+                <span>HP</span>
+                <span>
+                  {player.hp}/{player.maxHp}
+                </span>
+              </div>
+            </div>
+          </div>
+          {state.party.map((m: MonsterInstance) => (
+            <div
+              key={m.uid}
+              className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
+              onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
+              title={
+                allyAimable && m.isAlive()
+                  ? `Aim the mending at ${m.nickname} (${m.hp}/${m.maxHp})`
+                  : m.aspect
+                    ? `${m.aspect.name} — ${m.aspect.blurb}`
+                    : undefined
+              }
+            >
+              <div className="bf-figure">
+                <MonsterImage speciesId={m.speciesId} size={124} facing="right" />
+                {!m.isAlive() && <span className="ko-label">FALLEN</span>}
+                {renderPopups(m.uid)}
+                {renderImpact(m.uid)}
+              </div>
+              <div className="bf-plate">
+                <div className="bf-name">{m.nickname}</div>
+                <div className="souls-track hp">
+                  <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
+                </div>
+                <div className="bf-hp-row">
+                  <span>{m.isAlive() ? 'HP' : 'FALLEN'}</span>
+                  <span>
+                    {m.hp}/{m.maxHp}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Player duel portrait, bottom-center, mirroring the enemy's. */}
+        <div className="duel-chip duel-bottom">
+          <div className="duel-ring">
+            {hpRing(player.hp / player.maxHp)}
+            <span className="duel-art">
+              <HeroImage className={player.className} size={52} />
+            </span>
+          </div>
+          <span className="duel-hp">
+            {player.hp}/{player.maxHp}
+          </span>
+        </div>
       </div>
 
-      {needsTarget && !locked && <p className="target-hint">Choose a target — click a foe, or ◀ ▶ then Enter</p>}
+      {/* Always rendered with fixed height so entering aim mode never reflows the stage. */}
+      <p className={`target-hint ${needsTarget && !locked ? 'on' : ''}`} aria-hidden={!(needsTarget && !locked)}>
+        Choose a target — click a foe, or ◀ ▶ then Enter
+      </p>
 
       {pileView && (
         <div className="pile-inspect">
@@ -702,20 +805,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       )}
 
       <div className="hand-zone">
-        <div className="hand-left">
-          <div className="energy-gauge" title={`Vigor — ${battle.energy} of ${battle.maxEnergy} left to spend on cards`}>
-            <div className="energy-pips">
-              {Array.from({ length: battle.maxEnergy }, (_, i) => (
-                <span key={i} className={`energy-pip ${i < battle.energy ? 'lit' : 'spent'}`} />
-              ))}
-            </div>
-            <span className="energy-label">
-              <b>{battle.energy}</b>
-              <span>/{battle.maxEnergy} vigor</span>
-            </span>
-          </div>
-          {pileWidget('draw')}
-        </div>
+        <div className="hand-left">{pileWidget('draw')}</div>
 
         <div className="hand-fan" key={battle.turn ?? battle.drawPile.length + battle.discardPile.length} style={{ ['--n' as string]: battle.hand.length }}>
           {battle.hand.map((inst, i) => {
@@ -729,13 +819,13 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 ref={(el) => {
                   if (el) slotRefs.current.set(i, el);
                 }}
-                className="hand-slot"
+                className={`hand-slot ${selectedIdx === i ? 'sel' : ''}`}
                 style={{ ['--i' as string]: i }}
                 onMouseEnter={() => sfx('cardHover')}
                 onClick={() => playable && selectCard(i)}
                 onTouchStart={() => playable && selectCard(i)}
               >
-                <CardView card={card} hero={player} sourceMonster={source} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
+                <CardView card={card} hero={player} sourceMonster={source} width={200} playable={playable} selected={selectedIdx === i} upgraded={!!inst.upgraded} />
                 <span className="hand-key">{i + 1}</span>
               </div>
             );
@@ -748,27 +838,29 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
 
         <div className="hand-right">
+          <div className="hand-right-col">
+            <div className="hand-right-row">
+              <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
+                🧪 {player.inventory.length}
+              </button>
+              <button
+                className="btn small danger"
+                disabled={locked}
+                onClick={() => {
+                  sfx('uiClick');
+                  dispatch({ type: 'FLEE_BATTLE' });
+                }}
+                title="Attempt to flee"
+              >
+                🏃
+              </button>
+            </div>
+            <div className="hand-right-piles">
+              {pileWidget('discard')}
+              {pileWidget('exhaust')}
+            </div>
+          </div>
           <LanternTurn yours={!locked} onEndTurn={endTurn} />
-          <div className="hand-right-row">
-            <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
-              🧪 {player.inventory.length}
-            </button>
-            <button
-              className="btn small danger"
-              disabled={locked}
-              onClick={() => {
-                sfx('uiClick');
-                dispatch({ type: 'FLEE_BATTLE' });
-              }}
-              title="Attempt to flee"
-            >
-              🏃
-            </button>
-          </div>
-          <div className="hand-right-piles">
-            {pileWidget('discard')}
-            {pileWidget('exhaust')}
-          </div>
         </div>
       </div>
 
