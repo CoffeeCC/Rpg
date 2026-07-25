@@ -65,14 +65,19 @@ const LIGHT = {
   pos: { x: 100, y: 20 },
   reach: 300,
   intensity: 0.6,
-  color: [255, 186, 92] as [number, number, number],
   size: 20,
 };
 
+/**
+ * The layer is NIGHT, and the light cuts holes in it — so a shadow is drawn
+ * with plain `source-over` (it puts night back), not `destination-out` (which
+ * is now what the light itself does). Polygon `fill` is only ever a shadow;
+ * the night fill and the lit gradient are both `fillRect`.
+ */
 function render(occluders: Occluder[], t = 1.5, animate = true) {
   const { ctx, calls } = fakeCtx();
   const out = renderLight(ctx as unknown as CanvasRenderingContext2D, 200, 200, LIGHT, occluders, t, animate);
-  return { calls, out, shadows: calls.filter((c) => c.op === 'fill' && c.args[0] === 'destination-out') };
+  return { calls, out, shadows: calls.filter((c) => c.op === 'fill' && c.args[0] === 'source-over') };
 }
 
 describe('flicker is noise, not a waveform', () => {

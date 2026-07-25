@@ -53,8 +53,6 @@ export interface LightSource {
   reach: number;
   /** Peak intensity at the flame, 0..1. */
   intensity: number;
-  /** Warm core colour, `r,g,b`. */
-  color: [number, number, number];
   /**
    * The flame's physical size. THIS IS WHAT MAKES THE SHADOWS SOFT — a light
    * of zero size casts a knife-edge shadow, which is why point lights look
@@ -181,6 +179,16 @@ const AMBIENT_FLOOR = 0.34;
 const SHADOW_LENGTH = 190;
 
 /**
+ * The colour of unlit ground.
+ *
+ * Not black. Night outdoors is a desaturated blue — the eye's own low-light
+ * response plus skylight — and darkening a warm painting toward pure black
+ * greys it out, while darkening it toward this keeps it looking like a place
+ * at night rather than a photo with the brightness pulled down.
+ */
+const NIGHT: [number, number, number] = [6, 9, 18];
+
+/**
  * Draw one frame of real light into `ctx`.
  *
  * THE METHOD, and why it is one canvas rather than seven:
@@ -216,6 +224,8 @@ export function renderLight(
   animate: boolean,
   /** Light left in full shadow. Lower is a harsher, more enclosed place. */
   ambient: number = AMBIENT_FLOOR,
+  /** How dark unlit ground gets, 0..1. Never 1 — see NIGHT. */
+  maxDarkness: number = 0.62,
 ): { flicker: number; lean: number; bob: number; casters: number } {
   ctx.clearRect(0, 0, width, height);
 
@@ -235,22 +245,47 @@ export function renderLight(
   const src: Vec2 = { x: light.pos.x + lean, y: light.pos.y + bob };
 
   const reach = light.reach * (0.94 + n1 * 0.06);
-  const [r, g, b] = light.color;
   const peak = light.intensity * flicker;
 
   // --- the light itself -------------------------------------------------
-  // Inverse-square, sampled into gradient stops. A hand-authored gradient is
-  // usually eased to look pleasant; this one is 1/(1+d^2) because that is
-  // what the falloff is, which is why the pool has a hot centre and a long
-  // thin tail instead of a uniform disc.
-  const grad = ctx.createRadialGradient(src.x, src.y, 0, src.x, src.y, reach);
-  for (let i = 0; i <= 8; i++) {
-    const d = i / 8;
-    const falloff = 1 / (1 + 14 * d * d);
-    grad.addColorStop(d, `rgba(${r}, ${g}, ${b}, ${(peak * falloff).toFixed(4)})`);
-  }
-  grad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+  //
+  // THIS LAYER IS DARKNESS, NOT LIGHT, and that is the correction that matters.
+  //
+  // The first version painted a warm radial gradient and composited it with
+  // `plus-lighter`. Every bit of the physics under it was right and the result
+  // still looked, in Paul's words, like "a yellow circle. not real lighting
+  // effects" — because ADDING a coloured disc to a dark scene produces a
+  // coloured disc, whatever maths chose its profile. Real light does not
+  // deposit colour on a room; it makes visible what the dark was hiding.
+  //
+  // So the canvas is filled with night, and the light CUTS THE NIGHT AWAY.
+  // Where the lantern reaches, the art underneath comes through at its own
+  // colour; where it does not, the night stays. Shadows put night back. The
+  // layer therefore composites as ordinary darkness rather than as glow, and
+  // there is no disc to see because there is no disc being drawn.
+  const night = `${NIGHT[0]}, ${NIGHT[1]}, ${NIGHT[2]}`;
   ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgba(${night}, ${maxDarkness.toFixed(4)})`;
+  ctx.fillRect(0, 0, width, height);
+
+  // Cut the lit region out of the night.
+  //
+  // The profile is inverse-square MULTIPLIED BY A SMOOTH WINDOW that reaches
+  // exactly zero at `reach`. The window is not cosmetic: 1/(1+14d^2) is still
+  // 0.067 at the rim, and a gradient whose last stop drops from 0.067 to 0 has
+  // a STEP IN IT. That step, drawn as a circle, was the visible hard edge —
+  // the actual mechanism behind "it just looks like a yellow circle". Physics
+  // gives the falloff; the window is what makes it end honestly.
+  const grad = ctx.createRadialGradient(src.x, src.y, 0, src.x, src.y, reach);
+  for (let i = 0; i <= 16; i++) {
+    const d = i / 16;
+    const falloff = 1 / (1 + 14 * d * d);
+    const window = Math.pow(Math.max(0, 1 - d * d), 2);
+    const lit = Math.min(1, peak * falloff * window * 3.2);
+    grad.addColorStop(d, `rgba(0, 0, 0, ${lit.toFixed(4)})`);
+  }
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.globalCompositeOperation = 'destination-out';
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 
@@ -272,9 +307,12 @@ export function renderLight(
   if (!near.length) return out;
 
   // --- shadows ----------------------------------------------------------
-  // N cuts must leave AMBIENT_FLOOR, not zero: (1-a)^N = floor.
+  // Shadows PUT NIGHT BACK, now that the layer is darkness. Same identity as
+  // before, inverted: each flame sample restores a share of the night, so a
+  // point that can see none of the flame ends up fully dark and one that sees
+  // part of it lands in between.
   const cutAlpha = 1 - Math.pow(Math.max(0.001, ambient), 1 / FLAME_SAMPLES);
-  ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalCompositeOperation = 'source-over';
 
   for (let s = 0; s < FLAME_SAMPLES; s++) {
     // Sample across the flame's width. This spread IS the penumbra: widen it
@@ -300,9 +338,9 @@ export function renderLight(
           mid.x + (dx / len) * SHADOW_LENGTH,
           mid.y + (dy / len) * SHADOW_LENGTH,
         );
-        fade.addColorStop(0, 'rgba(0, 0, 0, 1)');
-        fade.addColorStop(0.45, 'rgba(0, 0, 0, 0.72)');
-        fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        fade.addColorStop(0, `rgba(${night}, ${maxDarkness.toFixed(3)})`);
+        fade.addColorStop(0.45, `rgba(${night}, ${(maxDarkness * 0.72).toFixed(3)})`);
+        fade.addColorStop(1, `rgba(${night}, 0)`);
         ctx.fillStyle = fade;
         ctx.beginPath();
         ctx.moveTo(quad[0].x, quad[0].y);

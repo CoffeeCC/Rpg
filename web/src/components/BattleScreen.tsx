@@ -801,7 +801,11 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         occluderSelector=".battle-stage .bf-figure"
         anchorSelector=".battle-stage .vigor-candles"
         reach={760}
-        intensity={0.2 + 0.5 * (view.maxEnergy ? view.energy / view.maxEnergy : 1)}
+        /* No floor on this. The first cut used `0.2 + 0.5 * ratio`, so at zero
+           candles the room was still lit by a light with nothing burning in
+           it — Paul caught it. Vigor spent to nothing means the rail is out,
+           and out means out. */
+        intensity={0.78 * (view.maxEnergy ? view.energy / view.maxEnergy : 1)}
         flameSize={18}
         ambient={0.24}
         version={`${view.energy}/${view.maxEnergy}`}

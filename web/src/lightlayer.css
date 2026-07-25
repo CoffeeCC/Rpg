@@ -4,11 +4,12 @@
    The canvas in components/LightLayer.tsx computes the light; this file only
    decides where it sits and how it combines. Two rules do the work:
 
-   `plus-lighter` rather than `screen`: the layer is ADDED to what is under
-   it, which is what a light physically does to a surface. `screen` would
-   also brighten, but it saturates towards white and washes the painted
-   backdrop's colour out of it; addition keeps the paint's hue and just puts
-   more photons on it.
+   THE LAYER IS DARKNESS. It began as an additive warm field (`plus-lighter`)
+   and that was the mistake: adding a coloured gradient over a dark scene
+   produces a visible coloured disc no matter how correct its profile is.
+   art/lightEngine.ts now fills night and lets the lantern cut it away, so
+   this composites with plain alpha and what shows through the hole is the
+   painting's own colour rather than a wash laid on top of it.
 
    `pointer-events: none` throughout: the light must never eat a click. The
    town is a screen made of buttons and this layer covers all of them.
@@ -32,7 +33,9 @@
   width: 100%;
   height: 100%;
   display: block;
-  mix-blend-mode: plus-lighter;
+  /* Ordinary alpha. The canvas IS the darkness — it is not glow being added
+     to the scene, so there is nothing to blend additively and no disc to see.
+     `plus-lighter` here is what made this read as a yellow circle. */
   pointer-events: none;
 }
 

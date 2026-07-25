@@ -29,10 +29,10 @@ export function LightLayer({
   anchorSelector,
   reach = 620,
   intensity = 0.62,
-  color = [255, 186, 92] as [number, number, number],
   flameSize = 26,
   lamp = false,
   ambient,
+  maxDarkness,
   version,
 }: {
   /** Elements that stop light. Measured live. */
@@ -41,12 +41,13 @@ export function LightLayer({
   anchorSelector?: string;
   reach?: number;
   intensity?: number;
-  color?: [number, number, number];
   flameSize?: number;
   /** Render the visible lantern at the source, guttering on the same noise. */
   lamp?: boolean;
   /** Light left in full shadow. Lower = a harsher, more enclosed place. */
   ambient?: number;
+  /** How dark unlit ground gets, 0..1. */
+  maxDarkness?: number;
   /**
    * Bump to force a re-measure.
    *
@@ -124,11 +125,12 @@ export function LightLayer({
         ctx,
         w,
         h,
-        { pos: anchorRef.current, reach: reach * SCALE, intensity, color, size: flameSize * SCALE },
+        { pos: anchorRef.current, reach: reach * SCALE, intensity, size: flameSize * SCALE },
         occludersRef.current,
         (now - start) / 1000,
         !reduced.matches,
         ambient,
+        maxDarkness,
       );
       // ONE custom-property write, on ONE element, per frame. The lamp is a
       // child of this host, so it inherits without any element of its own
@@ -168,7 +170,7 @@ export function LightLayer({
       document.removeEventListener('visibilitychange', onVisibility);
       reduced.removeEventListener('change', onVisibility);
     };
-  }, [occluderSelector, anchorSelector, reach, intensity, color, flameSize, lamp, ambient, version]);
+  }, [occluderSelector, anchorSelector, reach, intensity, flameSize, lamp, ambient, maxDarkness, version]);
 
   return (
     <div className="light-layer" ref={hostRef} aria-hidden="true">
