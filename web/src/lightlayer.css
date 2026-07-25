@@ -1,0 +1,105 @@
+/* =========================================================================
+   lightlayer.css — mounting the real light over a screen.
+
+   The canvas in components/LightLayer.tsx computes the light; this file only
+   decides where it sits and how it combines. Two rules do the work:
+
+   `plus-lighter` rather than `screen`: the layer is ADDED to what is under
+   it, which is what a light physically does to a surface. `screen` would
+   also brighten, but it saturates towards white and washes the painted
+   backdrop's colour out of it; addition keeps the paint's hue and just puts
+   more photons on it.
+
+   `pointer-events: none` throughout: the light must never eat a click. The
+   town is a screen made of buttons and this layer covers all of them.
+   ========================================================================= */
+
+.light-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+  /* Its own compositor layer: the canvas repaints every frame and must not
+     drag the panel's paint along with it. */
+  will-change: opacity;
+  contain: strict;
+}
+
+.light-layer-canvas {
+  /* Drawn at half resolution, scaled here. Light has no high-frequency
+     detail, so the upscale costs nothing visible and saves 3/4 of the fill. */
+  width: 100%;
+  height: 100%;
+  display: block;
+  mix-blend-mode: plus-lighter;
+  pointer-events: none;
+}
+
+/* The town's own content has to sit ABOVE the light, or the shadows it casts
+   would be drawn over the very cards that cast them. */
+.town-panel .town-content {
+  position: relative;
+  z-index: 3;
+}
+
+/* The painted backdrop stays underneath, which is the whole point — it is the
+   surface the light lands on. */
+.town-panel .stage-backdrop {
+  z-index: 1;
+}
+
+/* =========================================================================
+   THE LAMP ITSELF
+
+   The engine hands back the frame's live flicker and the lamp is styled from
+   it, so the painted lantern and the pool it throws gutter on ONE number.
+   Everything here rides `--lamp-flicker` (0.78..1.0) — no CSS animation of
+   its own, because a second clock is exactly the disagreement the light
+   engine was written to get rid of.
+
+   Only `transform`, `opacity` and `filter` on a ~90px element, which is
+   inside lighting.css's stated budget (§D allows one filter animation on an
+   element under ~160x200; this is the only one on the town screen).
+   ========================================================================= */
+.light-lamp {
+  position: absolute;
+  width: 92px;
+  height: 92px;
+  margin-left: -46px;
+  margin-top: -46px;
+  pointer-events: none;
+  transform: translate(var(--lamp-x, 0px), var(--lamp-y, 0px));
+  z-index: 4;
+}
+
+.light-lamp-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* The glass brightens as the flame comes up. */
+  filter: brightness(calc(0.72 + var(--lamp-flicker, 0.9) * 0.55))
+    drop-shadow(0 0 calc(var(--lamp-flicker, 0.9) * 20px) rgba(255, 186, 92, 0.55));
+}
+
+/* The flame's own bloom, sitting in the lantern's throat. */
+.light-lamp-flame {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  margin-top: -17px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 244, 214, 0.95) 0 18%, rgba(255, 186, 92, 0.6) 42%, transparent 72%);
+  opacity: var(--lamp-flicker, 0.9);
+  mix-blend-mode: plus-lighter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The lamp still burns; it just stops moving. Matches lighting.css §9. */
+  .light-lamp {
+    transform: none;
+  }
+}

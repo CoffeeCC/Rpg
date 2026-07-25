@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { LightLayer } from './LightLayer';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import { availableQuests, restCost } from '../engine/game';
 import { Icon } from './Icon';
@@ -101,6 +102,17 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
           }}
         />
       </div>
+      {/* The Last Lantern, as an actual light. The subtitle below has always
+          said it "burns low over the square"; until now nothing in the town
+          was lit by it. The NPC cards and the dock are what block it — read
+          from the DOM, so the cast list and the light never disagree. */}
+      <LightLayer
+        occluderSelector=".town-cast-card, .town-dock-group, .town-dock-gates"
+        reach={780}
+        intensity={0.58}
+        flameSize={30}
+        lamp
+      />
       <div className="town-content">
         <h1 className="title">🌳 Everdusk</h1>
         <p className="subtitle">
