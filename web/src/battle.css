@@ -50,6 +50,12 @@
 .panel.battle-stage > .target-line-layer { position: absolute; z-index: 6; }
 .panel.battle-stage > .card-ghost { position: absolute; z-index: 30; }
 .panel.battle-stage > .mercy-overlay { position: absolute; z-index: 20; }
+/* The computed light (components/LightLayer.tsx). Caught by the exact same
+   trap: forced to position:relative it collapsed to 603x1 — `contain: strict`
+   size-contains it, so with no offsets to resolve against it has no height at
+   all, and the fight was lit by a one-pixel sliver. Sits at 2: above the
+   backdrop it falls on, below the combatants so they are not washed out. */
+.panel.battle-stage > .light-layer { position: absolute; z-index: 2; }
 
 .stage-shake {
   animation: stageShake 0.4s ease;

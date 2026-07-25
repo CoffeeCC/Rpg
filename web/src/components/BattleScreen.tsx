@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { LightLayer } from './LightLayer';
 import type { GameAction, GameState } from '../engine/game';
 import type { CardDef, CardInstance, FxEvent, GateId, Intent } from '../engine/types';
 import type { Character } from '../engine/entities/Character';
@@ -787,6 +788,25 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         setHoveredEnemyUid(null);
       }}
     >
+      {/* THE VIGOR CANDLES, FINALLY CASTING.
+          lighting.css §7 already argued this screen's case: there are literal
+          lit candles on the rail, they gutter and smoke, and they "cast
+          NOTHING — a light source that is drawn but not modelled". §7 got as
+          close as CSS can, scaling a painted blob off `:has()`. This is the
+          modelled version: the light is AT the rail, the combatants standing
+          in the room are what block it, and the intensity is the vigor you
+          have left. Spend down to one candle and the room genuinely goes dark
+          around you; the shadows the fighters throw lengthen as it does. */}
+      <LightLayer
+        occluderSelector=".battle-stage .bf-figure"
+        anchorSelector=".battle-stage .vigor-candles"
+        reach={760}
+        intensity={0.2 + 0.5 * (view.maxEnergy ? view.energy / view.maxEnergy : 1)}
+        flameSize={18}
+        ambient={0.24}
+        version={`${view.energy}/${view.maxEnergy}`}
+      />
+
       {/* v19: the iris wipe that used to sit here is gone. App.tsx's "Seal"
           encounter transition (obsidian blades peeling back, z-index 88) now
           owns the dark-edge motion; a second dark ring opening underneath it
