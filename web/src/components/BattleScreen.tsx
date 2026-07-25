@@ -235,7 +235,11 @@ function useSoloBattleView(state: GameState, dispatch: (a: GameAction) => void):
       roundLabel: null,
       mercy: !!battle.mercy,
       yourTurn: true,
-      showTameOdds: true,
+      // Not in the yard. `beginDrill` pulls Reach Out from the recruit's deck,
+      // so a tame percentage on the Exhibit advertises an action they have no
+      // card for — and Bram's own line is that the article is already on the
+      // inventory and may not be tamed.
+      showTameOdds: !drilling,
       log: state.log,
       allyNames: [player.name, ...state.party.map((m) => m.nickname)],
       fx: state.lastFx,
