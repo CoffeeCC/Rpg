@@ -84,8 +84,17 @@ describe('the end-turn Lantern does not swallow clicks meant for the UI beneath 
   it('the Lantern stays keyboard/gamepad focusable with a visible ring', () => {
     // The controller layer (nav/) relies on real DOM focus. Removing the
     // outline without replacing it would leave the Lantern invisible on a pad.
-    expect(f).toMatch(/\.lantern-turn:focus-visible\s*\{[^}]*outline:\s*none/);
-    expect(f).toMatch(/\.lantern-turn:focus-visible::after\s*\{[^}]*content/);
+    // nav.css owns the cursor and deliberately styles plain `:focus` under
+    // html[data-nav-input], because pad focus is programmatic and fails the
+    // :focus-visible heuristic. lighting.css must ADD to that, never suppress
+    // it — killing the outline on a :focus-visible guess would leave a
+    // controller player unable to see the Lantern is selected.
+    expect(f, 'lighting.css must not suppress nav.css’s ring').not.toMatch(
+      /\.lantern-turn:focus(-visible)?\s*\{[^}]*outline:\s*none/,
+    );
+    expect(f).toMatch(/html\[data-nav-input='pad'\] \.lantern-turn:focus::after/);
+    expect(f).toMatch(/html\[data-nav-input='key'\] \.lantern-turn:focus::after/);
+    expect(f).toMatch(/\.lantern-turn:focus-visible::after[^{]*\{[^}]*content/);
   });
 });
 
@@ -188,6 +197,97 @@ describe('prefers-reduced-motion disables every light this file animates', () =>
     for (const sel of ['.lantern-embers', '.map-grid .map-cell.reachable::before', '.map-grid .map-cell.threat::after']) {
       expect(rmBlock).toContain(sel);
     }
+  });
+});
+
+describe('cast intensity tracks the flame that produces it', () => {
+  // The defining property of modelled light vs. a decorative overlay: the
+  // light a flame throws is the same physical quantity as the flame's own
+  // brightness, so the two cannot run on independent timers.
+  const f = flat(lightingRules);
+  const ruleFor = (selector: string) =>
+    f.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`))?.[0] ?? '';
+  const animOf = (selector: string) =>
+    ruleFor(selector).match(/animation:\s*([\w-]+)\s+([\d.]+m?s)/)?.slice(1, 3).join(' ') ?? '';
+
+  it('the flame, its cast and the room it lights share one signal', () => {
+    const flame = animOf('.lantern-bright .lantern-flame');
+    expect(flame, 'the flame is not animated at all').toBeTruthy();
+    expect(animOf('.lantern-bright .lantern-cast'), 'the cast drifts from the flame').toBe(flame);
+    expect(animOf('.floor-layout::after'), 'the room drifts from the flame').toBe(flame);
+  });
+
+  it('the big ambient field is deliberately NOT on that signal', () => {
+    // Indirect, multiply-bounced light is smoothed almost flat in a real
+    // room — and it is the largest blended surface, so holding it still is
+    // both the physically honest choice and the cheap one.
+    expect(animOf('.floor-layout::before')).toBe('');
+  });
+
+  it('light falls off on an inverse-square-shaped ramp, not a linear one', () => {
+    // An evenly-spaced gradient is the classic tell of a fake light: it reads
+    // as fog. Real falloff collapses fast near the source, then trails.
+    for (const sel of ['.lantern-cast', '.floor-layout::after']) {
+      const stops = [...ruleFor(sel).matchAll(/\/\s*([\d.]+)\)\s*(\d+)%/g)].map((m) => ({ a: Number(m[1]), at: Number(m[2]) }));
+      expect(stops.length, `${sel} has too few stops to shape a falloff`).toBeGreaterThanOrEqual(3);
+      expect(stops[1].a, `${sel} fades linearly`).toBeLessThan(stops[0].a * 0.75);
+    }
+  });
+});
+
+describe('the battle vigor candles are a real light source', () => {
+  // They are literally lit candles with wax, wicks, gutter animations and
+  // smoke — and before this pass they cast no light at all.
+  const f = flat(lightingRules);
+
+  it('a lit candle casts, and a snuffed one stops casting', () => {
+    expect(f).toMatch(/\.candle\.lit::after\s*\{[^}]*opacity:\s*1/);
+    expect(f).toMatch(/\.candle\.lit::after\s*\{[^}]*animation:/);
+    expect(f).toMatch(/\.candle\.out::after\s*\{[^}]*opacity:\s*0/);
+  });
+
+  it("its cast runs on the candle rail's own 1.7s gutter period", () => {
+    // battle.css animates .candle-flame with candleFlicker 1.7s; the light
+    // must share that period or the flame and its glow visibly disagree.
+    expect(battleRules).toMatch(/candleFlicker\s+1\.7s/);
+    expect(f).toMatch(/\.candle\.lit::after\s*\{[^}]*animation:\s*lumeGutterA\s+1\.7s/);
+  });
+
+  it('separate flames are phase-offset, not pulsing in unison', () => {
+    const delays = [...lightingRules.matchAll(/\.candle:nth-child\(\d\)\.lit::after\s*\{\s*animation-delay:\s*(-?[\d.]+)s/g)];
+    expect(delays.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(delays.map((d) => d[1])).size).toBe(delays.length);
+  });
+
+  it("the room's light on that side is driven by how many candles burn", () => {
+    // Spend vigor, a candle gutters out, the room gets measurably darker.
+    // Read straight off the rail with :has() — no JS, no prop plumbing
+    // through BattleScreen.tsx, which this lane does not own.
+    expect(f).toMatch(/\.battlefield:has\(\.vigor-candles \.candle\.lit\)\s*\{[^}]*--vigor-lume/);
+    expect(f).toMatch(/nth-child\(3\)\.lit\)\s*\{[^}]*--vigor-lume/);
+    expect(f).toMatch(/\.battlefield::after\s*\{[^}]*var\(--vigor-lume\)/);
+  });
+});
+
+describe('shadow is a cooler light, not an absence of light', () => {
+  it('declares a cool shade tint', () => {
+    expect(lightingRules).toMatch(/--lume-shade:\s*\d+ \d+ \d+/);
+  });
+
+  it('shaded surfaces are tinted with it rather than neutral black', () => {
+    // warm-vs-black reads flat; warm-vs-cool reads solid.
+    for (const sel of ['.floor-panel .map-frame::after', '.battle-stage .battlefield::before']) {
+      const rule = flat(lightingRules).match(new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`))?.[0] ?? '';
+      expect(rule, `no rule for ${sel}`).toBeTruthy();
+      expect(rule, `${sel} still shades with neutral black`).toContain('--lume-shade');
+    }
+  });
+
+  it('the war table is lit from the Lantern, not from a contradictory key', () => {
+    // The first pass grazed the frame from the top-left while the only
+    // visible light source on the screen sat in the bottom-right corner.
+    const rule = flat(lightingRules).match(/\.floor-panel \.map-frame::after\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(rule).toMatch(/radial-gradient\(ellipse[^)]*at 100% 100%, rgba\(var\(--lume-warm\)/);
   });
 });
 

@@ -25,12 +25,17 @@ export const DRILL_OPPONENT = {
   /** Bram has it on the inventory as an item, not an animal. */
   nickname: 'the Exhibit',
   /**
-   * Padded, not dangerous. A drill dummy has to SURVIVE the lesson: a level-1
-   * goober's 22 HP dies to one good opening turn and the recruit learns three
-   * of the seven things. 60 is roughly four turns of a starting deck, which is
-   * exactly the length of the beat list below.
+   * Padded, not dangerous.
+   *
+   * Kept deliberately LOW, because the article's health is not what paces this
+   * fight — `DRILL_HELD_LINE` and the floor in game.ts are. Simulating all four
+   * classes made the reason plain: at a pool big enough to stop a Thief ending
+   * the drill in two turns, a Bard needed seventeen to twenty-three, and a
+   * twenty-turn tutorial is its own kind of failure. So the pool is small
+   * enough that the slowest deck gets through it briskly, and the floor stops
+   * the fastest deck from outrunning the lesson.
    */
-  hp: 60,
+  hp: 55,
   /**
    * And it must not hurt. Its attack stat is floored (deriveStats clamps to 1),
    * so the Splat it throws is a number the recruit can watch land on their
@@ -201,6 +206,18 @@ export const DRILL_HALT_LINES = [
   'Halt. Hands down. That would have been the end of you, and on watch ground I do not permit endings.',
   'You are restored and nothing is entered against your name. Past the gate there is no captain calling halt. That is the entire difference between the yard and the dark, and it is a larger difference than it sounds.',
 ];
+
+/**
+ * Bram, when a fast deck knocks the article down before the lesson is done.
+ *
+ * The drill's length is the LESSON's length, not a hit-point pool's: a Thief
+ * can empty any pool a Bard could finish in reasonable time. So the article is
+ * held on its feet until the last entry is on screen, and Bram says out loud
+ * that he is doing it — an enemy that will not die is only confusing if nobody
+ * admits it is deliberate.
+ */
+export const DRILL_HELD_LINE =
+  'The article is padded to the eyeline and the drill is not concluded. It stays up. I decide when it goes down, and I have entries left to make.';
 
 /** Bram, when a recruit tries to tame the drill dummy. */
 export const DRILL_TAME_LINE =

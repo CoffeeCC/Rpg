@@ -11,8 +11,11 @@
 //      — no spoils, no exp, no quest credit, no adopted monster. It is
 //      repeatable forever, which only stays safe if repeating is worthless.
 //
-// The beat ladder is tested as a pure function of facts, because that is what
-// it is: `drillBeat` never sees the UI and the UI never advances the beat.
+// The beat cursor is exercised by SIMULATING A FULL PLAYTHROUGH for all four
+// classes, not by asserting on hand-built state. That is deliberate: both of
+// the serious bugs in this feature — a landed tame ending the tutorial at beat
+// one, and the ladder silently skipping the block and intent lessons — were
+// invisible when reading the code and obvious the moment it was played.
 // =========================================================================
 import { describe, expect, it } from 'vitest';
 import { Character } from '../entities/Character';
@@ -37,7 +40,7 @@ import {
   drillBeatAt,
 } from '../data/drill';
 import { CONSUMABLES } from '../data/items';
-import { getCard } from '../data/cards';
+import { TAME_CARD_ID, getCard } from '../data/cards';
 import { SPECIES } from '../data/species';
 
 function townState(): GameState {
@@ -53,17 +56,56 @@ function startDrill(): GameState {
 
 function facts(over: Partial<DrillState> = {}): DrillState {
   return {
+    beat: 0,
+    beatTurn: 0,
     cardsPlayed: 0,
     turnsTaken: 0,
     aimed: false,
     spentOut: false,
     guarded: false,
-    aimedLate: false,
     sawStatus: false,
     halted: false,
     outcome: 'running',
     ...over,
   };
+}
+
+/**
+ * Play the drill through the way a determined recruit would: spend everything
+ * affordable each turn, aim at the article, end the turn, repeat.
+ *
+ * This is the harness the two most valuable findings in this file came out of
+ * — that a landed tame used to end the tutorial at beat one, and that the beat
+ * ladder used to skip the block and intent lessons outright.
+ */
+function playThrough(cls: 'Warrior' | 'Mage' | 'Thief' | 'Bard') {
+  const s0 = initialGameState();
+  s0.player = new Character('Recruit', 'Human', cls);
+  s0.screen = 'questBoard';
+  let s: GameState = gameReducer(s0, { type: 'START_DRILL' });
+  const beatsSeen = new Set<number>();
+  let turns = 0;
+  while (s.screen === 'battle' && turns < 60) {
+    if (s.drill) beatsSeen.add(drillBeat(s.drill));
+    for (let guard = 0; guard < 12 && s.screen === 'battle'; guard++) {
+      const b = s.battle!;
+      const idx = b.hand.findIndex((i) => (getCard(i.cardId)?.cost ?? 99) <= b.energy);
+      if (idx < 0) break;
+      const card = getCard(b.hand[idx].cardId)!;
+      const foe = b.enemies.find((e) => e.isAlive());
+      s = gameReducer(s, {
+        type: 'PLAY_CARD',
+        handIndex: idx,
+        targetUid: card.target === 'enemy' ? foe?.uid : undefined,
+      });
+      if (s.drill) beatsSeen.add(drillBeat(s.drill));
+    }
+    if (s.screen !== 'battle') break;
+    s = gameReducer(s, { type: 'END_TURN' });
+    turns++;
+    if (s.drill) beatsSeen.add(drillBeat(s.drill));
+  }
+  return { state: s, beatsSeen, turns };
 }
 
 // ---------------------------------------------------------------------------
@@ -144,55 +186,56 @@ describe("drill voice — Bram's register", () => {
   });
 });
 
-describe('drillBeat — the ladder is a pure function of what was done', () => {
+describe('the beat cursor', () => {
   it('opens on vigor and targeting', () => {
     expect(drillBeat(facts())).toBe(0);
   });
 
-  it('advances as the recruit does each thing', () => {
-    expect(drillBeat(facts({ aimed: true }))).toBe(1);
-    expect(drillBeat(facts({ aimed: true, spentOut: true }))).toBe(2);
-    expect(drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 1 }))).toBe(3);
-    expect(drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 2 }))).toBe(4);
-    expect(drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 2, guarded: true }))).toBe(5);
-    expect(drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 2, guarded: true, aimedLate: true }))).toBe(6);
-  });
-
-  // The regression this ladder was rewritten for. Caught by playing it, not
-  // by reading it: a recruit who ends a turn with vigor left used to sit on
-  // beat 1 forever and never be taught intents, block or the loss condition.
-  it('cannot deadlock on an optional action', () => {
-    const stingy = facts({ aimed: true, spentOut: false, turnsTaken: 1 });
-    expect(drillBeat(stingy)).toBeGreaterThan(1);
-  });
-
-  it('cannot deadlock on a card the shuffle never dealt', () => {
-    // Four turns without drawing a guard must not stop the drill.
-    const noGuard = facts({ aimed: true, spentOut: true, turnsTaken: 4, guarded: false });
-    expect(drillBeat(noGuard)).toBeGreaterThan(4);
-    const noSecondAim = facts({ aimed: true, spentOut: true, turnsTaken: 5, guarded: false, aimedLate: false });
-    expect(drillBeat(noSecondAim)).toBe(6);
-  });
-
-  it('is monotonic — the rail never walks backwards as turns pass', () => {
-    let prev = -1;
-    for (let t = 0; t <= 10; t++) {
-      const beat = drillBeat(facts({ aimed: true, turnsTaken: t }));
-      expect(beat).toBeGreaterThanOrEqual(prev);
-      prev = beat;
-    }
-  });
-
-  it('never runs off the end of the beat list', () => {
-    const last = drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 99, guarded: true, aimedLate: true }));
-    expect(last).toBe(DRILL_BEATS.length - 1);
+  it('never runs off either end of the beat list', () => {
+    expect(drillBeat(facts({ beat: 99 }))).toBe(DRILL_BEATS.length - 1);
+    expect(drillBeat(facts({ beat: -3 }))).toBe(0);
     expect(drillBeatAt(999)).toBe(DRILL_BEATS[DRILL_BEATS.length - 1]);
     expect(drillBeatAt(-5)).toBe(DRILL_BEATS[0]);
   });
 
-  it('does not reach the guard lesson before the intent has been shown', () => {
-    // Reading the telegraph must come before being told to answer it.
-    expect(drillBeat(facts({ aimed: true, spentOut: true, turnsTaken: 1 }))).toBeLessThan(4);
+  // THE REGRESSION THIS DESIGN EXISTS FOR. The cursor replaced a ladder that
+  // recomputed the live beat from a bag of facts, which meant a lesson was
+  // ticked off the instant its condition happened to be true — so a recruit
+  // who played a guard card early was never shown the block lesson at all.
+  // Simulation across all four classes reported beats [0,1,2,3,6]: the two
+  // most important readings in the fight, silently skipped.
+  it('shows every single lesson, for every class, every time', () => {
+    for (const cls of ['Warrior', 'Mage', 'Thief', 'Bard'] as const) {
+      for (let sample = 0; sample < 4; sample++) {
+        const { beatsSeen, state } = playThrough(cls);
+        expect([...beatsSeen].sort((a, b) => a - b), `${cls} sample ${sample}`).toEqual([0, 1, 2, 3, 4, 5, 6]);
+        expect(state.drill!.outcome, `${cls} sample ${sample}`).toBe('passed');
+      }
+    }
+  });
+
+  // The other half of the same problem: the drill must not become a slog for
+  // a low-damage deck. A Bard needed 17-23 turns against a pool big enough to
+  // stop a Thief skipping lessons, which is why pacing moved off hit points.
+  it('runs in a sane number of turns for every class', () => {
+    for (const cls of ['Warrior', 'Mage', 'Thief', 'Bard'] as const) {
+      for (let sample = 0; sample < 4; sample++) {
+        const { turns } = playThrough(cls);
+        expect(turns, `${cls} took ${turns} turns`).toBeGreaterThanOrEqual(3);
+        expect(turns, `${cls} took ${turns} turns`).toBeLessThanOrEqual(12);
+      }
+    }
+  });
+
+  it('holds the article up until the last entry, then lets it fall', () => {
+    // A fast deck reaching zero early must not end the lesson.
+    const s = startDrill();
+    s.drill!.beat = 0;
+    s.battle!.enemies[0].hp = 0;
+    const held = gameReducer(s, { type: 'END_TURN' });
+    expect(held.screen).toBe('battle');
+    expect(held.battle!.enemies[0].hp).toBe(1);
+    expect(held.log.join(' ')).toContain('It stays up');
   });
 });
 
@@ -216,6 +259,22 @@ describe('starting the drill', () => {
     expect(s.battle!.hand.length).toBeGreaterThan(0);
     expect(s.battle!.energy).toBeGreaterThan(0);
     for (const inst of s.battle!.hand) expect(getCard(inst.cardId)).toBeTruthy();
+  });
+
+  // A landed tame ENDS a fight. `buildDeck` puts Reach Out in every deck, and
+  // the roll against a docile level-1 goober lands often — so before this,
+  // a recruit could finish the tutorial at beat one, taught nothing, and be
+  // paid for it. Found by simulation, not by reading the code.
+  it('issues no taming card in the yard, and keeps the hand full anyway', () => {
+    for (const cls of ['Warrior', 'Mage', 'Thief', 'Bard'] as const) {
+      const s0 = initialGameState();
+      s0.player = new Character('Recruit', 'Human', cls);
+      s0.screen = 'questBoard';
+      const s = gameReducer(s0, { type: 'START_DRILL' });
+      const piles = [...s.battle!.hand, ...s.battle!.drawPile, ...s.battle!.discardPile];
+      expect(piles.some((c) => c.cardId === TAME_CARD_ID), cls).toBe(false);
+      expect(s.battle!.hand.length, cls).toBeGreaterThanOrEqual(4);
+    }
   });
 
   it('is not a gate fight: no gate, no boss, no expedition', () => {
@@ -297,7 +356,9 @@ describe('the drill is not lethal', () => {
 
 describe('the drill does not leak into the run', () => {
   function winDrill(s: GameState): GameState {
-    // Kill the article outright, then let the reducer notice.
+    // Put the cursor on the last entry (otherwise the article is held up),
+    // kill it outright, then let the reducer notice.
+    s.drill!.beat = DRILL_BEATS.length - 1;
     s.battle!.enemies[0].hp = 0;
     return gameReducer(s, { type: 'END_TURN' });
   }

@@ -1,4 +1,5 @@
 import type {
+  CardInstance,
   ChronicleState,
   ClassName,
   EventDef,
@@ -62,7 +63,9 @@ import { setCardIds, setStandings } from './data/sets';
 import { TAME_LINES, BREEDING_COVENANT_LINES } from './data/covenantLore';
 import { bindingById, depthByLevel, runModifiers, type RunModifiers } from './data/bindings';
 import {
+  DRILL_BEATS,
   DRILL_HALT_LINES,
+  DRILL_HELD_LINE,
   DRILL_LEAVE_LINE,
   DRILL_NUDGE,
   DRILL_OPPONENT,
@@ -117,26 +120,34 @@ export interface PendingEvent {
   eventId: string;
 }
 
-/**
- * Bram's recruit drill, while it is running. See data/drill.ts for the lesson.
- *
- * The live beat is DERIVED from these counters rather than stored as "the UI
- * is on step 4", so it cannot desync from the fight the player is actually in:
- * every field here is a fact about what the recruit has done, and `drillBeat`
- * below is the only thing that turns facts into a lesson. Add a beat by adding
- * a fact and a clause, never by incrementing a cursor from a component.
- */
+/** Bram's recruit drill, while it is running. See data/drill.ts for the lesson. */
 export interface DrillState {
+  /**
+   * The live lesson, as a MONOTONIC CURSOR rather than something recomputed
+   * from a bag of facts.
+   *
+   * It WAS the bag of facts, and simulating the drill across all four classes
+   * is what showed that to be wrong: a lesson counted as taught the instant its
+   * condition happened to be true, so a recruit who played a guard card in
+   * turn one out of curiosity was never shown the block lesson at all. The runs
+   * came out as beats [0,1,2,3,6] — the two most important readings in the
+   * fight, block and the intent telegraph, silently skipped.
+   *
+   * A cursor fixes that by construction: a beat advances only on an action
+   * taken WHILE IT IS SHOWING, so every lesson is put in front of the player at
+   * least once before anything can satisfy it.
+   */
+  beat: number;
+  /** `turnsTaken` when the current beat began — drives the patience clauses. */
+  beatTurn: number;
   cardsPlayed: number;
   turnsTaken: number;
-  /** An enemy-targeted card has resolved. */
+  /** An enemy-targeted card has resolved at some point. */
   aimed: boolean;
   /** Vigor has been run to nothing at least once. */
   spentOut: boolean;
   /** Block has been raised at least once. */
   guarded: boolean;
-  /** A second aimed card, after the guard lesson. */
-  aimedLate: boolean;
   /** A status has landed on the recruit — unlocks the (optional) aside. */
   sawStatus: boolean;
   /** Bram called a halt on what would have been a fall. */
@@ -146,50 +157,72 @@ export interface DrillState {
 
 function freshDrill(): DrillState {
   return {
+    beat: 0,
+    beatTurn: 0,
     cardsPlayed: 0,
     turnsTaken: 0,
     aimed: false,
     spentOut: false,
     guarded: false,
-    aimedLate: false,
     sawStatus: false,
     halted: false,
     outcome: 'running',
   };
 }
 
-/**
- * Which lesson is live, read off what the recruit has actually done.
- *
- * Each entry is "this lesson has landed". The live beat is the first one that
- * has not. Recomputed from scratch on every action and monotonic in every
- * input, so the rail can never jump backwards.
- *
- * THE PATIENCE CLAUSES ARE NOT DECORATION. Playing this in a browser turned up
- * the failure they exist to prevent: a recruit who ended their turn with vigor
- * still on the table sat on "spend the rest" forever, and because the ladder
- * was strictly sequential the drill never went on to teach end-turn, intents,
- * block or the loss condition at all. A tutorial beat that requires an
- * optional action is a trap, and one that requires a card the shuffle may not
- * have dealt (a recruit can go four turns without drawing a guard) is a worse
- * one. So every lesson after the first also comes off after enough turns have
- * passed: Bram says the thing, the player does it or does not, and the drill
- * keeps moving either way.
- *
- * Beat 0 is the deliberate exception. There is no drill without a first card,
- * and its ask says exactly what to do.
- */
+/** The live lesson. A plain read — the cursor is moved by `advanceBeat`. */
 export function drillBeat(d: DrillState): number {
-  const landed = [
-    d.aimed, //                                  0 vigor, cost, targeting
-    d.spentOut || d.turnsTaken >= 1, //          1 a turn is more than one card
-    d.turnsTaken >= 1, //                        2 handing the turn back
-    d.turnsTaken >= 2, //                        3 reading the intent it declared
-    d.guarded || d.turnsTaken >= 4, //           4 block, and that block is spent
-    d.aimedLate || d.turnsTaken >= 5, //         5 the weakness sigil
-  ];
-  const next = landed.findIndex((done) => !done);
-  return next === -1 ? 6 : next; //              6 the loss condition
+  return Math.max(0, Math.min(DRILL_BEATS.length - 1, d.beat));
+}
+
+/**
+ * Move the cursor on, if the action that just happened satisfies the lesson
+ * currently on screen. One beat per action, and only ever the beat being shown.
+ *
+ * The `waited` clauses are the anti-deadlock guarantee and they are not
+ * decoration — playing this in a browser turned up a recruit who ended their
+ * turn with vigor still on the table and sat on "spend the rest" forever,
+ * never being taught end-turn, intents, block or the loss condition at all. A
+ * tutorial beat that requires an optional action is a trap; one that requires a
+ * card the shuffle may not have dealt is a worse one. So every lesson also
+ * comes off after a turn or two regardless: Bram says the thing, the recruit
+ * acts on it or does not, and the drill keeps moving.
+ */
+function advanceBeat(d: DrillState, ev: { aimedAtFoe?: boolean; endedTurn?: boolean; blockRaised?: boolean }): void {
+  const waited = d.turnsTaken - d.beatTurn;
+  const step = () => {
+    d.beat += 1;
+    d.beatTurn = d.turnsTaken;
+  };
+  switch (DRILL_BEATS[d.beat]?.id) {
+    case 'strike':
+      // No escape clause, deliberately. There is no drill without a first
+      // card, and the ask says exactly what to do.
+      if (ev.aimedAtFoe) step();
+      break;
+    case 'spend':
+      // Spending out satisfies it — but so does simply ending the turn,
+      // because holding vigor back is a legitimate choice, not a mistake, and
+      // it must never strand anyone.
+      if (d.spentOut || ev.endedTurn) step();
+      break;
+    case 'endTurn':
+      if (ev.endedTurn) step();
+      break;
+    case 'intent':
+      // Advances on the NEXT end-turn, so the telegraph has been on screen for
+      // a full turn of the recruit's own before we stop explaining it.
+      if (ev.endedTurn) step();
+      break;
+    case 'guard':
+      if (ev.blockRaised || waited >= 2) step();
+      break;
+    case 'weakness':
+      if (ev.aimedAtFoe || waited >= 2) step();
+      break;
+    case 'loss':
+      break; // the last page; finishing the article is what ends the drill
+  }
 }
 
 /** True while a drill battle is the fight on screen. */
@@ -1067,11 +1100,31 @@ function beginDrill(state: GameState, lines: string[]): void {
   // hero's own cards, and a beast in the line would add a second HP bar, a
   // second set of cards and the two-active limit to a lesson that is already
   // seven beats long. It also means nothing the player owns can be hurt here.
-  state.battle = startBattle(state.player, [], [exhibit], {
+  const battle = startBattle(state.player, [], [exhibit], {
     isBossFight: false,
     gateId: null,
     expeditionExtras: [],
   });
+
+  // Take the taming card out of the yard.
+  //
+  // `buildDeck` puts Reach Out in every deck unconditionally, and simulating
+  // the drill across all four classes showed what that does here: the tame
+  // roll against a docile level-1 goober lands often, and a landed tame ENDS
+  // THE FIGHT — so a recruit could finish the tutorial at beat one, having
+  // been taught nothing, and be paid for it. Removing it is also the correct
+  // fiction: Bram would not issue a recruit a taming card in a yard containing
+  // watch property. Cards are pulled from the draw pile and any that were
+  // dealt are swapped for replacements, so the opening hand keeps its size.
+  const isTame = (c: CardInstance) => c.cardId === TAME_CARD_ID;
+  battle.drawPile = battle.drawPile.filter((c) => !isTame(c));
+  const dealtTames = battle.hand.filter(isTame).length;
+  battle.hand = battle.hand.filter((c) => !isTame(c));
+  for (let i = 0; i < dealtTames && battle.drawPile.length > 0; i++) {
+    battle.hand.push(battle.drawPile.pop()!);
+  }
+
+  state.battle = battle;
   state.drill = freshDrill();
   state.screen = 'battle';
   lines.push('Watch Captain Bram opens the ledger to a clean page. "Drill begins."');
@@ -1092,11 +1145,12 @@ function noteDrillProgress(state: GameState, ev: { played?: boolean; aimedAtFoe?
   const b = state.battle;
   if (!d || !b || d.outcome !== 'running') return;
   if (ev.played) d.cardsPlayed += 1;
-  if (ev.aimedAtFoe) {
-    if (d.guarded) d.aimedLate = true;
-    d.aimed = true;
-  }
+  if (ev.aimedAtFoe) d.aimed = true;
   if (ev.endedTurn) d.turnsTaken += 1;
+  // Block raised THIS action is what teaches the guard lesson — the standing
+  // fact "has block right now" would also be true of block raised two turns
+  // ago and would tick the lesson off without it ever being read.
+  const blockRaised = b.heroBlock > 0 && !d.guarded;
   if (b.heroBlock > 0) d.guarded = true;
   if ((state.player?.statusEffects.length ?? 0) > 0) d.sawStatus = true;
   // "Out of vigor" also covers the honest case where the candles are lit but
@@ -1104,6 +1158,7 @@ function noteDrillProgress(state: GameState, ev: { played?: boolean; aimedAtFoe?
   // spending money they cannot spend.
   const affordable = b.hand.some((inst) => (getCard(inst.cardId)?.cost ?? 99) <= b.energy);
   if (b.energy <= 0 || !affordable) d.spentOut = true;
+  advanceBeat(d, { aimedAtFoe: ev.aimedAtFoe, endedTurn: ev.endedTurn, blockRaised });
 }
 
 /**
@@ -1143,6 +1198,24 @@ function endDrill(state: GameState, outcome: DrillState['outcome'], lines: strin
       `The watch pays its recruits: +${DRILL_REWARD.gold}g, and ${DRILL_REWARD.consumable.count}× ${DRILL_REWARD.consumable.name} from the guardhouse stores.`,
     );
   }
+}
+
+/**
+ * Hold the article up until the lesson is finished.
+ *
+ * Returns true if the "victory" that just happened was premature and has been
+ * refused. The drill's length must be the LESSON's length: simulation showed a
+ * Thief emptying any pool a Bard could clear in a tolerable number of turns, so
+ * pacing cannot live in the hit points. It lives here, and Bram announces it.
+ */
+function holdArticleUp(state: GameState, lines: string[]): boolean {
+  const d = state.drill;
+  const foe = state.battle?.enemies[0];
+  if (!d || !foe || d.beat >= DRILL_BEATS.length - 1) return false;
+  foe.hp = 1;
+  // Said once, not every time a card lands on a dummy that will not fall.
+  if (!lines.includes(DRILL_HELD_LINE) && !state.log.includes(DRILL_HELD_LINE)) lines.push(DRILL_HELD_LINE);
+  return true;
 }
 
 /**
@@ -1850,11 +1923,12 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
         const aimedAtFoe = !!action.targetUid && state.battle.enemies.some((e) => e.uid === action.targetUid);
         noteDrillProgress(next, { played: true, aimedAtFoe });
         if (result.outcome === 'tamed') {
-          // Reaching out at the article is the right instinct in the wrong
-          // yard. It is neither punished nor rewarded with a free monster.
+          // Defence in depth: `beginDrill` pulls Reach Out from the yard's
+          // deck, so this should be unreachable. If some future card ever
+          // tames, the article is still not handed over as a free monster.
           lines.push(DRILL_TAME_LINE);
           endDrill(next, 'passed', lines);
-        } else if (result.outcome === 'victory') {
+        } else if (result.outcome === 'victory' && !holdArticleUp(next, lines)) {
           endDrill(next, 'passed', lines);
         }
         next.log = pushLog(state.log, ...lines);
@@ -1885,7 +1959,7 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
         noteDrillProgress(next, { endedTurn: true });
         // `handleDefeat` is unreachable from a drill. This is the guarantee.
         if (result.outcome === 'defeat') haltDrill(next, lines);
-        else if (result.outcome === 'victory') endDrill(next, 'passed', lines);
+        else if (result.outcome === 'victory' && !holdArticleUp(next, lines)) endDrill(next, 'passed', lines);
         next.log = pushLog(state.log, ...lines);
         return next;
       }

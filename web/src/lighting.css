@@ -128,14 +128,6 @@
   61% { transform: translate(-50%, -50%) scale(0.97); }
   100% { transform: translate(-50%, -50%) scale(1); }
 }
-/* room-scale answer to the flame, for the big blended fields */
-@keyframes lumeRoomBreathe {
-  0% { opacity: 0.72; }
-  21% { opacity: 1; }
-  44% { opacity: 0.8; }
-  67% { opacity: 0.96; }
-  100% { opacity: 0.72; }
-}
 
 /* =========================================================================
    1 · THE LANTERN'S HIT AREA — the bug
@@ -199,25 +191,40 @@
   pointer-events: none;
 }
 
-/* Gamepad/keyboard focus must survive all of the above. nav.css styles
-   :focus-visible under html[data-nav-input]; the Lantern is round, so a
-   rectangular outline reads badly on it — give it a ring that matches its
-   shape and sits ABOVE the glow. Kept high-contrast (near-white core) so it
-   is unmistakable against the warm aura. */
-.lantern-turn:focus-visible {
-  outline: none;
-}
-.lantern-turn:focus-visible::after {
+/* FOCUS. nav.css states the controller layer's absolute rule — while the last
+   input came from a pad or the keyboard, the focused element wears a ring, no
+   exceptions — and it deliberately does NOT use `:focus-visible`, because a
+   programmatic `element.focus()` (which is how every pad-driven focus move in
+   this game happens) frequently fails that heuristic. It styles plain `:focus`
+   under `html[data-nav-input='pad'|'key']`.
+
+   So this does NOT remove or override nav's outline. Suppressing it here on a
+   `:focus-visible` guess would mean the one screen element a controller player
+   most needs to find could quietly lose its cursor. nav's ring stays exactly
+   as it is, and the Lantern ADDS a response of its own that suits a light
+   source: it flares. Matching nav's selector convention (plain `:focus` under
+   the two cursor modes, plus `:focus-visible` for the mouse-mode keyboard
+   case) means the flare appears in every situation nav's ring does. */
+.lantern-turn:focus-visible::after,
+html[data-nav-input='pad'] .lantern-turn:focus::after,
+html[data-nav-input='key'] .lantern-turn:focus::after {
   content: '';
   position: absolute;
   left: 50%;
   top: 46%;
-  width: 122px;
-  height: 122px;
+  width: 116px;
+  height: 116px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  border: 3px solid #fff6d8;
-  box-shadow: 0 0 0 2px rgba(20, 12, 4, 0.9), 0 0 16px rgba(255, 230, 160, 0.9);
+  /* a bright rim on the flame's own colour, plus the flare it throws */
+  background: radial-gradient(
+    circle,
+    transparent 0 44%,
+    rgba(255, 246, 216, 0.5) 50%,
+    rgba(var(--lume-warm) / 0.34) 58%,
+    transparent 76%
+  );
+  box-shadow: 0 0 22px rgba(var(--lume-warm) / 0.55);
   pointer-events: none;
   z-index: 6;
 }
@@ -896,6 +903,9 @@
   .lantern-embers,
   .ember,
   .floor-layout::after,
+  .battle-stage .candle.lit::after,
+  .candle.lit .candle-flame,
+  .candle.out .candle-smoke,
   .map-grid .map-cell.player::before,
   .map-grid .map-cell.player .hero-ring::after,
   .map-grid .hero-ring,
@@ -913,11 +923,19 @@
   .lantern-bright .lantern-cast,
   .lantern-bright .lantern-img,
   .floor-layout::after,
+  .battle-stage .candle.lit::after,
+  .candle.lit .candle-flame,
   .map-grid .map-cell.player::before,
   .map-grid .map-cell.player .hero-ring::after,
   .map-grid .map-cell.reachable::before,
   .map-grid .map-cell.threat::after {
     opacity: 1 !important;
+  }
+  /* A snuffed candle must still go dark — vigor is readable game state, not
+     decoration, so this one is held at zero rather than at full. */
+  .battle-stage .candle.out::after,
+  .candle.out .candle-flame {
+    opacity: 0 !important;
   }
   .lantern-bright .lantern-glow::before,
   .lantern-bright .lantern-glow::after {
