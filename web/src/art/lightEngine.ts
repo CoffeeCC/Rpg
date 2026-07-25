@@ -193,10 +193,18 @@ const SHADOW_LENGTH = 190;
  * shadow gets cut N times and a point that can see part of the flame gets cut
  * fewer. The gradation falls out of the geometry for free.
  *
- * Per-sample alpha is chosen so N cuts leave ~2% light: (1-a)^N = 0.02.
+ * Per-sample alpha is chosen so N cuts leave `ambient`: (1-a)^N = ambient.
  * Budget per frame: one gradient fill + (N x facing edges) polygon fills on a
  * half-resolution canvas. No filters, no blend-mode read-back, no per-cell
  * anything.
+ *
+ * REACH CULLING is what makes this usable on a dungeon floor rather than only
+ * on a screenful of UI cards. A floor is ~250 cells and most of them are wall;
+ * handing all of them in would be ~250 boxes x 2 faces x 7 samples of polygon
+ * fill per frame, which is the one way to lose the frame budget here. A wall
+ * further from the flame than the light reaches cannot occlude anything that
+ * is lit, so it is dropped before any geometry is computed. What survives is
+ * the handful of walls actually around the hero.
  */
 export function renderLight(
   ctx: CanvasRenderingContext2D,
@@ -206,7 +214,9 @@ export function renderLight(
   occluders: Occluder[],
   timeSeconds: number,
   animate: boolean,
-): { flicker: number; lean: number; bob: number } {
+  /** Light left in full shadow. Lower is a harsher, more enclosed place. */
+  ambient: number = AMBIENT_FLOOR,
+): { flicker: number; lean: number; bob: number; casters: number } {
   ctx.clearRect(0, 0, width, height);
 
   // --- flicker ---------------------------------------------------------
@@ -248,13 +258,22 @@ export function renderLight(
   // painted lantern bobbing on its own CSS animation while its pool guttered
   // on a different clock would be two lights pretending to be one — the very
   // disagreement this engine exists to remove.
-  const out = { flicker, lean, bob };
+  const out = { flicker, lean, bob, casters: 0 };
 
-  if (!occluders.length) return out;
+  // Only what the light can actually reach. Distance to the box, not to its
+  // centre, so a long wall running past the hero is not dropped because its
+  // midpoint happens to be far away.
+  const near = occluders.filter((o) => {
+    const dx = Math.max(o.x - src.x, 0, src.x - (o.x + o.w));
+    const dy = Math.max(o.y - src.y, 0, src.y - (o.y + o.h));
+    return dx * dx + dy * dy <= reach * reach;
+  });
+  out.casters = near.length;
+  if (!near.length) return out;
 
   // --- shadows ----------------------------------------------------------
   // N cuts must leave AMBIENT_FLOOR, not zero: (1-a)^N = floor.
-  const cutAlpha = 1 - Math.pow(AMBIENT_FLOOR, 1 / FLAME_SAMPLES);
+  const cutAlpha = 1 - Math.pow(Math.max(0.001, ambient), 1 / FLAME_SAMPLES);
   ctx.globalCompositeOperation = 'destination-out';
 
   for (let s = 0; s < FLAME_SAMPLES; s++) {
@@ -264,7 +283,7 @@ export function renderLight(
     const spread = (s / (FLAME_SAMPLES - 1) - 0.5) * light.size;
     const sample: Vec2 = { x: src.x + spread, y: src.y + spread * 0.3 };
     ctx.globalAlpha = cutAlpha;
-    for (const o of occluders) {
+    for (const o of near) {
       for (const [a, bEdge] of facingEdges(o, sample)) {
         const quad = shadowQuad(a, bEdge, sample, SHADOW_LENGTH);
         // The shadow FADES along its own length rather than ending on a hard

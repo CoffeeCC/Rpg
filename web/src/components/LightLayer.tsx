@@ -32,6 +32,8 @@ export function LightLayer({
   color = [255, 186, 92] as [number, number, number],
   flameSize = 26,
   lamp = false,
+  ambient,
+  version,
 }: {
   /** Elements that stop light. Measured live. */
   occluderSelector: string;
@@ -43,6 +45,19 @@ export function LightLayer({
   flameSize?: number;
   /** Render the visible lantern at the source, guttering on the same noise. */
   lamp?: boolean;
+  /** Light left in full shadow. Lower = a harsher, more enclosed place. */
+  ambient?: number;
+  /**
+   * Bump to force a re-measure.
+   *
+   * On the map the light SOURCE moves — the hero walks, and `.map-cell.player`
+   * becomes a different element. That is a class change, not a childList
+   * change, so the MutationObserver below never sees it; without this the
+   * lantern would stay parked where the hero entered the floor. Feeding the
+   * hero's position in as a version string is far cheaper than observing
+   * attributes across ~250 map cells.
+   */
+  version?: string | number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -113,6 +128,7 @@ export function LightLayer({
         occludersRef.current,
         (now - start) / 1000,
         !reduced.matches,
+        ambient,
       );
       // ONE custom-property write, on ONE element, per frame. The lamp is a
       // child of this host, so it inherits without any element of its own
@@ -152,7 +168,7 @@ export function LightLayer({
       document.removeEventListener('visibilitychange', onVisibility);
       reduced.removeEventListener('change', onVisibility);
     };
-  }, [occluderSelector, anchorSelector, reach, intensity, color, flameSize, lamp]);
+  }, [occluderSelector, anchorSelector, reach, intensity, color, flameSize, lamp, ambient, version]);
 
   return (
     <div className="light-layer" ref={hostRef} aria-hidden="true">

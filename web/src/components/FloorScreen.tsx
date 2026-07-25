@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { LightLayer } from './LightLayer';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
@@ -583,6 +584,25 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               </div>
             ))}
           </div>
+          {/* The Last Lantern, computed. The hero carries the only light down
+              here, so this is the screen the engine was actually worth writing
+              for: the walls around them are the occluders, and the shadows are
+              cast from the real grid rather than painted per cell.
+
+              `version` is the hero's position — the source MOVES on this
+              screen, which is the one thing the layer cannot observe for
+              itself (a walking hero is a class change on a different cell, not
+              a DOM mutation). No `lamp`: the hero token IS the lantern here,
+              and §5 of lighting.css already draws it. */}
+          <LightLayer
+            occluderSelector=".map-grid .map-cell.wall"
+            anchorSelector=".map-grid .map-cell.player"
+            reach={430}
+            intensity={0.72}
+            flameSize={22}
+            ambient={0.18}
+            version={`${exp.gateId}:${exp.floorIndex}:${exp.x},${exp.y}`}
+          />
         </div>
 
         {/* v18 #10: legend chips dock along the map viewport's BOTTOM edge. */}
