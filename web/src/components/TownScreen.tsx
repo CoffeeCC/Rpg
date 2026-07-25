@@ -185,6 +185,22 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
             </div>
           </div>
           <div className="town-dock-group">
+            <span className="town-dock-caption">Contests</span>
+            <div className="town-dock-btns">
+              <button
+                className="btn town-dock-btn"
+                onClick={() => dispatch({ type: 'GOTO', screen: 'multiplayer' })}
+                title="Duel another tamer. Nothing is wagered but pride."
+              >
+                <Icon name="duel" emoji="⚔️" size={26} />
+                <span>
+                  The Duelling Ring
+                  {state.duelRecord ? ` (${state.duelRecord.wins}–${state.duelRecord.losses})` : ''}
+                </span>
+              </button>
+            </div>
+          </div>
+          <div className="town-dock-group">
             <span className="town-dock-caption">Your Effects</span>
             <div className="town-dock-btns">
               <button className="btn town-dock-btn" onClick={() => dispatch({ type: 'GOTO', screen: 'characterSheet' })}>

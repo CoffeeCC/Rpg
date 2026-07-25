@@ -19,7 +19,7 @@ import {
   type FloorUnit,
 } from '../engine/systems/floors';
 import { MonsterImage } from '../art/MonsterImage';
-import { TileFill, pickTileProp } from '../art/tileArt';
+import { TileFill, pickTileProp, TilePropArt } from '../art/tileArt';
 import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
@@ -42,27 +42,41 @@ const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = 
   [TILE.SECRET]: { emoji: '', icon: '', cls: 'floor-tile' },
 };
 
+// v19 #6: intrinsic art sizes are the war-table sizes now (the old 34-44px
+// numbers were sized for 48px cells). CSS in floor.css §1 still has the final
+// word — every one of these rides calc(var(--cell) * n) — but the attributes
+// have to be in the same league so the element boxes are sane pre-layout and
+// so MonsterImage picks its PAINTED branch (it falls back to the procedural
+// silhouette under 40px).
+const ART = { unit: 72, player: 76, object: 64, prop: 64, crown: 26 } as const;
+
 function UnitToken({ unit }: { unit: FloorUnit }) {
   if (unit.kind === 'merchant') {
     return (
       <span className="unit-token merchant" title={unit.label}>
-        {SPRITE_ART.merchant ? <img src={SPRITE_ART.merchant} width={40} height={40} className="ui-icon" alt="" /> : '🏮'}
+        {SPRITE_ART.merchant ? (
+          <img src={SPRITE_ART.merchant} width={ART.unit} height={ART.unit} className="ui-icon" alt="" />
+        ) : (
+          '🏮'
+        )}
       </span>
     );
   }
   if (unit.kind === 'tamer') {
     return (
       <span className="unit-token tamer" title={`${unit.label} (Lv${unit.level})`}>
-        {SPRITE_ART.tamer ? <img src={SPRITE_ART.tamer} width={40} height={40} className="ui-icon" alt="" /> : '⚔️'}
+        {SPRITE_ART.tamer ? <img src={SPRITE_ART.tamer} width={ART.unit} height={ART.unit} className="ui-icon" alt="" /> : '⚔️'}
       </span>
     );
   }
   return (
     <span className={`unit-token ${unit.kind}`} title={`${unit.label} (Lv${unit.level})`}>
-      {unit.speciesId && <MonsterImage speciesId={unit.speciesId} size={44} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />}
+      {unit.speciesId && (
+        <MonsterImage speciesId={unit.speciesId} size={ART.unit} rarity={unit.kind === 'miniboss' ? 'Rare' : 'Common'} />
+      )}
       {unit.kind === 'miniboss' && (
         <span className="unit-crown">
-          <Icon name="crown" emoji="👑" size={20} />
+          <Icon name="crown" emoji="👑" size={ART.crown} />
         </span>
       )}
     </span>
@@ -271,10 +285,12 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const tex = TILE_TEXTURES[exp.gateId];
   const cols = Math.max(...floor.grid.map((r) => r.length));
   const rows = floor.grid.length;
-  // v17: the cell size now lives in CSS as --cell (64px desktop war-table,
-  // 48px base, 24px landscape phones — see floor.css). The wall sampling math
-  // rides the same token via calc(), so the texture window stays pixel-aligned
-  // with the tiles at every breakpoint instead of assuming 48px.
+  // v17: the cell size lives in CSS as --cell — v19 #6 raised the war-table
+  // sizes (92px roomy desktop / 84px desktop, 48px base, 24px landscape
+  // phones — see floor.css §1). The wall sampling math rides that same token
+  // via calc(), so --cell stays the SINGLE source of truth and the texture
+  // window stays pixel-aligned with the tiles at every breakpoint. Never
+  // hard-code a tile size here again.
   const wallStyle = (x: number, y: number) =>
     tex
       ? {
@@ -384,11 +400,15 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   if (x === exp.x && y === exp.y) {
                     return (
                       <span key={x} ref={playerCellRef} className="map-cell player hero-here">
-                        {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                        {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={96} />}
                         {fogFringe(x, y)}
                         <span className="hero-ring" aria-hidden="true" />
                         <span className="cell-top">
-                          {SPRITE_ART.player ? <img src={SPRITE_ART.player} width={42} height={42} className="ui-icon" alt="" /> : '🧝'}
+                          {SPRITE_ART.player ? (
+                            <img src={SPRITE_ART.player} width={ART.player} height={ART.player} className="ui-icon" alt="" />
+                          ) : (
+                            '🧝'
+                          )}
                         </span>
                       </span>
                     );
@@ -410,7 +430,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                         title={engage ? `${unit.label} — click to engage` : unit.label}
                         onClick={() => handleTileTap(x, y)}
                       >
-                        {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                        {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={96} />}
                         {fogFringe(x, y)}
                         <UnitToken unit={unit} />
                       </span>
@@ -430,10 +450,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   if (tile === TILE.SECRET) {
                     return (
                       <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
-                        {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={48} />}
+                        {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={96} />}
                         {fogFringe(x, y)}
                         <span className="cell-top">
-                          <Icon name="secret" emoji="✨" size={34} />
+                          <Icon name="secret" emoji="✨" size={ART.object} />
                         </span>
                       </span>
                     );
@@ -454,16 +474,19 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       title={danger ? 'A hostile can reach this tile next turn' : isReachable ? 'Click to move here' : undefined}
                       onClick={() => handleTileTap(x, y)}
                     >
-                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={48} />}
+                      {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={96} />}
                       {fogFringe(x, y)}
                       {view.emoji && (
                         <span className="cell-top">
-                          <Icon name={view.icon} emoji={view.emoji} size={34} />
+                          <Icon name={view.icon} emoji={view.emoji} size={ART.object} />
                         </span>
                       )}
+                      {/* v19 #5: decorative ground clutter only — TilePropArt
+                          owns the whole rotation, and nothing in it may share a
+                          silhouette with an interactive tile above. */}
                       {prop && (
-                        <span className="cell-top tile-prop">
-                          <Icon name={prop} emoji="" size={44} />
+                        <span className="cell-top tile-prop" aria-hidden="true">
+                          <TilePropArt prop={prop} size={ART.prop} />
                         </span>
                       )}
                     </span>

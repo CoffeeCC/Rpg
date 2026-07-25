@@ -69,6 +69,7 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
   const [tilt, setTilt] = useState<{ x: number; y: number } | null>(null);
   const tiltable = card.rarity === 'rare';
   const nameText = `${card.name}${upgraded ? ' +' : ''}`;
+  const typeLine = `${TYPE_LABEL[card.type]}${sourceMonster ? ` · ${sourceMonster.nickname}` : ''}${card.exhaust ? ' · Exhaust' : ''}`;
   const { ref: nameRef, scale: nameFontScale } = useFitNameFontScale(nameText, width);
 
   function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
@@ -90,9 +91,16 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
       onMouseMove={handleMouseMove}
       onMouseLeave={() => setTilt(null)}
     >
-      <span className="card-cost">{card.cost}</span>
+      <span className="card-cost" title={`Costs ${card.cost} vigor`}>
+        {card.cost}
+      </span>
       <div className="card-name">
-        <span ref={nameRef} className="card-name-text" style={{ fontSize: `${(nameFontScale * NAME_BASE_FONT_REM).toFixed(3)}rem` }}>
+        <span
+          ref={nameRef}
+          className="card-name-text"
+          title={nameText}
+          style={{ fontSize: `${(nameFontScale * NAME_BASE_FONT_REM).toFixed(3)}rem` }}
+        >
           {nameText}
         </span>
       </div>
@@ -109,10 +117,12 @@ export function CardView({ card, hero, sourceMonster, width = 216, playable = tr
         </div>
         {(card.rarity === 'uncommon' || card.rarity === 'rare') && <div className="card-art-sheen" />}
       </div>
-      <div className="card-type-line">
-        {TYPE_LABEL[card.type]}
-        {sourceMonster ? ` · ${sourceMonster.nickname}` : ''}
-        {card.exhaust ? ' · Exhaust' : ''}
+      {/* The type line is one bar tall by design (battle.css keeps it nowrap +
+          ellipsis): a summoned card's source nickname can be long enough to
+          wrap it onto a second line, which used to steal height from the
+          rules-text plate below. The title carries the full line. */}
+      <div className="card-type-line" title={typeLine}>
+        {typeLine}
       </div>
       <div className="card-text-plate">
         <div className="card-body">

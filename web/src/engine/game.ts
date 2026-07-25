@@ -81,7 +81,9 @@ export type Screen =
   | 'equipment'
   | 'saveLoad'
   | 'victory'
-  | 'fallen';
+  | 'fallen'
+  /** v19: the duelling hall — Duel (vs AI) now, Versus (online) later. */
+  | 'multiplayer';
 
 export const MAX_ACTIVE_MONSTERS = 2;
 export const STABLE_CAP = 20;
@@ -152,6 +154,12 @@ export interface GameState {
   fallenSummary: { verses: number; level: number; orbs: number; beasts: number } | null;
   /** Transient FX from the last battle action — consumed by the UI, never saved. */
   lastFx: FxEvent[];
+  /**
+   * v19: duelling record. Optional so saves written before duels existed load
+   * untouched. The MATCH itself never lives here — a duel is owned by its
+   * DuelTransport (and, later, by the server), not by the single-player state.
+   */
+  duelRecord?: { wins: number; losses: number; draws: number };
   log: string[];
 }
 
@@ -195,6 +203,7 @@ export type GameAction =
   | { type: 'CLAIM_QUEST'; questId: string }
   | { type: 'UPGRADE_CARD'; cardId: string }
   | { type: 'LEGEND_SEEN' }
+  | { type: 'DUEL_RESULT'; result: 'win' | 'loss' | 'draw'; opponent: string }
   | { type: 'TALK'; npcId: string }
   | { type: 'LOAD_STATE'; state: GameState }
   | { type: 'RESTART' };
@@ -1552,6 +1561,23 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
 
     case 'LEGEND_SEEN':
       return { ...state, pendingLegend: null };
+
+    case 'DUEL_RESULT': {
+      // A duel is a wager of pride, not of beasts: nothing is healed, killed,
+      // levelled or looted here. The single-player state only keeps the tally.
+      if (!state.player || state.screen !== 'multiplayer') return state;
+      const record = { wins: 0, losses: 0, draws: 0, ...(state.duelRecord ?? {}) };
+      if (action.result === 'win') record.wins++;
+      else if (action.result === 'loss') record.losses++;
+      else record.draws++;
+      const line =
+        action.result === 'win'
+          ? `The ring goes to you. ${action.opponent} concedes the day.`
+          : action.result === 'loss'
+            ? `${action.opponent} takes the ring. Your beasts walk out with you, and that is the whole of what a duel costs.`
+            : `Neither ring stands. ${action.opponent} calls it even.`;
+      return { ...state, duelRecord: record, log: pushLog(state.log, line) };
+    }
 
     case 'LOAD_STATE':
       return action.state;

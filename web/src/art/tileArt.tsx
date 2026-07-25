@@ -12,6 +12,7 @@
 // token all stay readable sitting on top of this layer.
 import type { ReactElement } from 'react';
 import type { GateId } from '../engine/types';
+import { ICON_ART } from './iconArt';
 
 interface TileTheme {
   floorBase: string;
@@ -33,12 +34,22 @@ function hashCoord(vx: number, vy: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Sparse painted set-dressing (water pools, debris, ruined doorways) scattered
-// across plain floor tiles. Deterministic per (vx, vy) like the decor above —
-// same tile always rolls the same prop, so it doesn't flicker between renders.
+// Sparse set-dressing scattered across plain floor tiles. Deterministic per
+// (vx, vy) like the decor above — the same tile always rolls the same prop, so
+// it doesn't flicker between renders.
+//
+// v19 #5 — THE RULE: a decorative prop must NEVER mimic an interactive tile.
+// v18 shipped an 'archway' prop (a painted stone doorway with a hinged wooden
+// door) on ~1 in 15 floor tiles. It reads exactly like the real 🚪 START /
+// way-back tile, so the map was littered with doors that did nothing — Paul:
+// "there are tiles that look like doors that dont really act like doors".
+// It is gone. Everything in this rotation is GROUND clutter: flat, wider than
+// it is tall, no portal / container / altar / stair / breakable silhouette.
+// Before adding a prop here, check it against TILE_VIEW in FloorScreen.tsx —
+// if it could be mistaken for any entry there, it doesn't ship.
 // ---------------------------------------------------------------------------
 
-const TILE_PROPS = ['waterpool', 'debris', 'archway'] as const;
+const TILE_PROPS = ['waterpool', 'debris', 'roots', 'bones'] as const;
 export type TileProp = (typeof TILE_PROPS)[number];
 
 /** ~1 in 15 floor tiles gets a prop; deterministic, no engine/gameplay effect. */
@@ -46,6 +57,112 @@ export function pickTileProp(vx: number, vy: number): TileProp | null {
   const hash = hashCoord(vx * 4297, vy * 2999);
   if (hash % 15 !== 0) return null;
   return TILE_PROPS[Math.floor(hash / 15) % TILE_PROPS.length];
+}
+
+/** Props that exist as painted PNGs in the icon manifest. */
+const PAINTED_PROP_SRC: Partial<Record<TileProp, string | undefined>> = {
+  waterpool: ICON_ART.waterpool,
+  debris: ICON_ART.debris,
+};
+
+/** Surface roots sprawling across the tile — low, horizontal, unmistakably ground. */
+function rootsProp(): ReactElement {
+  return (
+    <g>
+      {/* contact shadow so the root sits ON the terrain, not floating over it */}
+      <path
+        d="M6 71 C 28 63 40 77 58 69 C 72 63 86 71 96 65"
+        stroke="#000"
+        strokeOpacity="0.42"
+        strokeWidth="12"
+        fill="none"
+        strokeLinecap="round"
+      />
+      <path d="M6 67 C 28 59 40 73 58 65 C 72 59 86 67 96 61" stroke="#2c2114" strokeWidth="8.5" fill="none" strokeLinecap="round" />
+      <path
+        d="M6 64 C 28 56 40 70 58 62 C 72 56 86 64 96 58"
+        stroke="#57411f"
+        strokeWidth="3.2"
+        fill="none"
+        strokeLinecap="round"
+        opacity="0.85"
+      />
+      {/* offshoots stay LOW and lateral — nothing on a floor prop may stand up
+          tall enough to read as a doorway, a figure or an object */}
+      <g stroke="#332616" strokeWidth="4.6" fill="none" strokeLinecap="round">
+        <path d="M26 63 C 34 56 34 52 43 50" />
+        <path d="M64 64 C 72 75 80 79 89 77" />
+        <path d="M44 69 C 42 79 34 84 25 84" />
+      </g>
+      <g stroke="#241a0f" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.85">
+        <path d="M43 50 q7 -4 14 -3" />
+        <path d="M43 50 q4 -7 3 -13" />
+        <path d="M89 77 q6 3 8 8" />
+        <path d="M25 84 q-6 2 -9 7" />
+      </g>
+    </g>
+  );
+}
+
+/** A scatter of old bones — flat on the floor, never a silhouette with a doorway in it. */
+function bonesProp(): ReactElement {
+  return (
+    <g>
+      <ellipse cx="46" cy="79" rx="29" ry="5.5" fill="#000" opacity="0.28" />
+      {/* long bone lying across the tile */}
+      <g>
+        <path d="M24 73 L66 62" stroke="#b8b09b" strokeWidth="8" strokeLinecap="round" fill="none" />
+        <circle cx="22" cy="69" r="5" fill="#b8b09b" />
+        <circle cx="25" cy="78" r="5" fill="#b8b09b" />
+        <circle cx="68" cy="58" r="4.6" fill="#b8b09b" />
+        <circle cx="66" cy="67" r="4.6" fill="#b8b09b" />
+        <path d="M25 76 L66 65" stroke="#6d6656" strokeWidth="2.6" strokeLinecap="round" fill="none" opacity="0.75" />
+      </g>
+      {/* two rib arcs behind it */}
+      <g stroke="#a79f8b" strokeWidth="3.4" fill="none" strokeLinecap="round" opacity="0.8">
+        <path d="M30 53 q15 -13 31 -8" />
+        <path d="M35 44 q13 -11 27 -7" />
+      </g>
+      {/* splinters */}
+      <g fill="#9b9381" opacity="0.7">
+        <ellipse cx="78" cy="76" rx="6" ry="2.8" transform="rotate(24 78 76)" />
+        <ellipse cx="34" cy="86" rx="5" ry="2.4" transform="rotate(-16 34 86)" />
+      </g>
+    </g>
+  );
+}
+
+const SVG_PROPS: Partial<Record<TileProp, () => ReactElement>> = {
+  roots: rootsProp,
+  bones: bonesProp,
+};
+
+/**
+ * Renders one decorative floor prop. Painted PNGs come from the icon manifest;
+ * anything painted here is inline SVG in the same desaturated tile-art style.
+ * Sizing is CSS-driven off --cell (see floor.css §1) — `size` is only the
+ * intrinsic attribute so the element has a sane box before CSS applies.
+ */
+export function TilePropArt({ prop, size = 64 }: { prop: TileProp; size?: number }): ReactElement | null {
+  const src = PAINTED_PROP_SRC[prop];
+  if (src) {
+    return <img src={src} width={size} height={size} alt="" className="ui-icon" draggable={false} />;
+  }
+  const paint = SVG_PROPS[prop];
+  if (!paint) return null;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      className="ui-icon"
+      role="presentation"
+      aria-hidden="true"
+      style={{ display: 'block' }}
+    >
+      {paint()}
+    </svg>
+  );
 }
 
 // ---------------------------------------------------------------------------

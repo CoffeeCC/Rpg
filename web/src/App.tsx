@@ -1,8 +1,9 @@
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState, type CSSProperties } from 'react';
 import './App.css';
 import './battle.css';
 import './v5.css';
 import './v16.css';
+import './transition.css';
 import { gameReducer, initialGameState, type Screen } from './engine/game';
 import { CreateScreen } from './components/CreateScreen';
 import { TownScreen } from './components/TownScreen';
@@ -27,20 +28,116 @@ import { VictoryScreen } from './components/VictoryScreen';
 import { StoryOverlay } from './components/StoryOverlay';
 import { FallenScreen } from './components/FallenScreen';
 import { MonsterSheetScreen } from './components/MonsterSheetScreen';
+import { MultiplayerScreen } from './components/MultiplayerScreen';
 import { PartySidebar } from './components/PartySidebar';
 import { LogPanel } from './components/LogPanel';
 import { Icon } from './components/Icon';
 import { HeroImage } from './art/MonsterImage';
 import { PAINTED_BACKDROPS, PAINTED_TOWN } from './art/painted';
 import { play as sfx, setMuted, isMuted } from './platform/sfx';
+import { setMusicContext, setMusicMuted, isMusicMuted } from './platform/music';
 
 type Banner = { text: string; kind: 'victory' | 'death' | 'tamed' } | null;
+
+/** v19 encounter transition — durations must match the contract in transition.css. */
+const TX_COVER_MS = 460;
+const TX_REVEAL_MS = 560;
+const TX_RETURN_MS = 720;
+/** Obsidian blades that stab the screen shut. Index feeds the CSS stagger. */
+const TX_BLADES = Array.from({ length: 14 }, (_, i) => i);
+
+type Transition = { kind: 'encounter' | 'return'; phase: 'cover' | 'reveal' } | null;
+
+function prefersReducedMotion(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, initialGameState);
   const [banner, setBanner] = useState<Banner>(null);
   const [muted, setMutedState] = useState(isMuted());
+  const [musicOff, setMusicOff] = useState(isMusicMuted());
   const prevScreen = useRef<Screen>(state.screen);
+
+  // v19: the transition holds the outgoing screen on stage while the seal
+  // closes over it, so the player never sees a raw screen swap.
+  const [tx, setTx] = useState<Transition>(null);
+  const [heldScreen, setHeldScreen] = useState<Screen | null>(null);
+  const txPrev = useRef<Screen>(state.screen);
+  const txTimers = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+
+  // v19: three musical contexts, crossfaded by platform/music.ts. Battle music
+  // is asked for the instant the encounter fires — i.e. underneath the
+  // transition — so the sting lands before the battlefield does.
+  useEffect(() => {
+    setMusicContext(
+      state.screen === 'battle' ? 'battle' : state.screen === 'floor' ? 'expedition' : 'town',
+    );
+  }, [state.screen]);
+
+  useEffect(() => {
+    const prev = txPrev.current;
+    txPrev.current = state.screen;
+    if (prev === state.screen) return;
+
+    const timers = txTimers.current;
+    const reduced = prefersReducedMotion();
+    // A screen change with no transition of its own must not leave an older
+    // overlay stranded on screen.
+    setTx(null);
+    setHeldScreen(null);
+
+    if (state.screen === 'battle') {
+      const cover = reduced ? 180 : TX_COVER_MS;
+      const reveal = reduced ? 220 : TX_REVEAL_MS;
+      // Only the map is safe to keep mounted behind the closing seal: the
+      // reducer ignores MOVE/END_MAP_TURN once screen !== 'floor', and the
+      // expedition state it renders from is untouched by the fight starting.
+      // Other origin screens may already have had their backing state cleared.
+      if (prev === 'floor') setHeldScreen(prev);
+      setTx({ kind: 'encounter', phase: 'cover' });
+      timers.push(
+        setTimeout(() => {
+          setHeldScreen(null);
+          setTx({ kind: 'encounter', phase: 'reveal' });
+        }, cover),
+      );
+      timers.push(setTimeout(() => setTx(null), cover + reveal));
+    } else if (prev === 'battle') {
+      setTx({ kind: 'return', phase: 'reveal' });
+      timers.push(setTimeout(() => setTx(null), reduced ? 260 : TX_RETURN_MS));
+    }
+
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      txTimers.current = [];
+    };
+  }, [state.screen]);
+
+  // Skippable: any input past the first beat drops the rest of the effect.
+  useEffect(() => {
+    if (!tx) return;
+    const openedAt = Date.now();
+    const skip = () => {
+      // Ignore the very input that triggered the encounter (key repeat, the
+      // click that bumped the monster) — only a deliberate second one skips.
+      if (Date.now() - openedAt < 220) return;
+      for (const t of txTimers.current) clearTimeout(t);
+      txTimers.current = [];
+      setHeldScreen(null);
+      setTx(null);
+    };
+    window.addEventListener('pointerdown', skip);
+    window.addEventListener('keydown', skip);
+    return () => {
+      window.removeEventListener('pointerdown', skip);
+      window.removeEventListener('keydown', skip);
+    };
+  }, [tx]);
 
   // Souls-style full-stage banners on battle transitions.
   useEffect(() => {
@@ -70,7 +167,10 @@ function App() {
 
   const player = state.player;
   const backScreen: Screen = state.expedition ? 'floor' : 'town';
-  const inBattle = state.screen === 'battle';
+  /** What the player is looking at — the real screen, or the one being held
+   *  on stage for the length of the transition's cover phase. */
+  const view: Screen = heldScreen ?? state.screen;
+  const inBattle = view === 'battle';
 
   // v15: level-ups get a full-stage moment (delayed so it follows the victory
   // banner instead of fighting it), plus a pointer at the unspent points.
@@ -100,7 +200,7 @@ function App() {
   // gate's painting mid-expedition, the town square otherwise. Town and battle
   // draw their own crisp backdrops.
   const sceneSrc =
-    inBattle || state.screen === 'town'
+    inBattle || view === 'town'
       ? null
       : (state.expedition && PAINTED_BACKDROPS[state.expedition.gateId]) || PAINTED_TOWN;
 
@@ -110,7 +210,7 @@ function App() {
     'stable', 'breeding', 'questBoard', 'tavern', 'chronicle', 'deck', 'smith',
     'characterSheet', 'equipment', 'saveLoad', 'monsterSheet', 'shopItems', 'shopGear', 'gateSelect',
   ];
-  const showBack = backable.includes(state.screen);
+  const showBack = backable.includes(view);
 
   return (
     <div className={`game ${inBattle ? 'battle-mode' : ''}`}>
@@ -181,7 +281,8 @@ function App() {
 
           <button
             className="btn small hud-mute"
-            title={muted ? 'Unmute' : 'Mute'}
+            title={muted ? 'Unmute sound effects' : 'Mute sound effects'}
+            aria-pressed={muted}
             onClick={() => {
               const next = !muted;
               setMuted(next);
@@ -190,32 +291,49 @@ function App() {
           >
             {muted ? '🔇' : '🔊'}
           </button>
+
+          {/* v19: music mutes independently of the SFX chip beside it. */}
+          <button
+            className={`btn small hud-music ${musicOff ? 'off' : ''}`}
+            title={musicOff ? 'Music off' : 'Music on'}
+            aria-pressed={!musicOff}
+            aria-label={musicOff ? 'Turn music on' : 'Turn music off'}
+            onClick={() => {
+              const next = !musicOff;
+              setMusicMuted(next);
+              setMusicOff(next);
+              sfx('uiClick');
+            }}
+          >
+            ♪
+          </button>
         </div>
       </header>
 
-      <main className="game-main">
-        {state.screen === 'town' && <TownScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'gateSelect' && <GateSelectScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'floor' && <FloorScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'battle' && <BattleScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'cardReward' && <CardRewardScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'event' && <EventScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'shopItems' && <ShopItemsScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'shopGear' && <ShopGearScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'stable' && <StableScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'breeding' && <BreedingScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'questBoard' && <QuestBoardScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'tavern' && <TavernScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'chronicle' && <ChronicleScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'deck' && <DeckScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {state.screen === 'cardCodex' && <CardCodexScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {state.screen === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {state.screen === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'equipment' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {state.screen === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {state.screen === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}
-        {state.screen === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
+      <main className={`game-main${tx?.kind === 'encounter' && tx.phase === 'cover' ? ' tx-seize' : ''}`}>
+        {view === 'town' && <TownScreen state={state} dispatch={dispatch} />}
+        {view === 'gateSelect' && <GateSelectScreen state={state} dispatch={dispatch} />}
+        {view === 'floor' && <FloorScreen state={state} dispatch={dispatch} />}
+        {view === 'battle' && <BattleScreen state={state} dispatch={dispatch} />}
+        {view === 'cardReward' && <CardRewardScreen state={state} dispatch={dispatch} />}
+        {view === 'event' && <EventScreen state={state} dispatch={dispatch} />}
+        {view === 'shopItems' && <ShopItemsScreen state={state} dispatch={dispatch} />}
+        {view === 'shopGear' && <ShopGearScreen state={state} dispatch={dispatch} />}
+        {view === 'stable' && <StableScreen state={state} dispatch={dispatch} />}
+        {view === 'breeding' && <BreedingScreen state={state} dispatch={dispatch} />}
+        {view === 'questBoard' && <QuestBoardScreen state={state} dispatch={dispatch} />}
+        {view === 'tavern' && <TavernScreen state={state} dispatch={dispatch} />}
+        {view === 'chronicle' && <ChronicleScreen state={state} dispatch={dispatch} />}
+        {view === 'deck' && <DeckScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'cardCodex' && <CardCodexScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
+        {view === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}
+        {view === 'equipment' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}
+        {view === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
+        {view === 'multiplayer' && <MultiplayerScreen state={state} dispatch={dispatch} />}
       </main>
 
       {!inBattle ? (
@@ -234,6 +352,24 @@ function App() {
       {state.pendingStory !== null && <StoryOverlay state={state} dispatch={dispatch} />}
 
       {state.pendingLegend !== null && <LegendOverlay state={state} dispatch={dispatch} />}
+
+      {/* v19 encounter transition. Cover phase: the world is still mounted
+          underneath and seizes/pushes in while the flash, swirl and blades
+          close over it. Reveal phase: the battle is mounted behind the
+          blackout and the blades peel away off it. Styles: transition.css. */}
+      {tx && (
+        <div className={`tx-layer tx-${tx.kind} tx-${tx.phase}`} aria-hidden="true">
+          <div className="tx-flash" />
+          <div className="tx-swirl" />
+          <div className="tx-blades">
+            {TX_BLADES.map((i) => (
+              <span key={i} className="tx-blade" style={{ '--i': i } as CSSProperties} />
+            ))}
+          </div>
+          <div className="tx-veil" />
+          <div className="tx-embers" />
+        </div>
+      )}
 
       {banner && (
         <div className={`stage-banner banner-${banner.kind}`}>

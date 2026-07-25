@@ -47,7 +47,6 @@
    participating in flex layout and reflowing the fight. These 0,3,0 selectors
    win regardless of file order and restore the intended stacking. */
 .panel.battle-stage > .battle-enter-flash { position: absolute; z-index: 50; }
-.panel.battle-stage > .battle-enter-iris { position: absolute; z-index: 49; }
 .panel.battle-stage > .target-line-layer { position: absolute; z-index: 6; }
 .panel.battle-stage > .card-ghost { position: absolute; z-index: 30; }
 .panel.battle-stage > .mercy-overlay { position: absolute; z-index: 20; }
@@ -64,7 +63,11 @@
   80% { transform: translate(3px, -1px); }
 }
 
-/* --- Retro RPG encounter transition: white flash + iris wipe opening onto the fight --- */
+/* --- Encounter arrival. v19: the iris wipe (.battle-enter-iris + irisOpen)
+   was removed — App.tsx's "Seal" transition owns the dark-edge motion now,
+   and a second ring opening beneath it fought the effect. What's left is the
+   flash, whose tail bleeds through the seal's dissolve, and the punch-in,
+   which reads as the camera settling once the blades peel back. --- */
 .stage-entering {
   animation: stagePunchIn 0.7s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -89,64 +92,109 @@
   100% { opacity: 0; }
 }
 
-.battle-enter-iris {
-  position: absolute;
-  inset: 0;
-  z-index: 49;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.battle-enter-iris::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  border-radius: 50%;
-  box-shadow: 0 0 0 100vmax #05040a;
-  transform: translate(-50%, -50%);
-  animation: irisOpen 0.65s cubic-bezier(0.6, 0, 0.2, 1) 0.15s forwards;
-}
-
-@keyframes irisOpen {
-  from { width: 0; height: 0; }
-  to { width: 260vmax; height: 260vmax; }
-}
-
 /* =========================================================
    v17: MTG-Arena battlefield — enemy row on TOP facing down,
    party row on the BOTTOM above the hand, duel portraits on
    the center axis, vigor candles down the left edge.
    ========================================================= */
 
+/* v19 THE BATTLEFIELD SIZING SYSTEM.
+   Everything that occupies space on the stage — figures, duel portrait
+   chips, nameplates, row gaps — is sized from ONE token, --bf-scale, so
+   "zoom the stage out" is a single number instead of a dozen per-element
+   px overrides repeated in every media query (which is what v17/v18 had,
+   and why the 96px chips could silently grow into the rows next to them).
+
+   v18's sizes are the 1.0 reference. The desktop default is 0.8 — Paul's
+   "zoom out ~20%" — and the short-viewport bands further down just turn
+   the dial instead of re-declaring pixels.
+
+   TEXT IS DELIBERATELY NOT MULTIPLIED BY THE SCALE. Zooming out buys air
+   around the art, never illegible labels: plates carry a hard px floor
+   (--bf-plate-min uses max()), and font sizes stay put until a band that
+   genuinely has no room says otherwise. */
 .battlefield {
+  /* --bf-scale is a LENGTH, not a number, and that is deliberate: CSS can
+     multiply a number by a length (`calc(150 * var(--bf-scale))` → 120px at
+     0.8px) but cannot divide a length by a length to get a ratio. Carrying
+     the ratio in px is what lets the scale itself be computed from the
+     viewport instead of hand-banded. Read `0.8px` as "80%".
+
+     The formula (constants MEASURED in a browser, not estimated — see the
+     lane report in the v19 notes): everything the stage cannot shrink adds
+     up to ~732px at this band — app chrome + header (112), the hand zone
+     (288), the target hint (22), and the battlefield's own fixed lanes
+     (banner gap 44, both nameplates ~102, intent headroom 26, the two HP
+     pills ~46) plus ~20px of slack for two-line names. Whatever height is
+     left divides among the parts that DO scale, whose v18 sizes total 482px
+     (150 enemy figure + 165 hero figure at its 1:1.25 ratio + 167 for both
+     portrait rings).
+
+     So the stage zooms ITSELF to fit any window — it cannot overflow into
+     the row above or below at any height — and the clamp caps it at 0.8,
+     Paul's ~20% zoom-out, so a tall monitor spends its extra height on air
+     around the fight instead of on ever-bigger monsters. */
+  --bf-scale: clamp(0.24px, calc((100vh - 756px) / 482), 0.8px);
+  --bf-fig-enemy: calc(150 * var(--bf-scale));
+  --bf-fig-boss: calc(250 * var(--bf-scale));
+  --bf-fig-hero: calc(132 * var(--bf-scale));
+  --bf-fig-ally: calc(124 * var(--bf-scale));
+  --bf-chip: calc(96 * var(--bf-scale));
+  --bf-row-gap: calc(44 * var(--bf-scale));
+  --bf-plate-min: max(128px, calc(160 * var(--bf-scale)));
+  --bf-plate-max: max(184px, calc(230 * var(--bf-scale)));
+  /* headroom above the enemy figures for the intent telegraph plate, which
+     hangs 16px above its unit and bobs another 4 */
+  --bf-intent-room: 26px;
+  /* left inset of the battlefield's CONTENT box — the candle rail lives in
+     it, and (on wide viewports) so do the duel portrait chips */
+  --bf-inset-left: 96px;
+  /* width of the portrait column in that mode; wide enough for a boss bar */
+  --bf-chiprail: max(calc(var(--bf-chip) + 28px), 150px);
+
   position: relative;
   z-index: 1;
   flex: 1;
-  min-height: 0;
+  /* min-content, not 0: the battlefield may never be squeezed smaller than
+     the fight inside it. Squeezing was silent — the box shrank, the rows
+     stayed their natural size, and the party's nameplates simply painted on
+     top of whatever came next. At the handful of viewport sizes too short
+     for the smallest allowed --bf-scale, .battle-stage scrolls instead
+     (App.css gives it overflow-y:auto), which is recoverable; overlap is not. */
+  min-height: min-content;
   display: flex;
   flex-direction: column;
-  padding: 4px 24px 0 96px; /* left inset clears the candle rail */
+  padding: 4px 24px 0 var(--bf-inset-left); /* left inset clears the candle rail */
+}
+
+/* Base mode is the stacked one (chips above and below the rows), so a boss
+   costs a taller top lane — its bar instead of an HP pill — and its figure
+   is 250px at scale 1 rather than 150. Both are folded in here; the scale
+   ladder at the end of the file repeats the pair for every other mode. */
+.battlefield:has(.duel-boss) {
+  --bf-scale: clamp(0.18px, calc((100vh - 780px) / 582), 0.8px);
 }
 
 .bf-row {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  gap: 36px;
+  gap: var(--bf-row-gap);
+  /* Rows share whatever the fixed-height lanes (chips, banner gap) leave.
+     min-height stays at flex's `auto` (= min-content) ON PURPOSE: a row may
+     never be squeezed shorter than the figure+plate it holds, because that
+     is exactly how content starts overlapping its neighbours. If a viewport
+     is genuinely too short, .battle-stage scrolls (App.css) — it never
+     stacks two rows on top of each other. */
+  flex: 1 1 auto;
 }
 
 .enemy-row {
-  flex: 1 1 200px;
-  min-height: 190px;
-  padding-top: 76px; /* room for the top duel portrait + intent chips */
+  align-items: flex-end;
+  padding-top: var(--bf-intent-room);
 }
 
 .party-row {
-  flex: 1 1 180px;
-  min-height: 170px;
   padding-bottom: 2px;
 }
 
@@ -180,13 +228,42 @@
   justify-content: center;
 }
 
-.enemy-row .bf-figure { min-height: 150px; }
-.enemy-slot.boss .bf-figure { min-height: 250px; }
-.party-row .bf-figure { min-height: 132px; }
+/* Figure sizing is CSS-side, driven by --bf-scale. The components hand in
+   inline width/height attributes (MonsterImage/HeroImage) as an intrinsic
+   ratio hint; these rules are the single source of truth for how big a
+   combatant actually paints, so one token moves them all together.
+   !important beats the inline width/height attributes. */
+.enemy-row .bf-figure { min-height: var(--bf-fig-enemy); }
+.enemy-slot.boss .bf-figure { min-height: var(--bf-fig-boss); }
+.party-row .bf-figure { min-height: var(--bf-fig-hero); }
+
+.enemy-row .bf-figure > img,
+.enemy-row .bf-figure > svg {
+  width: var(--bf-fig-enemy) !important;
+  height: auto !important;
+}
+
+.enemy-slot.boss .bf-figure > img,
+.enemy-slot.boss .bf-figure > svg {
+  width: var(--bf-fig-boss) !important;
+  height: auto !important;
+}
+
+.party-row .hero-fig .bf-figure > img,
+.party-row .hero-fig .bf-figure > svg {
+  width: var(--bf-fig-hero) !important;
+  height: auto !important;
+}
+
+.party-row .ally-fig .bf-figure > img,
+.party-row .ally-fig .bf-figure > svg {
+  width: var(--bf-fig-ally) !important;
+  height: auto !important;
+}
 
 .bf-plate {
-  min-width: 150px;
-  max-width: 210px;
+  min-width: var(--bf-plate-min);
+  max-width: var(--bf-plate-max);
   padding: 4px 12px 6px;
   text-align: center;
   background: linear-gradient(180deg, rgba(17, 13, 10, 0.88), rgba(10, 8, 6, 0.93));
@@ -313,26 +390,37 @@
   50% { filter: drop-shadow(0 0 12px rgba(179, 84, 30, 0.65)); }
 }
 
-/* --- Duel portraits on the center axis (MTG avatar-vs-avatar) --- */
-.duel-chip {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+/* --- Duel portraits on the center axis (MTG avatar-vs-avatar) ---
+   v19: these were absolutely positioned over the top/bottom edges of the
+   battlefield, which meant their height was invisible to layout — so when
+   v18 grew the ring to 96px the chips simply grew INTO the enemy row above
+   and the party row below (Paul's overlap report). They are flex children
+   of .battlefield now: the vertical stack is
+       [duel-top] [enemy row] [banner gap] [party row] [duel-bottom]
+   and no lane can eat another's space at any viewport height, because the
+   rows are the only flexible tracks and the chips are fixed-size. Being
+   in-flow also centers them on the battlefield's CONTENT box (between the
+   candle rail and the log rail) rather than its padding box, so a chip
+   lines up with the row it faces instead of drifting left. */
+.bf-portrait {
+  position: relative;
+  align-self: center;
+  flex: 0 0 auto;
   z-index: 7;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   pointer-events: none;
 }
 
-.duel-top { top: 2px; }
-.duel-bottom { bottom: -4px; }
+.duel-top { margin-bottom: 4px; }
+.duel-bottom { margin-top: 4px; }
 
 .duel-ring {
   position: relative;
-  width: 68px;
-  height: 68px;
+  width: var(--bf-chip, 68px);
+  height: var(--bf-chip, 68px);
 }
 
 .duel-ring-svg {
@@ -368,7 +456,7 @@
 
 .duel-art {
   position: absolute;
-  inset: 7px;
+  inset: calc(var(--bf-chip, 68px) * 0.1);
   border-radius: 50%;
   overflow: hidden;
   display: flex;
@@ -385,16 +473,23 @@
   object-fit: cover;
 }
 
+/* The HP pill rides ON the ring's lower rim (avatar-plate style) instead of
+   stacking below it — it reads as part of the portrait and gives the chip
+   lane ~10px less height to claim from the rows. */
 .duel-hp {
+  position: relative;
+  z-index: 2;
+  margin-top: calc(var(--bf-chip, 68px) * -0.13);
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
   color: #e2d6b8;
-  background: rgba(17, 13, 10, 0.88);
-  border: 1px solid rgba(200, 162, 74, 0.3);
+  background: rgba(17, 13, 10, 0.94);
+  border: 1px solid rgba(200, 162, 74, 0.34);
   border-radius: 9px;
   padding: 1px 9px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
 }
 
 /* --- Boss bar, folded into the top duel portrait --- */
@@ -630,15 +725,21 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  /* v19: the move name drops to its own line instead of stretching the
+     plate into its neighbours — a long telegraph ("The Bell Tolls Twice")
+     used to widen this nowrap row past the unit and collide sideways. */
+  flex-wrap: wrap;
+  row-gap: 1px;
+  column-gap: 6px;
+  max-width: min(220px, var(--bf-plate-max, 210px));
   background: rgba(17, 13, 10, 0.88);
   border: 1px solid var(--border-bright);
   border-radius: 16px;
-  padding: 4px 14px;
+  padding: 4px 12px;
   z-index: 5;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.65);
   animation: intentBob 2.4s ease-in-out infinite;
-  white-space: nowrap;
 }
 
 @keyframes intentBob {
@@ -679,13 +780,15 @@
 
 /* v11: kit-move telegraph name, e.g. "The Bell Tolls" */
 .intent-move {
+  flex: 0 0 100%;
+  text-align: center;
   font-family: var(--font-display);
   font-size: 0.62rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--gold-bright);
   white-space: nowrap;
-  max-width: 150px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -695,6 +798,10 @@
   font-size: 1.02rem;
   color: #e0b4a8;
   font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Souls hp grooves --- */
@@ -979,11 +1086,26 @@
   pointer-events: auto;
 }
 
+/* v19: the arc is gentler (4.2deg/11px → 3.6deg/6px per step) and, more
+   importantly, CENTERED. Transforms don't change layout but they DO count as
+   scrollable overflow, and the old arc only ever pushed cards DOWNWARD (the
+   outer ones by 11px each step) — so a full hand hung far enough below the
+   hand zone to raise a scrollbar on .battle-stage and let the whole fight
+   scroll a few px under the cursor. Subtracting half the arc's own depth
+   spreads it evenly above and below the resting line: identical fan read,
+   no overflow, and it holds for any hand size instead of just five cards. */
 .hand-slot {
   position: relative;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-  transform: rotate(calc((var(--i) - (var(--n) - 1) / 2) * 4.2deg))
-    translateY(calc(max(var(--i) - (var(--n) - 1) / 2, (var(--n) - 1) / 2 - var(--i)) * 11px));
+  transform: rotate(calc((var(--i) - (var(--n) - 1) / 2) * 3.6deg))
+    translateY(
+      calc(
+        (
+          max(var(--i) - (var(--n) - 1) / 2, (var(--n) - 1) / 2 - var(--i)) -
+            (var(--n) - 1) / 4
+        ) * 6px
+      )
+    );
   cursor: pointer;
 }
 
@@ -1202,6 +1324,12 @@
      bar up and reads fine. */
   color: #ddd5c2;
   z-index: 2;
+  /* one bar, always — a long source nickname wrapped this onto a second line
+     and squeezed the rules text below it (CardView carries the full line as
+     a title tooltip) */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-body {
@@ -1538,45 +1666,18 @@
   z-index: 30;
 }
 
-/* --- Compact desktop/tablet: shrink figures, gap, and hand under 860px of
-   viewport height so the battlefield never scrolls. Figure/card sizes come in
-   as inline width/height attributes from JS defaults, so !important wins. --- */
+/* --- Compact desktop/tablet: under 860px of viewport height the stage turns
+   the --bf-scale dial down instead of re-declaring a pixel for every part
+   (v19). Only things the scale does NOT own — plate padding, the banner gap,
+   the hand, the piles, the lantern — are still spelled out here. --- */
 @media (max-height: 860px) {
-  .enemy-row {
-    min-height: 150px;
-    padding-top: 64px;
-  }
-  .enemy-row .bf-figure { min-height: 118px; }
-  .enemy-row .bf-figure img,
-  .enemy-row .bf-figure svg {
-    width: 118px !important;
-    height: auto !important;
-  }
-  .enemy-slot.boss .bf-figure { min-height: 190px; }
-  .enemy-slot.boss .bf-figure img,
-  .enemy-slot.boss .bf-figure svg {
-    width: 190px !important;
-  }
-  .party-row {
-    min-height: 132px;
-  }
-  .party-row .bf-figure { min-height: 102px; }
-  .party-row .bf-figure img,
-  .party-row .bf-figure svg {
-    width: 102px !important;
-    height: auto !important;
-  }
+  /* (--bf-scale for this band is set by the layout-mode rules at the end of
+     the file — wide/narrow/tablet each pay for a different hand zone and a
+     different chip treatment, so the dial lives with them.) */
   .bf-gap { flex-basis: 36px; }
   .bf-plate {
-    min-width: 128px;
     padding: 3px 10px 5px;
   }
-  .bf-name { font-size: 0.72rem; }
-  .duel-ring {
-    width: 56px;
-    height: 56px;
-  }
-  .duel-art { inset: 6px; }
   .vigor-rail {
     transform: translateY(-50%) scale(0.85);
     transform-origin: left center;
@@ -1611,35 +1712,16 @@
 /* --- Landscape phone: shrink the whole battle stage to fit a short viewport
    with no scrolling. Placed after the 860px block so it wins when both apply. --- */
 @media (max-height: 500px) {
-  .enemy-row {
-    min-height: 74px;
-    padding-top: 42px;
+  .battlefield {
+    --bf-scale: clamp(0.2px, calc((100vh - 402px) / 482), 0.4px);
+    /* the plate floor drops with the band — on a 500px-tall phone a 128px
+       floor would be a third of the row */
+    --bf-plate-min: 92px;
+    --bf-plate-max: 132px;
+    --bf-intent-room: 16px;
   }
-  .enemy-row .bf-figure { min-height: 56px; }
-  .enemy-row .bf-figure img,
-  .enemy-row .bf-figure svg {
-    width: 56px !important;
-    height: auto !important;
-  }
-  .enemy-slot.boss .bf-figure { min-height: 88px; }
-  .enemy-slot.boss .bf-figure img,
-  .enemy-slot.boss .bf-figure svg {
-    width: 88px !important;
-  }
-  .party-row {
-    min-height: 66px;
-  }
-  .party-row .bf-figure { min-height: 46px; }
-  .party-row .bf-figure img,
-  .party-row .bf-figure svg {
-    width: 46px !important;
-    height: auto !important;
-  }
-  .bf-row { gap: 14px; }
   .bf-gap { flex-basis: 22px; }
   .bf-plate {
-    min-width: 92px;
-    max-width: 130px;
     padding: 2px 6px 3px;
   }
   .bf-name { font-size: 0.62rem; }
@@ -1652,19 +1734,13 @@
   .intent {
     top: -10px;
     padding: 2px 8px;
-    gap: 3px;
+    column-gap: 3px;
   }
   .intent-icon { font-size: 0.8rem; }
   .intent-num { font-size: 0.75rem; }
   .intent-move {
     font-size: 0.52rem;
-    max-width: 90px;
   }
-  .duel-ring {
-    width: 40px;
-    height: 40px;
-  }
-  .duel-art { inset: 4px; }
   .duel-hp {
     font-size: 0.58rem;
     padding: 0 6px;
@@ -1708,7 +1784,8 @@
     width: 84px !important;
     height: 118px !important;
   }
-  .hand-fan .hand-slot + .hand-slot { margin-left: -28px; }
+  /* -32, not -28: measured at 900x480 the row ran 4px past the stage */
+  .hand-fan .hand-slot + .hand-slot { margin-left: -32px; }
   .hand-fan .hand-slot:hover,
   .hand-fan .hand-slot.sel,
   .hand-fan .hand-slot:focus-within {
@@ -2067,8 +2144,11 @@
 }
 
 /* Narrow viewports: no room for a side rail — the log docks as a short strip
-   under the party row instead (the rail is a flex child of .battlefield). */
-@media (max-width: 900px) and (min-height: 501px) {
+   under the party row instead (the rail is a flex child of .battlefield).
+   v19: only where there is height to spare for it. Docked, it costs the
+   battlefield 96px, which on a short tablet window is most of what the
+   combatants had left. */
+@media (max-width: 900px) and (min-height: 901px) {
   .battle-log-rail {
     position: static;
     width: auto;
@@ -2078,24 +2158,71 @@
   }
 }
 
-/* Landscape phone: there is genuinely no room — popups/banners carry it. */
+/* Short tablet windows and landscape phones: there is genuinely no room —
+   popups, the actor banner and the floating numbers carry the beat. */
+@media (max-width: 900px) and (max-height: 900px) {
+  .battle-log-rail {
+    display: none;
+  }
+}
+
 @media (max-height: 500px) {
   .battle-log-rail {
     display: none;
+  }
+
+  /* Landscape phone: even the boss chip stands down (elsewhere it is kept for
+     the boss bar). Its lane costs more here than the whole party row is
+     given; the boss's remaining health still reads off its own nameplate. */
+  .bf-portrait {
+    display: none;
+  }
+
+  /* boss figures are 250 at scale 1, not 150 — same pair as the ladder */
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.14px, calc((100vh - 402px) / 582), 0.4px);
   }
 }
 
 /* --- (1b) The hand/deck row drops into the strip the shell log vacated, so
    resting cards live in the bottom band instead of covering the player
    portrait. Banded by height to compose with the v17 compact media queries
-   above (same specificity — file order decides). --- */
-@media (min-width: 901px) and (min-height: 861px) {
+   above (same specificity — file order decides).
+
+   v19: the full-size (200px card / 280px band) hand now needs a genuinely
+   tall window. It used to start at 861px, where a 288px hand left the
+   battlefield ~330px for two rows of combatants plus two portrait chips —
+   which is the other half of why v18 overlapped. Below 1000px the hand
+   steps down to 172px cards, still comfortably readable, and hands the
+   reclaimed ~42px back to the fight. --- */
+@media (min-width: 901px) and (min-height: 1000px) {
   .hand-zone {
     min-height: 280px;
   }
   .hand-fan {
     margin-top: -12px;
     min-height: 272px;
+  }
+}
+
+@media (min-width: 901px) and (min-height: 861px) and (max-height: 999px) {
+  .bf-gap { flex-basis: 38px; }
+  .hand-zone {
+    min-height: 238px;
+  }
+  .hand-fan {
+    margin-top: -12px;
+    min-height: 230px;
+  }
+  .hand-fan .playing-card {
+    width: 172px !important;
+    height: 241px !important;
+  }
+  .hand-fan .hand-slot + .hand-slot { margin-left: -46px; }
+  .hand-fan .hand-slot:hover,
+  .hand-fan .hand-slot.sel,
+  .hand-fan .hand-slot:focus-within {
+    transform: rotate(0deg) translateY(-52px) scale(1.16);
   }
 }
 
@@ -2117,37 +2244,14 @@
   z-index: 5;
 }
 
-/* --- (2b) Duel portrait chips bigger. Banded by height so the v17 compact
-   sizes above aren't steamrolled by file order. --- */
-@media (min-height: 861px) {
-  .duel-ring {
-    width: 96px;
-    height: 96px;
-  }
-  .duel-art {
-    inset: 9px;
-  }
-  .duel-hp {
-    font-size: 0.8rem;
-  }
-  /* the bigger top chip needs more headroom over the enemy figures */
-  .enemy-row {
-    padding-top: 96px;
-  }
-}
+/* --- (2b) v18 sized the duel chips here, per height band, in raw px — and
+   because the chips were absolutely positioned, growing them just pushed
+   them into the rows. v19 sizes them from --bf-chip (see the token block at
+   the top of the battlefield section) and lays them out IN FLOW, so this
+   block is gone on purpose. Change the chip size by changing --bf-scale. --- */
 
-@media (min-height: 501px) and (max-height: 860px) {
-  .duel-ring {
-    width: 74px;
-    height: 74px;
-  }
-  .duel-art {
-    inset: 8px;
-  }
-}
-
-/* The bigger top chip must never hide a centered enemy's intent telegraph:
-   drop it below .intent (z 5) — it's pointer-events:none dressing either way. */
+/* The top chip must never hide a centered enemy's intent telegraph:
+   keep it below .intent (z 5) — it's pointer-events:none dressing either way. */
 .duel-top {
   z-index: 4;
 }
@@ -2213,4 +2317,369 @@
 @keyframes preTargetRing {
   0%, 100% { opacity: 0.5; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.03); }
+}
+
+/* =========================================================
+   v19 — Paul's post-v18 playtest: overlap, zoom, and labels
+   that don't fit. File-end block so these win same-specificity
+   ties by source order.
+   ========================================================= */
+
+/* --- (A) Every viewport's --bf-scale is set by the scale ladder at the end
+   of this file, in one place, one rule per layout mode. Do not add a scale
+   here: a band declared mid-file loses to the ladder anyway, and splitting
+   the dial across the file is exactly how v18 ended up with chips it could
+   not account for. --- */
+
+/* --- (B) EVERY label in battle gets the same contract: never wider than
+   the plate it lives in, truncate with an ellipsis, and carry the full
+   text as a title tooltip (set in BattleScreen.tsx). --- */
+
+/* Nameplates: the name is the plate's whole reason to exist, so it may use
+   two lines before it truncates, rather than ellipsing a two-word name. */
+.bf-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  line-height: 1.16;
+  max-width: 100%;
+}
+
+/* Status/mod tags: short by design, but generated names ('Sundered Guard')
+   are not, and a stack of them used to run off the figure's shoulder. */
+.bf-badge-stack {
+  max-width: min(112px, var(--bf-plate-max, 200px));
+}
+
+.duel-status-row {
+  max-width: min(220px, calc(var(--bf-chip, 96px) * 2.6));
+}
+
+.bf-badge-stack .status-tag,
+.duel-status-row .status-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The tame-odds badge sits bottom-right of the figure and must not run past
+   the plate edge on a scaled-down figure. */
+.badge-tame,
+.badge-lv,
+.badge-block {
+  max-width: calc(100% + 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Actor banner (v5.css sets white-space:nowrap on it): keep the name whole
+   and let the long half — the move label — be the part that truncates. */
+.bf-gap .action-banner {
+  max-width: min(560px, 92%);
+  overflow: hidden;
+}
+
+.bf-gap .action-banner .action-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bf-gap .action-banner .action-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Boss name inside the top duel chip — already ellipsised, now bounded by
+   the bar it titles rather than by the viewport. */
+.duel-boss .boss-bar {
+  max-width: 100%;
+}
+
+.duel-boss .boss-name {
+  max-width: 100%;
+}
+
+/* --- (C) The duel chips are in flow now (see .bf-portrait). Guarantee the
+   hero chip's status row can never push the party row up: it is allowed to
+   grow to two lines, then it scrolls its own overflow away. --- */
+.duel-status-row {
+  max-height: 42px;
+  overflow: hidden;
+}
+
+/* --- (C2) Narrow desktop widths: the hand row is laid out as
+   [piles][fan][buttons + piles + lantern] and only the fan is flexible, so
+   below ~1200px a five-card hand pushed the lantern ~60px past the stage
+   and raised a HORIZONTAL scrollbar on the battle stage (found live at
+   1100px). Cards overlap harder and shrink a step here — the fan spends the
+   width it has on art, which is the same trade the desktop fan makes. --- */
+@media (max-width: 1199px) and (min-height: 501px) {
+  /* the band the cards vacate goes back to the fight, not to padding */
+  .hand-zone {
+    min-height: 236px;
+  }
+  .hand-fan {
+    min-height: 228px;
+    margin-top: -12px;
+  }
+  .hand-fan .playing-card {
+    width: 156px !important;
+    height: 218px !important;
+  }
+  .hand-fan .hand-slot + .hand-slot {
+    margin-left: -64px;
+  }
+  .hand-fan .hand-slot:hover,
+  .hand-fan .hand-slot.sel,
+  .hand-fan .hand-slot:focus-within {
+    transform: rotate(0deg) translateY(-44px) scale(1.16);
+  }
+}
+
+/* Tablet widths: the fan alone isn't enough — the fixed clusters either side
+   of it (deck pile left; Items/Flee, Embers/Ashes and the Lantern right) are
+   ~410px of the 858 available, so they step down too. Measured at 900px,
+   where the row ran 40px past the stage. */
+@media (max-width: 900px) and (min-height: 501px) {
+  .hand-zone {
+    min-height: 204px;
+  }
+  .hand-fan {
+    min-height: 196px;
+    margin-top: -10px;
+  }
+  .hand-fan .playing-card {
+    width: 132px !important;
+    height: 185px !important;
+  }
+  .hand-fan .hand-slot + .hand-slot {
+    margin-left: -56px;
+  }
+  .battle-stage .pile-cardback svg {
+    width: 56px !important;
+    height: auto !important;
+  }
+  .lantern-turn {
+    width: 88px !important;
+    height: 112px !important;
+  }
+}
+
+/* --- (D) WIDE MODE: the portraits flank the fight instead of stacking over
+   and under it.
+
+   Stacked vertically, the two chips cost ~190px of a battlefield that only
+   has ~460-660px to give — which is what forced the figures down to toy
+   size on a laptop. On a wide screen that height is the scarce axis and
+   WIDTH is the free one, so the chips move into a left-hand portrait column
+   (which is where MTG Arena puts its avatars anyway: opponent above, player
+   below, down one edge). The rows get that height back — figures come out
+   ~60% larger at the same viewport — and the rows are inset by the column's
+   width so nothing can ever reach it.
+
+   Below 1200px there is no width to spare, so the vertical stack from the
+   top of this file stays in charge. --- */
+@media (min-width: 1200px) {
+  .bf-portrait {
+    position: absolute;
+    left: var(--bf-inset-left);
+    width: var(--bf-chiprail);
+    margin: 0;
+    z-index: 7;
+  }
+
+  .duel-top {
+    top: 6px;
+  }
+
+  .duel-bottom {
+    bottom: 6px;
+  }
+
+  /* keep every combatant clear of the portrait column */
+  .bf-row {
+    padding-left: var(--bf-chiprail);
+  }
+
+  /* the hero's status tags wrap inside the column instead of spilling out
+     of it and over the party row */
+  .bf-portrait .duel-status-row {
+    max-width: 100%;
+  }
+
+  /* A boss keeps its full-width bar on the centre axis — that drama is the
+     point of a boss fight — so its chip stays in the flow and the scale
+     ladder below pays for the one lane it costs. */
+  .bf-portrait.duel-boss {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: auto;
+    align-self: center;
+    margin-bottom: 4px;
+  }
+
+  .battlefield:has(.duel-boss) .enemy-row {
+    padding-left: 0;
+  }
+}
+
+/* --- (E) NARROW AND SHORT: no room for a portrait column beside the rows,
+   and no room for two portrait lanes above and below them either — stacked,
+   they left the combatants at ~40px, which is not a fight, it's a diagram.
+   The plain duel chips stand down here. Nothing is lost: the lead enemy's HP
+   is on its own nameplate, and the hero's HP, block, statuses and stat mods
+   are all on the hero unit (plate + badge stack). A BOSS chip stays — it
+   carries the boss bar, which has no duplicate anywhere. --- */
+@media (max-width: 1199px) and (max-height: 999px) {
+  .bf-portrait:not(.duel-boss) {
+    display: none;
+  }
+}
+
+/* =========================================================
+   v19 — THE SCALE LADDER. One rule per layout mode, and the
+   mode is all that changes: the shape of the formula is
+   always (viewport height − everything that can't shrink) ÷
+   (everything that can). Constants were measured live, one
+   viewport at a time, not estimated.
+
+   Divisor 482 = 150 enemy figure + 165 hero figure (1:1.25)
+   + 167 for both portrait rings, at v18 sizes.
+   Divisor 582 in boss fights: the boss figure is 250, not
+   150, and its chip stays on the centre axis carrying the
+   boss bar. :has() is how CSS knows; where it is unsupported
+   the stage scrolls a little rather than misplacing anything.
+
+   Every band is guarded at min-height 501 so the landscape-
+   phone band further up keeps its own much smaller sizes.
+   ========================================================= */
+
+/* Wide: portrait column beside the rows, no chip lanes at all. */
+@media (min-width: 1200px) and (min-height: 501px) {
+  .battlefield {
+    --bf-scale: clamp(0.24px, calc((100vh - 566px) / 482), 0.8px);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.18px, calc((100vh - 700px) / 582), 0.8px);
+  }
+}
+
+/* Narrow + tall: the stacked base layout, but with this width's smaller hand
+   (156px cards, 236px band) instead of the 288px one the base constant
+   assumes — 52px cheaper. */
+@media (max-width: 1199px) and (min-height: 1000px) {
+  .battlefield {
+    --bf-scale: clamp(0.24px, calc((100vh - 740px) / 482), 0.8px);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.18px, calc((100vh - 780px) / 582), 0.8px);
+  }
+}
+
+/* Tablet + tall: as above, but this width also pays for the docked log strip
+   (+92) while its hand is smaller again (204, −32). */
+@media (max-width: 900px) and (min-height: 1000px) {
+  .battlefield {
+    --bf-scale: clamp(0.24px, calc((100vh - 800px) / 482), 0.6px);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.18px, calc((100vh - 840px) / 582), 0.6px);
+  }
+}
+
+/* Narrow + short: plain chips hidden (see (E)), boss chip in flow. */
+@media (min-width: 901px) and (max-width: 1199px) and (min-height: 501px) and (max-height: 999px) {
+  .battlefield {
+    --bf-scale: clamp(0.24px, calc((100vh - 566px) / 482), 0.8px);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.18px, calc((100vh - 670px) / 582), 0.8px);
+  }
+}
+
+/* Tablet: the log rail has docked under the party row (−92px) and the hand
+   is the base one, so the fixed overhead is different again. */
+@media (max-width: 900px) and (min-height: 501px) and (max-height: 999px) {
+  .battlefield {
+    --bf-scale: clamp(0.22px, calc((100vh - 552px) / 482), 0.56px);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.16px, calc((100vh - 656px) / 582), 0.56px);
+  }
+}
+
+/* --- (F) Very short desktop windows (a half-height browser on a laptop).
+   At 620px of viewport the ≤860 band's 238px hand zone was claiming half of
+   everything the stage had, and the combatants were left with less room than
+   their own nameplates need — the rows spilled into the hand. The hand takes
+   one more step down here; 132px cards still read, and they are the thing
+   you can zoom with browser zoom, unlike a squashed battlefield. --- */
+@media (min-width: 901px) and (min-height: 501px) and (max-height: 800px) {
+  .battlefield {
+    --bf-scale: clamp(0.22px, calc((100vh - 514px) / 482), 0.6px);
+    --bf-intent-room: 18px;
+  }
+  /* Even the boss gives up the centre lane at this height — there isn't one
+     to give. Its chip joins the portrait column and the bar shrinks to the
+     column's width; the enemy row insets to clear it. The bar is still the
+     only place the boss's remaining health is drawn, so it is never hidden,
+     only made narrower. */
+  .bf-portrait.duel-boss {
+    position: absolute;
+    left: var(--bf-inset-left);
+    top: 6px;
+    width: var(--bf-chiprail);
+    align-self: auto;
+    margin: 0;
+  }
+  .duel-boss .boss-bar {
+    width: 100%;
+  }
+  .duel-boss .boss-name {
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+  }
+  .battlefield:has(.duel-boss) .enemy-row {
+    padding-left: var(--bf-chiprail);
+  }
+  .battlefield:has(.duel-boss) {
+    --bf-scale: clamp(0.16px, calc((100vh - 526px) / 582), 0.6px);
+  }
+  .bf-gap { flex-basis: 30px; }
+  .hand-zone {
+    min-height: 186px;
+  }
+  .hand-fan {
+    min-height: 178px;
+    margin-top: -10px;
+  }
+  .hand-fan .playing-card {
+    width: 132px !important;
+    height: 185px !important;
+  }
+  .hand-fan .hand-slot + .hand-slot { margin-left: -38px; }
+  .hand-fan .hand-slot:hover,
+  .hand-fan .hand-slot.sel,
+  .hand-fan .hand-slot:focus-within {
+    transform: rotate(0deg) translateY(-36px) scale(1.14);
+  }
+  .battle-stage .pile-cardback svg {
+    width: 52px !important;
+    height: auto !important;
+  }
+  .lantern-turn {
+    width: 84px !important;
+    height: 106px !important;
+  }
 }

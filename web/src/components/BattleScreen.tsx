@@ -476,12 +476,14 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         setHoveredEnemyUid(null);
       }}
     >
-      {entering && (
-        <>
-          <div className="battle-enter-flash" />
-          <div className="battle-enter-iris" />
-        </>
-      )}
+      {/* v19: the iris wipe that used to sit here is gone. App.tsx's "Seal"
+          encounter transition (obsidian blades peeling back, z-index 88) now
+          owns the dark-edge motion; a second dark ring opening underneath it
+          was doing the same job twice. The flash survives — its tail bleeds
+          through the dissolve and reads as light beyond the seal — and so
+          does .stage-entering's stagePunchIn, which lands as the camera
+          settling once the seal is open. */}
+      {entering && <div className="battle-enter-flash" />}
       {targetLine && (
         <svg className="target-line-layer">
           <defs>
@@ -564,7 +566,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
         {/* Enemy duel portrait, top-center. Boss fights fold the boss bar in here. */}
         {leadEnemy && (
-          <div className={`duel-chip duel-top ${boss ? 'duel-boss' : ''}`}>
+          <div className={`bf-portrait duel-top ${boss ? 'duel-boss' : ''}`}>
             <div className="duel-ring">
               {hpRing(leadEnemy.hp / leadEnemy.maxHp)}
               <span className="duel-art">
@@ -573,7 +575,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             </div>
             {boss ? (
               <div className="boss-bar">
-                <div className="boss-name">{boss.displayName()}</div>
+                <div className="boss-name" title={boss.displayName()}>
+                  {boss.displayName()}
+                </div>
                 <div className="boss-track">
                   <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
                 </div>
@@ -590,8 +594,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           {battle.enemies.map((enemy) => {
             const intent = battle.intents[enemy.uid];
             const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
+            // 'STAGGERED' is a word, not a number: it rides the telegraph's
+            // second line (like a move name) so it can't stretch the plate's
+            // number slot out past the unit it belongs to.
             const iv = staggered
-              ? { icon: '💫', label: 'STAGGERED', title: 'Staggered — it will lose its turn' }
+              ? { icon: '💫', label: '', title: 'Staggered — it will lose its turn', move: 'Staggered' }
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
@@ -620,7 +627,11 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   <div className="intent" title={iv.title}>
                     <span className="intent-icon">{iv.icon}</span>
                     {iv.label && <span className="intent-num">{iv.label}</span>}
-                    {iv.move && <span className="intent-move">{iv.move}</span>}
+                    {iv.move && (
+                      <span className="intent-move" title={iv.move}>
+                        {iv.move}
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="bf-figure">
@@ -638,12 +649,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   {(enemy.statusEffects.length > 0 || enemy.activeMods.length > 0) && (
                     <span className="bf-badge-stack">
                       {enemy.statusEffects.map((st) => (
-                        <span key={st.name} className="status-tag">
+                        <span key={st.name} className="status-tag" title={st.name}>
                           {st.name}
                         </span>
                       ))}
                       {enemy.activeMods.map((m, i) => (
-                        <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                        <span
+                          key={i}
+                          className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
+                          title={`${m.stat} ${m.amount > 0 ? '+' : ''}${m.amount}`}
+                        >
                           {m.stat}
                           {m.amount > 0 ? '↑' : '↓'}
                         </span>
@@ -654,7 +669,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   {renderImpact(enemy.uid)}
                 </div>
                 <div className="bf-plate">
-                  <div className="bf-name">{enemy.displayName()}</div>
+                  <div className="bf-name" title={enemy.displayName()}>
+                    {enemy.displayName()}
+                  </div>
                   {!enemy.isBoss && (
                     <div className="souls-track hp">
                       <div className="souls-fill" style={{ width: `${(enemy.hp / enemy.maxHp) * 100}%` }} />
@@ -694,12 +711,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
                 <span className="bf-badge-stack">
                   {player.statusEffects.map((st) => (
-                    <span key={st.name} className="status-tag">
+                    <span key={st.name} className="status-tag" title={st.name}>
                       {st.name}
                     </span>
                   ))}
                   {player.activeMods.map((m, i) => (
-                    <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                    <span
+                      key={i}
+                      className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
+                      title={`${m.stat} ${m.amount > 0 ? '+' : ''}${m.amount}`}
+                    >
                       {m.stat}
                       {m.amount > 0 ? '↑' : '↓'}
                     </span>
@@ -710,7 +731,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               {renderImpact('hero')}
             </div>
             <div className="bf-plate">
-              <div className="bf-name">{player.name}</div>
+              <div className="bf-name" title={player.name}>
+                {player.name}
+              </div>
               <div className="souls-track hp">
                 <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
               </div>
@@ -742,7 +765,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 {renderImpact(m.uid)}
               </div>
               <div className="bf-plate">
-                <div className="bf-name">{m.nickname}</div>
+                <div className="bf-name" title={m.nickname}>
+                  {m.nickname}
+                </div>
                 <div className="souls-track hp">
                   <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
                 </div>
@@ -758,7 +783,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
 
         {/* Player duel portrait, bottom-center, mirroring the enemy's. */}
-        <div className="duel-chip duel-bottom">
+        <div className="bf-portrait duel-bottom">
           <div className="duel-ring">
             {hpRing(player.hp / player.maxHp)}
             <span className="duel-art">
@@ -772,14 +797,22 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               the portrait itself, where the eye already lives. */}
           {(battle.heroBlock > 0 || player.statusEffects.length > 0 || player.activeMods.length > 0) && (
             <span className="duel-status-row">
-              {battle.heroBlock > 0 && <span className="status-tag block-tag">🛡 {battle.heroBlock}</span>}
+              {battle.heroBlock > 0 && (
+                <span className="status-tag block-tag" title={`Block — absorbs ${battle.heroBlock} damage`}>
+                  🛡 {battle.heroBlock}
+                </span>
+              )}
               {player.statusEffects.map((st) => (
-                <span key={st.name} className="status-tag">
+                <span key={st.name} className="status-tag" title={st.name}>
                   {st.name}
                 </span>
               ))}
               {player.activeMods.map((m, i) => (
-                <span key={i} className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}>
+                <span
+                  key={i}
+                  className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
+                  title={`${m.stat} ${m.amount > 0 ? '+' : ''}${m.amount}`}
+                >
                   {m.stat}
                   {m.amount > 0 ? '↑' : '↓'}
                 </span>

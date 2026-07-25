@@ -1,5 +1,7 @@
 /* =========================================================================
-   floor.css — v18 expedition map (PLAN7 §B): the war-table, no-scroll pass.
+   floor.css — expedition map. v18 (PLAN7 §B) built the war-table + no-scroll
+   shell; v19 (PLAN8 §B #5-7) enlarged the tiles and everything on them, split
+   decorative props from interactive ones, and killed the last page scroll.
    Imported by FloorScreen.tsx, so it loads AFTER App.css/v5.css/v16.css and
    equal-specificity rules here win the cascade. Scope: FloorScreen only.
 
@@ -10,12 +12,17 @@
    which camera-follow drives), and the legend chips docked on the map's
    bottom edge. The d-pad is gone — click-to-move + WASD + gamepad remain.
 
-   Cell size is a single token, --cell, set on .map-grid:
-     · 64px  — desktop (width ≥ 781px AND height ≥ 501px): war-table tiles
-     · 48px  — base/portrait (matches the historical desktop size)
+   Cell size is a single token, --cell, set on .map-grid. v19 #6 raised the
+   war-table sizes — Paul: "make the tiles and images for things on the tiles
+   bigger. Its very hard to tell what is what":
+     · 92px  — roomy desktop (width ≥ 1200px AND height ≥ 820px)
+     · 84px  — desktop        (width ≥ 781px  AND height ≥ 501px)   [was 64px]
+     · 48px  — base/portrait  (matches the historical desktop size)
      · 24px  — landscape phones (max-height: 500px, App.css's mobile branch)
    FloorScreen's wallStyle() samples the wall texture via calc(var(--cell) *
-   n), so texture windows stay pixel-aligned with tiles at every size.
+   n), so texture windows stay pixel-aligned with tiles at every size. EVERY
+   thing that sits on a tile is sized off the same token below — nothing on
+   the map may carry a hard-coded pixel size.
    ========================================================================= */
 
 /* --- 1 · Cell sizing rides the --cell token --------------------------------- */
@@ -23,6 +30,11 @@
   --cell: 48px;
   max-width: 100%;
   overflow: auto;
+  /* The map's content churns every single step (fog, threat rim, reachable
+     overlay, unit positions). Scroll anchoring would chase those deltas and
+     fight camera-follow's scrollTo — same class of bug v16.css killed on
+     .game-main. Off. */
+  overflow-anchor: none;
   scrollbar-width: thin;
   scrollbar-color: rgba(200, 162, 74, 0.35) rgba(10, 8, 6, 0.9);
 }
@@ -30,11 +42,16 @@
 .map-grid .map-cell {
   width: var(--cell);
   height: var(--cell);
-  font-size: calc(var(--cell) * 0.5);
+  font-size: calc(var(--cell) * 0.58);
+  /* v5.css clips cells with overflow:hidden, which makes every one of them a
+     programmatically SCROLLABLE box (hundreds per floor) that a UA focus or
+     scrollIntoView can shift. clip forbids scrolling outright and clips
+     identically — see §7 for the same fix on the panel itself. */
+  overflow: clip;
 }
 
-/* TileFill fallback SVGs carry fixed width/height attrs (48) — stretch them
-   to the live cell size so the untextured path scales with everything else. */
+/* TileFill SVGs carry fixed width/height attrs — stretch them to the live
+   cell size so the untextured path scales with everything else. */
 .map-grid .map-cell > svg {
   width: 100%;
   height: 100%;
@@ -43,20 +60,70 @@
 /* Painted object icons + sprites scale with the tile instead of their fixed
    pixel attrs (also un-clips them inside 24px landscape-phone cells). */
 .map-grid .map-cell .cell-top .ui-icon {
-  width: calc(var(--cell) * 0.7);
-  height: calc(var(--cell) * 0.7);
+  width: calc(var(--cell) * 0.74);
+  height: calc(var(--cell) * 0.74);
 }
 .map-grid .map-cell.player .cell-top .ui-icon {
-  width: calc(var(--cell) * 0.85);
-  height: calc(var(--cell) * 0.85);
+  width: calc(var(--cell) * 0.86);
+  height: calc(var(--cell) * 0.86);
 }
 .map-grid .map-cell .unit-token img,
 .map-grid .map-cell .unit-token svg {
-  width: calc(var(--cell) * 0.92);
-  height: calc(var(--cell) * 0.92);
+  width: calc(var(--cell) * 0.94);
+  height: calc(var(--cell) * 0.94);
 }
 .map-grid .map-cell .unit-crown {
-  font-size: max(0.5rem, calc(var(--cell) * 0.2));
+  top: calc(var(--cell) * -0.1);
+  font-size: max(0.5rem, calc(var(--cell) * 0.22));
+}
+.map-grid .map-cell .unit-crown .ui-icon {
+  width: calc(var(--cell) * 0.28);
+  height: calc(var(--cell) * 0.28);
+}
+/* The floor-tile centre pip is pure texture — keep it a speck at any size. */
+.map-grid .map-cell.floor-tile::after {
+  width: max(3px, calc(var(--cell) * 0.045));
+  height: max(3px, calc(var(--cell) * 0.045));
+}
+
+/* v19 #5/#6 · Decorative props read as GROUND, interactive icons read as
+   THINGS. Props draw smaller, dimmer and flatter than any object icon, so at
+   a glance the only bright, sharp, tile-filling art on the map is something
+   you can actually interact with. (Specificity beats the .cell-top rule.) */
+.map-grid .map-cell .cell-top.tile-prop .ui-icon {
+  width: calc(var(--cell) * 0.58);
+  height: calc(var(--cell) * 0.58);
+}
+.map-grid .map-cell .tile-prop {
+  opacity: 0.58;
+  filter: brightness(0.78) saturate(0.65);
+}
+
+/* Interactive tiles keep their colour-coded halo at the bigger size, so
+   chest / shrine / event / stairs / breakable stay tellable apart across the
+   room instead of blurring into "some painted thing".
+   NB the .floor-panel prefix: v5.css already styles
+   `.map-grid.textured .map-cell.special .cell-top` at (0,5,0) and every gate
+   has a texture, so a plain `.map-grid .map-cell.chest .cell-top` (0,4,0)
+   would lose. This ties at (0,5,0) from a later sheet and covers the
+   untextured path too. */
+.floor-panel .map-grid .map-cell.special .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7));
+}
+.floor-panel .map-grid .map-cell.chest .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 10px rgba(212, 175, 55, 0.6));
+}
+.floor-panel .map-grid .map-cell.shrine .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 10px rgba(90, 200, 230, 0.55));
+}
+.floor-panel .map-grid .map-cell.event-tile .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 10px rgba(169, 127, 224, 0.55));
+}
+.floor-panel .map-grid .map-cell.stairs .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 9px rgba(233, 220, 194, 0.45));
+}
+.floor-panel .map-grid .map-cell.breakable .cell-top {
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 8px rgba(180, 130, 70, 0.4));
 }
 
 /* --- 2 · War-table frame around the grid ------------------------------------ */
@@ -102,10 +169,18 @@
 }
 
 /* Desktop proper: bigger war-table tiles. (v18 #10 removed the side column —
-   the top-bar layout in section 7 owns everything else at every size.) */
+   the top-bar layout in section 7 owns everything else at every size.)
+   v19 #6: 64px → 84px, and 92px where there's room for it. Floors taller or
+   wider than the viewport scroll INSIDE .map-grid; camera-follow keeps the
+   hero centred, so a bigger tile costs nothing but a little more panning. */
 @media (min-width: 781px) and (min-height: 501px) {
   .map-grid {
-    --cell: 64px;
+    --cell: 84px;
+  }
+}
+@media (min-width: 1200px) and (min-height: 820px) {
+  .map-grid {
+    --cell: 92px;
   }
 }
 
@@ -238,8 +313,8 @@
   background:
     radial-gradient(
       circle,
-      rgba(255, 234, 158, 0.95) calc(var(--cell, 48px) * 0.07),
-      rgba(255, 234, 158, 0) calc(var(--cell, 48px) * 0.07 + 3px)
+      rgba(255, 234, 158, 0.95) calc(var(--cell, 48px) * 0.045),
+      rgba(255, 234, 158, 0) calc(var(--cell, 48px) * 0.045 + 3px)
     ),
     radial-gradient(circle, rgba(246, 214, 122, 0.34), rgba(246, 214, 122, 0.08) 74%);
   box-shadow:
@@ -256,8 +331,8 @@
   background:
     radial-gradient(
       circle,
-      #fff3c6 calc(var(--cell, 48px) * 0.09),
-      rgba(255, 243, 198, 0) calc(var(--cell, 48px) * 0.09 + 3px)
+      #fff3c6 calc(var(--cell, 48px) * 0.06),
+      rgba(255, 243, 198, 0) calc(var(--cell, 48px) * 0.06 + 3px)
     ),
     radial-gradient(circle, rgba(255, 230, 150, 0.55), rgba(255, 230, 150, 0.16) 78%);
   box-shadow:
@@ -283,16 +358,40 @@
 /* The floor panel clamps to the shell's height instead of growing past it, so
    .game-main (the old page scroller) never has anything to scroll. v16 sizes
    panels via `.game:not(.battle-mode) .game-main > .panel` at (0,4,0) — the
-   conflicting overrides here carry the same prefix + .floor-panel to win. */
+   conflicting overrides here carry the same prefix + .floor-panel to win.
+
+   v19 #7 — THE MAP SCREEN'S REMAINING PAGE SCROLL, root cause.
+   v18 pinned the shell (html/body overflow:clip, v16.css) and .game-main
+   genuinely stops at scrollTop 0 — measured. But the clamp v18 added right
+   here used `overflow: hidden`, and a hidden box is still a SCROLL CONTAINER:
+   the UA may scroll it for focus, scrollIntoView, caret moves and scroll
+   anchoring even though no scrollbar exists. .floor-panel IS the whole map
+   screen, and the Lantern end-turn button's glow (absolutely positioned into
+   the panel's bottom-right corner, .floor-lantern-turn) pushes its scrollable
+   overflow ~19-40px down and ~33-51px right. Measured on Edge headless at
+   1920/1680/1366/1280: `panel.scrollTop = 9999` moved the title plaque by
+   exactly that much — i.e. the whole screen slid. That is the "window
+   scrolling on the map screen".
+   `overflow: clip` clips identically but is NOT a scroll container, so the
+   panel can never be scrolled by anything — exactly the html/body fix v16.13
+   applied one level up. After: forcing every ancestor scroller leaves title
+   shift at 0px. .map-grid stays the one and only scroller on this screen. */
 .game-main > .panel.floor-panel {
   flex: 1 1 auto; /* beats .game-main > * { flex: 1 0 auto } — allow shrink */
 }
 .game:not(.battle-mode) .game-main > .panel.floor-panel {
   min-height: 0;
   max-height: 100%;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 0;
+  overscroll-behavior: contain;
   padding: 14px 20px 12px;
 }
+/* Rule for this screen from here on: .map-grid is the ONLY box allowed to be
+   a scroll container. Anything else that needs to clip uses `clip`, never
+   `hidden` — hidden re-arms exactly the bug above. (No clip on .map-frame /
+   .floor-layout: they don't overflow, and clipping them would eat the war
+   table's and the top bar's drop shadows.) */
 /* Compact plaque — the map deserves the vertical space, not the title. */
 .game-main > .panel.floor-panel > h1.title {
   font-size: 1.15rem;
@@ -443,9 +542,10 @@
   color: var(--gold-bright, #e6cf7a);
 }
 
-/* Legend as icon chips. These base rules never set `display`, so App.css's
-   landscape-phone `.map-legend { display: none }` still hides the dock on
-   short viewports regardless of specificity. */
+/* Legend as icon chips. NB: this DOES set `display`, at the same (0,1,0)
+   specificity as App.css's landscape-phone `.map-legend { display: none }`
+   and from a later stylesheet — so it silently re-showed the dock on short
+   viewports. §8 re-asserts the hide. */
 .legend-chips {
   display: flex;
   flex-wrap: wrap;
@@ -491,6 +591,12 @@
 @media (max-height: 500px) {
   .map-grid {
     --cell: 24px;
+  }
+  /* Vertical space is the scarce one here — App.css hides the legend for that
+     reason and floor.css's `.legend-chips { display: flex }` was overriding
+     it (same specificity, later sheet). Hide it for real. */
+  .floor-panel .legend-chips {
+    display: none;
   }
   .game:not(.battle-mode) .game-main > .panel.floor-panel {
     padding: 8px 10px 6px;
