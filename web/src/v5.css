@@ -1720,3 +1720,85 @@
     max-height: 34px;
   }
 }
+
+/* =========================================================================
+   LEAVINGS — what the floor kept of whoever walked it first.
+   See data/leavings.ts for the fiction and components/LeavingOverlay.tsx.
+
+   Appended at the end of the file deliberately: an override that has to win
+   against same-specificity rules earlier in the sheet cannot rely on being
+   inside a media query to do it.
+   ========================================================================= */
+.leaving-overlay {
+  background: rgba(3, 3, 4, 0.95);
+}
+
+.leaving-panel {
+  max-width: 620px;
+  border-color: rgba(120, 110, 96, 0.55);
+  /* No ember glow. The legend overlay announces; this one is found. */
+  box-shadow: var(--shadow-panel);
+  animation: leavingSettle 0.7s ease-out both;
+}
+
+/* Your own dead. The one leaving with a claim on you, and the only one lit. */
+.leaving-panel.own {
+  border-color: var(--gold-deep);
+  box-shadow: 0 0 44px rgba(201, 162, 39, 0.13), var(--shadow-panel);
+}
+
+@keyframes leavingSettle {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.leaving-kicker {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.42em;
+  color: var(--text-dim);
+  margin: 2px 0 12px;
+}
+
+.leaving-panel.own .leaving-kicker {
+  color: var(--gold-bright);
+}
+
+.leaving-name {
+  font-size: 1.45rem;
+  margin-bottom: 2px;
+}
+
+.leaving-author {
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  color: var(--gold-deep);
+  margin: 0 0 16px;
+}
+
+.leaving-anon {
+  color: var(--text-dim);
+  font-style: italic;
+  letter-spacing: 0.12em;
+}
+
+.leaving-body {
+  text-align: left;
+  margin-bottom: 18px;
+}
+
+.leaving-body .story-paragraph + .story-paragraph {
+  margin-top: 10px;
+}
+
+/* The map token. A candle somebody else lit and did not come back for — it
+   holds still, unlike the lantern, because nothing here is burning now. */
+.map-grid .map-cell.leaving-tile {
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .leaving-panel {
+    animation: none;
+  }
+}

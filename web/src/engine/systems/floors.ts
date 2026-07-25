@@ -61,6 +61,9 @@ export interface Expedition {
   units: FloorUnit[];
   movLeft: number;
   minibossDown: boolean;
+  /** Tellings already met as a leaving on this expedition. Optional so saves
+   * written before leavings existed load as "none met yet" rather than crash. */
+  usedTellings?: number[];
   /** Set only for an Unmapped Wilds expedition: floors past the gate's hand-
    * authored ones, generated on demand and cached here (so ascending then
    * descending again doesn't reroll a floor you've already seen). */
@@ -216,6 +219,49 @@ export function delta(dir: Direction): { dx: number; dy: number } {
 
 export function unitAt(exp: Expedition, x: number, y: number): FloorUnit | undefined {
   return exp.units.find((u) => u.x === x && u.y === y);
+}
+
+/**
+ * Where the leavings are on this floor. See data/leavings.ts for what they are.
+ *
+ * DERIVED FROM THE FLOOR'S IDENTITY, not written into its grid — and that is
+ * the whole point of doing it this way. The first attempt at this feature put
+ * an 'L' in the tile grid from `generateFloor`, which looked right and shipped
+ * nothing: the five Gates are HAND-AUTHORED ascii in data/gates.ts and only
+ * the Unmapped Wilds go through the generator, so leavings existed exactly
+ * nowhere a new player walks. Deriving instead means the authored level design
+ * is never touched and every floor of every kind gets them for free.
+ *
+ * Stable for a given (gate, floor, wild seed), so a leaving does not move
+ * between renders, between saves, or when you climb back up to a floor.
+ */
+export function leavingSpots(exp: Expedition): Set<string> {
+  const floor = floorOf(exp);
+  const rng = new SeededRng(hashSeed(`${exp.gateId}:${exp.floorIndex}:${exp.wild?.seed ?? 0}`));
+  // Plain floor only: never on the stair, the start, a chest or a spawn point.
+  const open: string[] = [];
+  for (let y = 0; y < floor.grid.length; y++) {
+    for (let x = 0; x < floor.grid[y].length; x++) {
+      if (floor.grid[y][x] === TILE.FLOOR) open.push(`${x},${y}`);
+    }
+  }
+  const spots = new Set<string>();
+  if (!open.length) return spots;
+  // One or two. Two traces read as a place people passed through; one reads as
+  // a set-piece the designer put there.
+  const want = Math.min(open.length, 1 + rng.int(2));
+  for (let guard = 0; spots.size < want && guard < 40; guard++) spots.add(open[rng.int(open.length)]);
+  return spots;
+}
+
+/** Stable 32-bit hash of a string, so a floor's identity seeds its own RNG. */
+function hashSeed(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 /** Walkable for the PLAYER: breakables are enterable (they smash). */

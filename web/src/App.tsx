@@ -24,6 +24,7 @@ import { DeckScreen } from './components/DeckScreen';
 import { CardCodexScreen } from './components/CardCodexScreen';
 import { SmithScreen } from './components/SmithScreen';
 import { LegendOverlay } from './components/LegendOverlay';
+import { LeavingOverlay } from './components/LeavingOverlay';
 import { SaveLoadScreen } from './components/SaveLoadScreen';
 import { VictoryScreen } from './components/VictoryScreen';
 import { StoryOverlay } from './components/StoryOverlay';
@@ -365,6 +366,7 @@ function App() {
       {state.pendingStory !== null && <StoryOverlay state={state} dispatch={dispatch} />}
 
       {state.pendingLegend !== null && <LegendOverlay state={state} dispatch={dispatch} />}
+      {state.pendingLeaving !== null && <LeavingOverlay state={state} dispatch={dispatch} />}
 
       {/* v19 encounter transition. Cover phase: the world is still mounted
           underneath and seizes/pushes in while the flash, swirl and blades

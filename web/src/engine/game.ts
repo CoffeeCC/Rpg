@@ -42,6 +42,7 @@ import {
   advanceHostiles,
   floorHasMiniboss,
   revealLantern,
+  leavingSpots,
   TILE,
   type Direction,
   type Expedition,
@@ -61,6 +62,7 @@ import { hasDrilled } from '../platform/drillRecord';
 import { UNIQUES } from './data/uniques';
 import { setCardIds, setStandings } from './data/sets';
 import { TAME_LINES, BREEDING_COVENANT_LINES } from './data/covenantLore';
+import { composeLeaving, type Leaving } from './data/leavings';
 import { bindingById, depthByLevel, runModifiers, type RunModifiers } from './data/bindings';
 import {
   DRILL_BEATS,
@@ -261,6 +263,8 @@ export interface GameState {
   pendingEvent: PendingEvent | null;
   pendingStory: number | null;
   pendingLegend: PendingLegend | null;
+  /** A trace somebody else left, waiting to be read. See data/leavings.ts. */
+  pendingLeaving: Leaving | null;
   pendingMerchant: PendingMerchant | null;
   storyChapter: number;
   /** v11: last story chapter Casque's free blessing was used in (-99 = never). */
@@ -380,6 +384,7 @@ export type GameAction =
   | { type: 'DRILL_LEAVE' }
   | { type: 'UPGRADE_CARD'; cardId: string }
   | { type: 'LEGEND_SEEN' }
+  | { type: 'LEAVING_SEEN' }
   | { type: 'DUEL_RESULT'; result: 'win' | 'loss' | 'draw'; opponent: string }
   | { type: 'TALK'; npcId: string }
   | { type: 'LOAD_STATE'; state: GameState }
@@ -398,6 +403,7 @@ export function initialGameState(): GameState {
     pendingEvent: null,
     pendingStory: null,
     pendingLegend: null,
+    pendingLeaving: null,
     pendingMerchant: null,
     storyChapter: -1,
     blessingChapter: -99,
@@ -1521,6 +1527,37 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       exp.y = ty;
       exp.movLeft = Math.max(0, exp.movLeft - 1);
 
+      // A leaving sits ON plain floor rather than on a tile of its own (see
+      // `leavingSpots` for why), so it is checked here rather than in the
+      // switch below — which never sees TILE.FLOOR at all.
+      if (leavingSpots(exp).has(`${tx},${ty}`) && !isOpened(exp, tx, ty)) {
+        exp.opened.push(openKey(exp, tx, ty));
+        // The book is read here rather than snapshotted at character creation
+        // on purpose: a telling that ended ten minutes ago should be findable
+        // in the run you started after it. CREATE_CHARACTER reads it the same way.
+        const meta = loadTellings();
+        const used = exp.usedTellings ?? [];
+        const leaving = composeLeaving({
+          world: next.world,
+          gateId: exp.gateId,
+          fallen: meta.fallen,
+          usedTellings: used,
+          pick: (n) => randInt(n),
+        });
+        // One meeting per telling per expedition. Finding the same body twice
+        // on two floors retroactively turns the first one into a random table.
+        if (leaving.tellingNumber !== undefined) exp.usedTellings = [...used, leaving.tellingNumber];
+        next.pendingLeaving = leaving;
+        lines.push(leaving.logLine);
+        // What is actually on it. Modest by design — a leaving is a thing to
+        // read, and paying it like a chest would make it a chest with a
+        // paragraph attached. Your own dead pay most; that gear was yours.
+        const purse =
+          leaving.kind === 'telling' ? 25 + randInt(30) : leaving.kind === 'figure' ? 10 + randInt(20) : 4 + randInt(10);
+        next.player!.addGold(purse);
+        lines.push(`You take up ${purse} gold.`);
+      }
+
       switch (tile) {
         case TILE.STAIRS: {
           if (floorHasMiniboss(floor) && !exp.minibossDown) {
@@ -2292,6 +2329,9 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
 
     case 'LEGEND_SEEN':
       return { ...state, pendingLegend: null };
+
+    case 'LEAVING_SEEN':
+      return { ...state, pendingLeaving: null };
 
     case 'DUEL_RESULT': {
       // A duel is a wager of pride, not of beasts: nothing is healed, killed,

@@ -41,7 +41,7 @@ export interface SaveData {
 
 export function serializeGameState(state: GameState): SaveData | null {
   if (!isSavable(state)) return null;
-  const snapshot: GameState = { ...state, battle: null, lastFx: [], lastTalk: null, pendingReward: null, pendingLegend: null, pendingMerchant: null };
+  const snapshot: GameState = { ...state, battle: null, lastFx: [], lastTalk: null, pendingReward: null, pendingLegend: null, pendingLeaving: null, pendingMerchant: null };
   return {
     version: SAVE_VERSION,
     savedAt: new Date().toISOString(),
@@ -167,6 +167,7 @@ function reviveGameState(raw: RawSave): GameState {
     pendingStory: null,
     pendingReward: null,
     pendingLegend: null,
+    pendingLeaving: null,
     pendingMerchant: null,
     lastTalk: null,
     lastFx: [],

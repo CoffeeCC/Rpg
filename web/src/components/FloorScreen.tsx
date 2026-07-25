@@ -13,6 +13,7 @@ import {
   unitAt,
   movFor,
   threatTiles,
+  leavingSpots,
   pathToTile,
   reachableTiles,
   TILE,
@@ -327,6 +328,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const floor = floorOf(exp); // wild expeditions generate floors past the gate's charted ones
   const mov = movFor(player);
   const threat = threatTiles(exp);
+  const leavings = leavingSpots(exp);
   const lit = litTiles(exp, lanternRadius(player));
   // v12 click-to-move: tiles you can walk to this turn, and units you can reach
   // and bump (adjacent to you or to a reachable tile).
@@ -542,6 +544,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   // to the current light hid the exact warning it exists for.
                   const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
                   const prop = tile === TILE.FLOOR ? pickTileProp(x, y, exp.gateId) : null;
+                  // A leaving sits on ordinary floor and is marked rather than
+                  // tiled, because it is a thing lying there, not a feature of
+                  // the room. Once read it stops being marked — the paragraph
+                  // is the reward and there is nothing to come back for.
+                  const hasLeaving = tile === TILE.FLOOR && leavings.has(`${x},${y}`) && !isOpened(exp, x, y);
                   return (
                     <span
                       key={x}
@@ -555,6 +562,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                       {view.emoji && (
                         <span className="cell-top">
                           <Icon name={view.icon} emoji={view.emoji} size={ART.object} />
+                        </span>
+                      )}
+                      {hasLeaving && (
+                        <span className="cell-top leaving-mark" title="Somebody was here">
+                          <Icon name="event_abandonedCamp" emoji="🎒" size={ART.prop} />
                         </span>
                       )}
                       {/* v19 #5: decorative ground clutter only — TilePropArt
@@ -583,6 +595,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           </span>
           <span className="legend-chip">
             <Icon name="shrine" emoji="⛲" size={16} /> shrine
+          </span>
+          <span className="legend-chip">
+            <Icon name="event_abandonedCamp" emoji="🎒" size={16} /> a leaving
           </span>
           <span className="legend-chip">
             <Icon name="event" emoji="❓" size={16} /> event
