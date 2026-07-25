@@ -1,152 +1,106 @@
 import { useState, type CSSProperties } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
-import type { Stat, ItemV2 } from '../engine/types';
-import type { EquipKey } from '../engine/entities/Character';
-import { RACE_TRAITS, CLASS_TRAITS, TALENTS, unlockedTalents, talentsFor } from '../engine/data/traits';
-import { BALANCE } from '../engine/data/balance';
+import type { Stat } from '../engine/types';
+import { RACE_TRAITS, CLASS_TRAITS, TALENTS, unlockedTalents } from '../engine/data/traits';
+import { STAT_LABEL, STATUS_DESC } from '../engine/data/keywords';
+import { RACES } from '../engine/data/races';
+import { CLASSES } from '../engine/data/classes';
+import { FAMILY_INFO, familyWeakness } from '../engine/data/species';
 import { THE_ARRANGEMENT } from '../engine/data/theArrangement';
+import {
+  attributeBreakdowns,
+  derivedBreakdowns,
+  heroScalingLines,
+  mitigationLines,
+  scalingBonusOf,
+  shapingMultipliers,
+  standingEffects,
+  type Breakdown,
+  type Contribution,
+} from '../engine/statBreakdown';
 import { HeroImage, MonsterImage } from '../art/MonsterImage';
-import { gearImage } from '../art/gearArt';
-import { ItemHover, type CompareMetric } from './ItemHover';
-import { ItemLine } from './ItemLine';
+import { ELEMENT_ICON } from '../art/elementIcons';
+import { KeywordText } from './KeywordText';
 import { NpcHost } from './NpcHost';
 import '../sheets.css';
+import '../charsheet.css';
 
-// v17 (PLAN7 C1): one AAA character screen — hero portrait panel with level
-// ring + EXP bar on the left, gear sockets (paperdoll) in the middle,
-// attribute orbs with a prominent points CTA on the right, derived combat
-// stats across the top, bag below, and the deeper stuff (oaths, talents,
-// party) folded underneath. Both the Character and Equipment town buttons
-// land here. Presentation only — every dispatch is unchanged from v12.
+// v20: the character sheet stopped being the gear screen wearing a different
+// name. Gear moved to GearScreen; what stayed is the accounting — every number
+// on the hero traced back to the blood, the schooling, the levels, the affixes
+// and the things still counting down on them. Nothing here is re-derived: the
+// terms come from engine/statBreakdown, which mirrors the engine and is held
+// to it by engine/test/charSheet.test.ts.
 
 const STATS: Stat[] = ['STR', 'DEF', 'DEX', 'MANA', 'MAGDEF', 'INT', 'LUCK'];
 
-const SLOT_LABEL: Record<EquipKey, string> = {
-  weapon: 'Weapon',
-  armor: 'Armor',
-  headpiece: 'Headpiece',
-  gloves: 'Gloves',
-  boots: 'Boots',
-  ring: 'Ring',
-  ring2: 'Ring II',
-  amulet: 'Amulet',
-  pendant: 'Pendant',
-};
-const SLOT_EMOJI: Record<EquipKey, string> = {
-  weapon: '🗡️',
-  armor: '🛡️',
-  headpiece: '⛑️',
-  gloves: '🧤',
-  boots: '🥾',
-  ring: '💍',
-  ring2: '💍',
-  amulet: '📿',
-  pendant: '🧿',
-};
-const SLOT_AREA: Record<EquipKey, string> = {
-  headpiece: 'head',
-  amulet: 'amulet',
-  pendant: 'pendant',
-  weapon: 'weapon',
-  armor: 'armor',
-  gloves: 'gloves',
-  ring: 'ring1',
-  ring2: 'ring2',
-  boots: 'boots',
-};
+function signed(n: number): string {
+  return n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0';
+}
 
-function statDetail(stat: Stat, v: number): string {
-  switch (stat) {
-    case 'STR':
-      return `Powers physical cards (+${v} STR-scaled damage) and adds ${v * 3} max HP.`;
-    case 'DEF':
-      return `Subtracted from incoming physical hits (−${v}) and adds ${v * 2} max HP.`;
-    case 'DEX':
-      return `Floor movement: +${Math.floor(v / 15)} MOV (one more every 15 DEX).`;
-    case 'MANA':
-      return `Adds ${v * 4} max MP. MP fuels your monsters' battle instincts.`;
-    case 'MAGDEF':
-      return `Subtracted from incoming magical damage (−${v}).`;
-    case 'INT':
-      return `Powers magical cards (+${v} INT-scaled damage) and strengthens mending.`;
-    case 'LUCK':
-      return `Crit +${Math.floor(v / BALANCE.critLuckDiv)}% (1% per ${BALANCE.critLuckDiv}), better loot, kinder shops.`;
-  }
+function TermRow({ term }: { term: Contribution }) {
+  const isMult = term.mult !== undefined;
+  const value = isMult ? `×${term.mult}` : signed(term.amount);
+  const tone = isMult ? (term.mult! < 1 ? 'down' : 'up') : term.amount > 0 ? 'up' : term.amount < 0 ? 'down' : 'flat';
+  return (
+    <li className={`cdd-term cdd-term-${term.kind}`}>
+      <span className={`cdd-term-val cdd-${tone}`}>{value}</span>
+      <span className="cdd-term-source">{term.source}</span>
+      {term.detail && <span className="cdd-term-detail">{term.detail}</span>}
+    </li>
+  );
+}
+
+function Ledger({ breakdown }: { breakdown: Breakdown }) {
+  return (
+    <details className="cdd-ledger">
+      <summary className="cdd-ledger-summary">
+        <span className="cdd-ledger-label">{breakdown.label}</span>
+        <span className="cdd-ledger-total">{breakdown.total}</span>
+        <span className="cdd-ledger-terms">
+          {breakdown.contributions.length} term{breakdown.contributions.length === 1 ? '' : 's'}
+        </span>
+      </summary>
+      <div className="cdd-ledger-body">
+        <p className="cdd-meaning">
+          <KeywordText text={breakdown.meaning} />
+        </p>
+        <ul className="cdd-terms">
+          {breakdown.contributions.map((term, i) => (
+            <TermRow term={term} key={i} />
+          ))}
+          <li className="cdd-term cdd-term-total">
+            <span className="cdd-term-val">{breakdown.total}</span>
+            <span className="cdd-term-source">{breakdown.label}</span>
+            <span className="cdd-term-detail">{breakdown.formula}</span>
+          </li>
+        </ul>
+        {breakdown.note && (
+          <p className="cdd-note">
+            <KeywordText text={breakdown.note} />
+          </p>
+        )}
+      </div>
+    </details>
+  );
 }
 
 export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: GameState; backScreen: Screen; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
-  const [bagFilter, setBagFilter] = useState<'all' | ItemV2['slot']>('all');
   const [codex, setCodex] = useState(false);
 
-  const crit = BALANCE.critBase + Math.floor(player.effectiveStat('LUCK') / BALANCE.critLuckDiv) + talentsFor(player.level).critBonus;
-  const mov = Math.max(2, 4 + Math.floor(player.effectiveStat('DEX') / 15) + (player.equipment.boots ? 1 : 0) + player.traits.moveBonus);
-
-  const topStats: [string, string | number, string][] = [
-    ['Attack', player.getAttack(), 'STR + weapon implicits + gear Attack. Base of every physical card.'],
-    ['Magic', player.getMagicPower(), 'INT + staff implicits + gear Magic. Base of every spell card.'],
-    ['Defense', player.getDefense(), 'DEF + armor implicits + gear Defense. Cut from physical hits.'],
-    ['M.Def', player.getMagicDefense(), 'MAGDEF + half your armor. Cut from magical hits.'],
-    ['Max HP', player.maxHp, '40 + STR×3 + DEF×2 + level×8 + gear, times race modifier.'],
-    ['Max MP', player.maxMp, '10 + MANA×4 + level×3 + gear. Spent on monster instincts.'],
-    ['Crit', `${crit}%`, `${BALANCE.critBase}% base + LUCK/${BALANCE.critLuckDiv} + talents. Crits hit much harder.`],
-    ['MOV', mov, '4 + DEX/15 + boots + traits. Tiles per turn on gate floors.'],
-  ];
-
-  function metricsFor(item: ItemV2): { metrics: CompareMetric[]; replaces: ItemV2 | null } {
-    const ghost = player.clone();
-    const replaces = ghost.equip({ ...item, affixes: item.affixes.map((a) => ({ ...a })) });
-    return {
-      replaces,
-      metrics: [
-        { label: 'Attack', now: player.getAttack(), after: ghost.getAttack() },
-        { label: 'Magic', now: player.getMagicPower(), after: ghost.getMagicPower() },
-        { label: 'Defense', now: player.getDefense(), after: ghost.getDefense() },
-        { label: 'M.Def', now: player.getMagicDefense(), after: ghost.getMagicDefense() },
-        { label: 'Max HP', now: player.maxHp, after: ghost.maxHp },
-        { label: 'Max MP', now: player.maxMp, after: ghost.maxMp },
-      ],
-    };
-  }
-
-  const accessories = player.items.filter((i) => i.slot === 'charm' || i.slot === 'trinket');
-  const gearItems = player.items.filter((i) => i.slot !== 'charm' && i.slot !== 'trinket');
-  const bag = bagFilter === 'all' ? gearItems : gearItems.filter((i) => i.slot === bagFilter);
-
-  const renderSlot = (key: EquipKey) => {
-    const worn = player.equipment[key];
-    const icon = worn ? gearImage(worn) : null;
-    const slotType: ItemV2['slot'] = key === 'ring2' ? 'ring' : (key as ItemV2['slot']);
-    const cell = (
-      <button
-        className={`doll-slot ${worn ? `doll-filled rarity-frame-${worn.rarity}` : 'doll-empty'}`}
-        style={{ gridArea: SLOT_AREA[key] }}
-        onClick={() => setBagFilter(bagFilter === slotType ? 'all' : slotType)}
-        title={worn ? undefined : `${SLOT_LABEL[key]} — empty. Click to filter the bag.`}
-      >
-        {worn ? (
-          icon ? <img src={icon} alt="" className="doll-slot-img" draggable={false} /> : <span className="doll-slot-emoji">{SLOT_EMOJI[key]}</span>
-        ) : (
-          <span className="doll-slot-ghost">{SLOT_EMOJI[key]}</span>
-        )}
-        <span className="doll-slot-label">{SLOT_LABEL[key]}</span>
-      </button>
-    );
-    return worn ? (
-      <ItemHover item={worn} key={key}>
-        {cell}
-      </ItemHover>
-    ) : (
-      <span key={key} style={{ display: 'contents' }}>
-        {cell}
-      </span>
-    );
-  };
-
+  const attributes = attributeBreakdowns(player);
+  const derived = derivedBreakdowns(player);
+  const byId = Object.fromEntries(derived.map((b) => [b.id, b]));
+  const headline = ['attack', 'magic', 'defense', 'magicDefense', 'maxHp', 'maxMp', 'crit', 'vigor'];
   const expPct = Math.min(100, Math.round((player.exp / player.expToNext()) * 100));
+  const standing = standingEffects(player);
+  const scalings = heroScalingLines(player);
+  const mitigations = mitigationLines(player);
+  const shaping = shapingMultipliers(player).filter((s) => s.value !== 1);
 
   return (
-    <div className="panel char-screen">
+    <div className="panel char-screen cdd-screen">
       <div className="sheet-head">
         <div>
           <h1 className="title" style={{ margin: 0 }}>
@@ -164,15 +118,15 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
       <NpcHost npcId="rowan" state={state} />
 
       <div className="char-topbar">
-        {topStats.map(([label, value, how]) => (
-          <div className="char-stat-tile" key={label} title={how}>
-            <span className="char-stat-val">{value}</span>
-            <span className="char-stat-label">{label}</span>
+        {headline.map((id) => (
+          <div className="char-stat-tile" key={id} title={byId[id].formula}>
+            <span className="char-stat-val">{id === 'crit' ? `${byId[id].total}%` : byId[id].total}</span>
+            <span className="char-stat-label">{byId[id].label}</span>
           </div>
         ))}
       </div>
 
-      <div className="cs-layout">
+      <div className="cdd-layout">
         <aside className="sheet-figure-panel cs-hero-panel">
           <div className="cs-level-ring" style={{ '--ring-pct': `${expPct}%` } as CSSProperties} title={`EXP ${player.exp}/${player.expToNext()}`}>
             <span className="cs-level-num">{player.level}</span>
@@ -195,98 +149,268 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
               </span>
             </span>
           </div>
+          <p className="cdd-blurb">{RACES[player.race].description}</p>
+          <p className="cdd-blurb">{CLASSES[player.className].description}</p>
+          <button className="btn small cdd-gear-link" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
+            🎒 Gear &amp; bag ▸
+          </button>
         </aside>
 
-        <div className="paperdoll cs-doll">{(Object.keys(SLOT_AREA) as EquipKey[]).map(renderSlot)}</div>
-
-        <aside className="cs-attrs">
-          {player.attributePoints > 0 && <div className="cs-points">✨ {player.attributePoints} points</div>}
-          <div className="cs-orb-grid">
-            {STATS.map((stat) => {
-              const v = player.effectiveStat(stat);
-              return (
-                <div className="attr-orb" key={stat} title={statDetail(stat, v)}>
-                  <span className="attr-orb-val">{v}</span>
-                  <span className="attr-orb-name">{stat}</span>
-                  {player.attributePoints > 0 && (
-                    <button className="attr-orb-plus" onClick={() => dispatch({ type: 'SPEND_ATTRIBUTE', stat })} title={`Raise ${stat}`}>
-                      +
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </aside>
-      </div>
-
-      <div className="equip-bag">
-        <div className="equip-bag-head">
-          <h2 className="sheet-section-title" style={{ margin: 0 }}>
-            Bag <span className="sheet-sec-count">{gearItems.length}</span> {bagFilter !== 'all' && <span className="pill">{bagFilter}</span>}
-          </h2>
-          {bagFilter !== 'all' && (
-            <button className="btn small" onClick={() => setBagFilter('all')}>
-              Show all
-            </button>
-          )}
-        </div>
-        {bag.length === 0 && <p className="subtitle">Nothing {bagFilter === 'all' ? 'in the bag' : 'fits that slot'}. The gates provide.</p>}
-        <div className="option-list">
-          {bag.map((item) => {
-            const cmp = metricsFor(item);
-            return (
-              <ItemHover item={item} metrics={cmp.metrics} replaces={cmp.replaces} key={item.uid}>
-                <div className="item-row">
-                  <div className="item-desc">
-                    <ItemLine item={item} showAffixes={false} iconSize={36} />
+        <div className="cdd-main">
+          <section>
+            <div className="cdd-section-head">
+              <h2 className="sheet-section-title" style={{ margin: 0 }}>
+                Attributes
+              </h2>
+              {player.attributePoints > 0 ? (
+                <span className="cs-points">✨ {player.attributePoints} unspent</span>
+              ) : (
+                <span className="subtitle cdd-section-note">Every point spent.</span>
+              )}
+            </div>
+            <p className="subtitle cdd-section-note">
+              Each row opens onto its arithmetic — what you were born with, what your oath added, what you trained, what you are wearing, and what is
+              currently being done to you.
+            </p>
+            <div className="cdd-attr-list">
+              {STATS.map((stat, i) => {
+                const b = attributes[i];
+                return (
+                  <div className="cdd-attr-row" key={stat}>
+                    <Ledger breakdown={b} />
+                    <div className="cdd-attr-side">
+                      <span className="cdd-attr-key">{stat}</span>
+                      {player.attributePoints > 0 && (
+                        <button
+                          className="attr-orb-plus cdd-plus"
+                          onClick={() => dispatch({ type: 'SPEND_ATTRIBUTE', stat })}
+                          title={`Raise ${STAT_LABEL[stat]}`}
+                          aria-label={`Spend a point on ${STAT_LABEL[stat]}`}
+                        >
+                          +
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <button className="btn small primary" onClick={() => dispatch({ type: 'EQUIP', uid: item.uid })}>
-                    Equip
-                  </button>
-                  <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
-                    Sell
-                  </button>
-                </div>
-              </ItemHover>
-            );
-          })}
-          {accessories.length > 0 && bagFilter === 'all' && accessories.map((item) => (
-            <ItemHover item={item} key={item.uid}>
-              <div className="item-row">
-                <div className="item-desc">
-                  <ItemLine item={item} showAffixes={false} iconSize={36} />
-                  <span className="pill">monster accessory — fit it from a monster's sheet</span>
-                </div>
-                <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
-                  Sell
-                </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="sheet-section-title">Derived</h2>
+            <p className="subtitle cdd-section-note">
+              Nothing below is stored. Every one of these is recomputed from the rows above the instant anything changes.
+            </p>
+            <div className="cdd-derived-list">
+              {derived.map((b) => (
+                <Ledger breakdown={b} key={b.id} />
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="sheet-section-title">What your defences turn aside</h2>
+            <p className="subtitle cdd-section-note">
+              An enemy's blow is announced with your armour already taken out of it. Which wall it meets depends on what kind of blow it is — and the
+              two walls are separate. Stacking one does nothing for the other.
+            </p>
+            <table className="cdd-table">
+              <thead>
+                <tr>
+                  <th>Blow</th>
+                  <th>Met by</th>
+                  <th>Now</th>
+                  <th>Turns aside</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mitigations.map((line) => (
+                  <tr key={line.school} title={line.meaning}>
+                    <td>
+                      <span className="pill">{line.label}</span>
+                    </td>
+                    <td>
+                      <KeywordText text={line.source} />
+                    </td>
+                    <td className="cdd-num">{line.value}</td>
+                    <td className="cdd-num cdd-strong">−{line.turnsAside.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="subtitle cdd-section-note">
+              {mitigations.map((line) => (
+                <span key={line.school} style={{ display: 'block' }}>
+                  <strong>{line.label}:</strong> <KeywordText text={line.meaning} />
+                </span>
+              ))}
+            </p>
+          </section>
+
+          <section>
+            <h2 className="sheet-section-title">What your cards read</h2>
+            <p className="subtitle cdd-section-note">
+              A card's printed number is only its floor. Scaling cards add a share of one of your numbers, rounded down.
+            </p>
+            <table className="cdd-table">
+              <thead>
+                <tr>
+                  <th>Scaling</th>
+                  <th>Reads</th>
+                  <th>Now</th>
+                  <th>Adds</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scalings.map((line) => (
+                  <tr key={line.scaling}>
+                    <td>
+                      <span className="pill">{line.scaling}</span>
+                    </td>
+                    <td>
+                      <KeywordText text={line.source} />
+                    </td>
+                    <td className="cdd-num">{line.value}</td>
+                    <td className="cdd-num cdd-strong">+{line.bonus}</td>
+                  </tr>
+                ))}
+                {state.party.map((m) => (
+                  <tr key={`mstr-${m.uid}`}>
+                    <td>
+                      <span className="pill">MSTR</span>
+                    </td>
+                    <td>{m.nickname}'s Attack</td>
+                    <td className="cdd-num">{m.getAttack()}</td>
+                    <td className="cdd-num cdd-strong">+{scalingBonusOf(m.getAttack())}</td>
+                  </tr>
+                ))}
+                {state.party.map((m) => (
+                  <tr key={`mint-${m.uid}`}>
+                    <td>
+                      <span className="pill">MINT</span>
+                    </td>
+                    <td>{m.nickname}'s Magic Power</td>
+                    <td className="cdd-num">{m.getMagicPower()}</td>
+                    <td className="cdd-num cdd-strong">+{scalingBonusOf(m.getMagicPower())}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {state.party.length === 0 && (
+              <p className="subtitle cdd-section-note">
+                MSTR and MINT cards read the monster that grants them. With no companions walking beside you, they add nothing.
+              </p>
+            )}
+          </section>
+
+          {shaping.length > 0 && (
+            <section>
+              <h2 className="sheet-section-title">What bends on the way out</h2>
+              <div className="cdd-shaping">
+                {shaping.map((s) => (
+                  <div className="cdd-shape-row" key={s.label}>
+                    <span className={`cdd-shape-val ${s.value > 1 ? 'cdd-up' : 'cdd-down'}`}>×{s.value}</span>
+                    <div>
+                      <b>{s.label}</b>
+                      <div className="affix-line">{s.terms.map((t) => `${t.source} (${t.detail})`).join(' · ')}</div>
+                      <div className="affix-line">
+                        <KeywordText text={s.meaning} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </ItemHover>
-          ))}
+            </section>
+          )}
+
+          <section>
+            <h2 className="sheet-section-title">
+              Standing on you <span className="sheet-sec-count">{standing.length}</span>
+            </h2>
+            {standing.length === 0 ? (
+              <p className="subtitle">Nothing is being done to you at present. Statuses and battle blessings appear here while they last.</p>
+            ) : (
+              <div className="cdd-standing">
+                {standing.map((e, i) => (
+                  <div className={`cdd-standing-row ${e.good ? 'cdd-good' : 'cdd-bad'}`} key={i}>
+                    <b>{e.name}</b>
+                    <span className="pill">{e.detail}</span>
+                    {e.kind === 'status' && (
+                      <div className="affix-line">
+                        <KeywordText text={STATUS_DESC[e.name as keyof typeof STATUS_DESC]} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <h2 className="sheet-section-title">Elements</h2>
+            <p className="subtitle cdd-section-note">
+              Your blood answers to no element — nothing thrown at you is multiplied for being Fire or Dark. Your companions are not so
+              indifferent, and what they are weak to is what the gates will find.
+            </p>
+            {state.party.length === 0 ? (
+              <p className="subtitle">No companions to speak for.</p>
+            ) : (
+              <div className="cdd-elements">
+                {state.party.map((m) => {
+                  const resists = FAMILY_INFO[m.family].resists;
+                  const weak = familyWeakness(m.family);
+                  return (
+                    <div className="cdd-element-row" key={m.uid}>
+                      <MonsterImage speciesId={m.speciesId} size={32} rarity={m.rarity} />
+                      <div>
+                        <b>{m.nickname}</b> <span className="pill">{m.family}</span>
+                        <div className="affix-line">
+                          {Object.entries(resists).length === 0
+                            ? 'Takes everything at face value.'
+                            : Object.entries(resists).map(([el, mult]) => (
+                                <span key={el} className={`cdd-el ${mult > 1 ? 'cdd-bad' : 'cdd-good'}`}>
+                                  {ELEMENT_ICON[el as keyof typeof ELEMENT_ICON]} {el} ×{mult}
+                                </span>
+                              ))}
+                        </div>
+                        {weak && <div className="affix-line">Keep it out of {weak}.</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </div>
       </div>
 
-      <details className="char-fold">
+      <details className="char-fold" open>
         <summary>⚔️ Blood &amp; Oath · Talents</summary>
         <div className="option-list">
           <div className="item-row">
             <div className="item-desc">
               <b>{RACE_TRAITS[player.race].name}</b> <span className="pill">{player.race}</span>
-              <div className="affix-line">{RACE_TRAITS[player.race].text}</div>
+              <div className="affix-line">
+                <KeywordText text={RACE_TRAITS[player.race].text} />
+              </div>
             </div>
           </div>
           <div className="item-row">
             <div className="item-desc">
               <b>{CLASS_TRAITS[player.className].name}</b> <span className="pill">{player.className}</span>
-              <div className="affix-line">{CLASS_TRAITS[player.className].text}</div>
+              <div className="affix-line">
+                <KeywordText text={CLASS_TRAITS[player.className].text} />
+              </div>
             </div>
           </div>
           {unlockedTalents(player.level).map((t) => (
             <div className="item-row" key={t.id}>
               <div className="item-desc">
                 ✦ <b>{t.name}</b> <span className="pill">Lv {t.level}</span>
-                <div className="affix-line">{t.text}</div>
+                <div className="affix-line">
+                  <KeywordText text={t.text} />
+                </div>
               </div>
             </div>
           ))}
@@ -296,7 +420,9 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
               <div className="item-row" style={{ opacity: 0.5 }}>
                 <div className="item-desc">
                   ◇ <b>{next.name}</b> <span className="pill">at Lv {next.level}</span>
-                  <div className="affix-line">{next.text}</div>
+                  <div className="affix-line">
+                    <KeywordText text={next.text} />
+                  </div>
                 </div>
               </div>
             ) : null;
@@ -323,6 +449,9 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
       </details>
 
       <div className="btn-row">
+        <button className="btn" onClick={() => dispatch({ type: 'GOTO', screen: 'equipment' })}>
+          🎒 Gear
+        </button>
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
           Back
         </button>

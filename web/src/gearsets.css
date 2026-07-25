@@ -1,0 +1,269 @@
+/* ---------------------------------------------------------------------------
+ * Matched gear and Grude's back wall.
+ *
+ * A NEW stylesheet rather than additions to sheets.css/services.css/charsheet.css,
+ * because those belong to other owners and are being edited concurrently. Every
+ * selector here is namespaced (.set-*, .vault-*, .equip-delta-*) so nothing in
+ * this file can collide with, or be collided with by, rules written elsewhere.
+ * Imported by GearScreen.tsx and SmithScreen.tsx.
+ * ------------------------------------------------------------------------- */
+
+/* --- Set membership tag, shown inline on every item line --- */
+.set-pill {
+  border-color: var(--gold-deep);
+  color: var(--gold-bright);
+}
+
+/* --- The Gear screen's set panel --- */
+.set-list {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  margin-bottom: 14px;
+}
+
+.set-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border-dim);
+  border-left: 3px solid var(--gold-deep);
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.set-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.set-card-name {
+  font-family: var(--font-display);
+  color: var(--gold-bright);
+  font-size: 0.98rem;
+}
+
+.set-card-text {
+  margin-bottom: 6px;
+}
+
+.set-card-attrib {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  font-style: italic;
+  border-top: 1px solid var(--border-dim);
+  padding-top: 6px;
+  margin-bottom: 8px;
+}
+
+.set-piece-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.set-piece {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8rem;
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--border-dim);
+}
+
+.set-piece-name {
+  color: var(--text-dim);
+}
+.set-piece-state {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.set-piece-worn .set-piece-name {
+  color: var(--gold-bright);
+}
+.set-piece-worn .set-piece-state {
+  color: var(--success);
+}
+.set-piece-bag .set-piece-name {
+  color: var(--text);
+}
+.set-piece-missing .set-piece-name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--border);
+}
+
+.set-bonus-list {
+  display: grid;
+  gap: 4px;
+}
+
+.set-bonus {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: var(--panel-inset);
+}
+
+.set-bonus b {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.set-bonus-terms {
+  flex: 1 1 160px;
+}
+
+.set-bonus-active {
+  color: var(--text);
+  background: rgba(201, 162, 39, 0.09);
+}
+.set-bonus-active b {
+  color: var(--gold-bright);
+}
+
+.set-bonus-next {
+  border: 1px dashed var(--border);
+}
+
+/* --- Always-visible equip deltas in the bag (never hover-only) --- */
+.equip-delta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 3px;
+  font-size: 0.76rem;
+}
+
+.equip-delta {
+  white-space: nowrap;
+}
+
+.equip-delta-none,
+.equip-delta-replaces {
+  color: var(--text-faint);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* delta-up / delta-down are defined alongside the hover window; restated here
+   so the inline row reads correctly even if that sheet is not loaded. */
+.equip-delta-row .delta-up {
+  color: var(--success);
+}
+.equip-delta-row .delta-down {
+  color: var(--danger);
+}
+
+/* --- The hover window's set block --- */
+.item-tip-set {
+  border-top: 1px solid var(--border-dim);
+}
+.item-tip-setname {
+  color: var(--gold-bright);
+  font-family: var(--font-display);
+  font-size: 0.84rem;
+  margin-bottom: 3px;
+}
+.item-tip-setcount {
+  color: var(--text-faint);
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+}
+.item-tip-setline {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+}
+.item-tip-setline b {
+  color: var(--text);
+}
+
+/* --- Grude's back wall --- */
+.vault-blurb {
+  margin: 0 0 8px;
+}
+
+.vault-notice {
+  color: var(--gold-bright);
+  border-left: 2px solid var(--gold-deep);
+  padding-left: 8px;
+  margin: 0 0 8px;
+}
+
+.vault-wall {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 14px;
+}
+
+.vault-slot {
+  background: var(--panel-inset);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.vault-slot .affix-line {
+  margin: 0;
+}
+
+.vault-slot-label {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+.vault-slot-filled {
+  border-color: var(--gold-deep);
+  background: var(--panel-2);
+}
+
+.vault-slot-next {
+  border-style: dashed;
+  border-color: var(--border);
+}
+
+.vault-slot-locked {
+  opacity: 0.75;
+}
+
+.vault-since {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+}
+
+.vault-short {
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  font-style: italic;
+}
+
+.vault-refusal {
+  color: var(--danger);
+  font-style: italic;
+}
+
+.svc-subsection {
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 12px 0 6px;
+}

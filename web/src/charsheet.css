@@ -1,0 +1,545 @@
+/* ---------------------------------------------------------------------------
+   v20 — the character sheet as a ledger, the gear screen as a rack, and the
+   roster in the sidebar as a door.
+
+   Three prefixes, none of which appear anywhere else in the stylesheet set:
+     .cdd-  character deep dive   (CharacterSheetScreen)
+     .geq-  gear & equipment      (GearScreen)
+     .psb-  party sidebar buttons (PartySidebar)
+
+   Media-query-guarded rules live at the very bottom of this file so nothing
+   unconditional can land after them and quietly win.
+--------------------------------------------------------------------------- */
+
+/* --- Party sidebar: cards that are now buttons ------------------------- */
+
+button.party-card.psb-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  position: relative;
+  transition: opacity 0.3s, border-color 0.18s, transform 0.12s, box-shadow 0.18s;
+}
+
+button.party-card.psb-card:hover,
+button.party-card.psb-card:focus-visible {
+  border-color: var(--gold-deep);
+  transform: translateX(-2px);
+  box-shadow: var(--shadow-panel), 0 0 0 1px rgba(201, 162, 39, 0.18), inset 0 1px 0 rgba(246, 226, 155, 0.1);
+}
+
+button.party-card.psb-card:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+button.party-card.psb-card:active {
+  transform: translateX(-2px) scale(0.99);
+}
+
+.psb-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+
+button.party-card.psb-card:hover .psb-hint,
+button.party-card.psb-card:focus-visible .psb-hint {
+  opacity: 1;
+  color: var(--gold);
+}
+
+/* --- Character sheet: the deep dive ------------------------------------ */
+
+.cdd-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+.cdd-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.cdd-blurb {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.cdd-gear-link {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.cdd-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cdd-section-note {
+  margin: 4px 0 10px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* A ledger row: closed it is a label and a number; open it is the arithmetic. */
+.cdd-ledger {
+  border: 1px solid var(--border-dim);
+  border-radius: 7px;
+  background: var(--panel-inset);
+  overflow: hidden;
+}
+
+.cdd-ledger + .cdd-ledger {
+  margin-top: 6px;
+}
+
+.cdd-ledger-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  cursor: pointer;
+  list-style: none;
+  transition: background 0.15s;
+}
+
+.cdd-ledger-summary::-webkit-details-marker {
+  display: none;
+}
+
+.cdd-ledger-summary::before {
+  content: '▸';
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+
+.cdd-ledger[open] > .cdd-ledger-summary::before {
+  transform: rotate(90deg);
+}
+
+.cdd-ledger-summary:hover {
+  background: rgba(201, 162, 39, 0.05);
+}
+
+.cdd-ledger-summary:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: -2px;
+}
+
+.cdd-ledger-label {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.cdd-ledger-total {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.cdd-ledger-terms {
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  min-width: 62px;
+  text-align: right;
+}
+
+.cdd-ledger-body {
+  padding: 4px 12px 12px 12px;
+  border-top: 1px solid var(--border-dim);
+}
+
+.cdd-meaning {
+  margin: 8px 0 10px;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.cdd-terms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cdd-term {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px dotted rgba(58, 54, 48, 0.55);
+  font-size: 0.78rem;
+}
+
+.cdd-term:last-child {
+  border-bottom: none;
+}
+
+.cdd-term-val {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+
+.cdd-term-source {
+  color: var(--text);
+  min-width: 0;
+}
+
+.cdd-term-detail {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-style: italic;
+  text-align: right;
+}
+
+.cdd-term-total {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.cdd-term-total .cdd-term-val,
+.cdd-term-total .cdd-term-source {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.cdd-up {
+  color: var(--success);
+}
+
+.cdd-down {
+  color: var(--danger);
+}
+
+.cdd-flat {
+  color: var(--text-faint);
+}
+
+.cdd-note {
+  margin: 10px 0 0;
+  padding: 7px 9px;
+  border-left: 2px solid var(--gold-deep);
+  background: rgba(201, 162, 39, 0.05);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.cdd-attr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.cdd-attr-row + .cdd-attr-row {
+  margin-top: 6px;
+}
+
+.cdd-attr-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 7px;
+}
+
+.cdd-attr-key {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  min-width: 44px;
+}
+
+.cdd-plus {
+  position: static;
+}
+
+.cdd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.79rem;
+}
+
+.cdd-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  padding: 4px 8px 6px 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.cdd-table td {
+  padding: 5px 8px 5px 0;
+  border-bottom: 1px dotted rgba(58, 54, 48, 0.55);
+  color: var(--text);
+}
+
+.cdd-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cdd-strong {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.cdd-shaping,
+.cdd-standing,
+.cdd-elements {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cdd-shape-row,
+.cdd-element-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-dim);
+  border-radius: 7px;
+  background: var(--panel-inset);
+  font-size: 0.8rem;
+}
+
+.cdd-shape-val {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cdd-standing-row {
+  padding: 8px 10px;
+  border: 1px solid var(--border-dim);
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: var(--panel-inset);
+  font-size: 0.8rem;
+}
+
+.cdd-standing-row.cdd-good {
+  border-left-color: var(--success);
+}
+
+.cdd-standing-row.cdd-bad {
+  border-left-color: var(--danger);
+}
+
+.cdd-el + .cdd-el::before {
+  content: ' · ';
+  color: var(--text-faint);
+}
+
+/* --- Gear screen -------------------------------------------------------- */
+
+.geq-purse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-display);
+  color: var(--gold-bright);
+  white-space: nowrap;
+}
+
+.geq-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+.geq-ledger {
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  background: var(--panel-inset);
+  padding: 12px 14px;
+}
+
+.geq-ledger-note {
+  margin: 6px 0 10px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.geq-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.79rem;
+}
+
+.geq-table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  padding: 3px 8px 6px 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.geq-table th:not(:first-child) {
+  text-align: right;
+}
+
+.geq-table td {
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px dotted rgba(58, 54, 48, 0.55);
+  color: var(--text);
+}
+
+.geq-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.geq-strong {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.geq-worn {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.geq-worn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-dim);
+  border-radius: 7px;
+  background: var(--panel-inset);
+}
+
+.geq-worn-slot {
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  min-width: 66px;
+}
+
+.geq-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 10px;
+}
+
+.geq-filters .btn {
+  text-transform: capitalize;
+}
+
+/* The paperdoll's polish used to be scoped to .char-screen, which the gear
+   screen no longer is. Same treatment, re-hung under its new roof. */
+
+.geq-screen .paperdoll {
+  border-radius: 12px;
+  border-color: rgba(200, 162, 74, 0.2);
+  grid-template-rows: repeat(4, minmax(92px, auto));
+}
+
+.geq-screen .doll-slot {
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(14, 11, 8, 0.85), rgba(8, 6, 4, 0.92));
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.55);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.geq-screen .doll-slot:hover {
+  transform: translateY(-1px);
+  border-color: rgba(200, 162, 74, 0.55);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.55), 0 0 14px rgba(200, 162, 74, 0.18);
+}
+
+.geq-screen .doll-slot:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+.geq-screen .doll-filled {
+  border-color: rgba(200, 162, 74, 0.3);
+}
+
+.geq-screen .doll-slot-img {
+  width: 56px;
+  height: 56px;
+}
+
+.geq-screen .doll-slot-label {
+  color: rgba(200, 162, 74, 0.55);
+}
+
+/* --- Narrow viewports. Kept last so nothing unconditional outranks them. --- */
+
+@media (max-width: 900px) {
+  .cdd-layout,
+  .geq-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cdd-term {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .cdd-term-detail {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .cdd-ledger-terms {
+    display: none;
+  }
+
+  .geq-worn {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -18,6 +18,8 @@ import { LanternTurn } from './LanternTurn';
 import { LogPanel } from './LogPanel';
 import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
+import { useNavScope, useNavInputMode, useRefocusOn, navItem, focusFirstIn, getInputMode } from '../nav';
+import { DrillCoach } from './DrillCoach';
 
 // ===========================================================================
 // THE ONE BATTLEFIELD.
@@ -196,6 +198,7 @@ function fxSound(fx: FxEvent): SfxName | null {
  * across re-renders that changed nothing.
  */
 function useSoloBattleView(state: GameState, dispatch: (a: GameAction) => void): BattleView | null {
+  const drilling = !!state.drill && state.drill.outcome === 'running';
   return useMemo((): BattleView | null => {
     const player = state.player;
     const battle = state.battle;
@@ -246,17 +249,67 @@ function useSoloBattleView(state: GameState, dispatch: (a: GameAction) => void):
         playCard: (handIndex, targetUid) => dispatch({ type: 'PLAY_CARD', handIndex, targetUid }),
         endTurn: () => dispatch({ type: 'END_TURN' }),
         useItem: (name, targetUid) => dispatch({ type: 'BATTLE_ITEM', name, targetUid }),
-        retreat: { label: 'Flee', title: 'Attempt to flee', run: () => dispatch({ type: 'FLEE_BATTLE' }) },
+        // The drill's exit is a door, not a dice roll: "Flee" implies a risk
+        // of failing to, and failing to leave a TUTORIAL is not a thing that
+        // should be able to happen. Expressed through the existing retreat
+        // command rather than a new control, so the stage is unchanged.
+        retreat: drilling
+          ? { label: 'Leave the yard', title: 'End the drill. Nothing is recorded.', run: () => dispatch({ type: 'DRILL_LEAVE' }) }
+          : { label: 'Flee', title: 'Attempt to flee', run: () => dispatch({ type: 'FLEE_BATTLE' }) },
         mercySpare: () => dispatch({ type: 'MERCY_SPARE' }),
         mercyFinish: () => dispatch({ type: 'MERCY_FINISH' }),
       },
     };
-  }, [state, dispatch]);
+  }, [state, dispatch, drilling]);
 }
 
-/** Single-player entry point. App.tsx renders this; it renders the one stage. */
+/**
+ * Single-player entry point. App.tsx renders this; it renders the one stage.
+ *
+ * The drill hangs Bram's rail BESIDE the stage rather than inside it. That is
+ * the whole integration: no battle variant, no second renderer, no `if (drill)`
+ * anywhere in `BattleStage`. The fight underneath is an ordinary solo battle
+ * and the view-model it is built from has no idea a captain is watching.
+ */
 export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
-  return <BattleStage view={useSoloBattleView(state, dispatch)} />;
+  const view = useSoloBattleView(state, dispatch);
+  const drill = state.drill;
+  return (
+    <>
+      <BattleStage view={view} />
+      {drill && state.battle && <DrillCoach drill={drill} />}
+    </>
+  );
+}
+
+/**
+ * The mercy verdict, as a real modal.
+ *
+ * It is the one moment in a fight with no wrong answer and no way out, so the
+ * scope traps focus and offers NO cancel — B must not dismiss a decision the
+ * game is waiting on. Focus lands on "Spare it": the merciful default is the
+ * one that should be reachable without looking.
+ */
+function MercyPrompt({ onSpare, onFinish }: { onSpare(): void; onFinish(): void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useNavScope(ref, { id: 'battle.mercy', layer: 10, trap: true });
+  return (
+    <div className="mercy-overlay" ref={ref}>
+      <div className="mercy-box">
+        <p className="mercy-text">
+          It stops fighting. It lowers its head, bares its neck, and waits — for the blow, or for your hand.
+        </p>
+        <div className="btn-row" style={{ justifyContent: 'center' }}>
+          <button className="btn primary" data-nav-initial="" onClick={onSpare}>
+            🤲 Spare it
+          </button>
+          <button className="btn danger" onClick={onFinish}>
+            🗡️ Finish it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -289,6 +342,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
     const t = setTimeout(() => setEntering(false), 700);
     return () => clearTimeout(t);
   }, []);
+  const inputMode = useNavInputMode();
   const processedFx = useRef<FxEvent[] | null>(null);
   const enemyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -486,54 +540,129 @@ export function BattleStage({ view }: { view: BattleView | null }) {
     view.commands.endTurn();
   }, [view, locked, discardHandGhosts]);
 
-  // --- Keyboard ---
+  // --- Keyboard: only the shortcuts that are genuinely this screen's own ---
+  //
+  // v21: Enter / arrows / Escape moved OUT of here and into the nav scope
+  // below, so a key and the equivalent pad button now run one code path
+  // instead of two that drifted. The number row, E and I stay — they have no
+  // controller counterpart and no meaning anywhere else.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!view) return;
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
         if (idx < view.hand.length) selectCard(idx);
-      } else if (e.key === 'Enter' && selectedIdx !== null) {
-        playSelected();
-      } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && needsTarget) {
-        e.preventDefault();
-        setTargetIdx((t) => (t + (e.key === 'ArrowRight' ? 1 : livingEnemies.length - 1)) % Math.max(1, livingEnemies.length));
       } else if (e.key === 'e' || e.key === 'E') {
         endTurn();
       } else if (e.key === 'i' || e.key === 'I') {
         if (view.commands.useItem) setShowItems((s) => !s);
-      } else if (e.key === 'Escape') {
-        setSelectedIdx(null);
-        setShowItems(false);
-        setPileView(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [view, selectedIdx, needsTarget, livingEnemies.length, selectCard, playSelected, endTurn]);
+  }, [view, selectCard, endTurn]);
 
-  // --- Basic gamepad support ---
-  const padPrev = useRef<boolean[]>([]);
+  // --- Controller / focus navigation -------------------------------------
+  //
+  // Combat is two modes and the scope handler is where they are spelled out:
+  //
+  //   BROWSING — no card picked. Directions move the real focus cursor across
+  //     the hand, the piles, Items/Flee and the Lantern. A presses whatever is
+  //     under it. Nothing is consumed; the nav layer's default does it all.
+  //
+  //   AIMING — a card that wants a foe is picked. Directions are CONSUMED and
+  //     steer `targetIdx` instead, exactly as the arrow keys did before, while
+  //     the cursor stays parked on the card being thrown. The aimed foe is lit
+  //     by `.kb-target`, which battle.css has styled since v11.
+  //
+  // Cycling targets deliberately does NOT move DOM focus onto the enemies:
+  // aim is a mode with its own indicator, and hopping the ring up to a monster
+  // and back would read as the cursor getting lost.
+  const cycleTarget = useCallback(
+    (delta: 1 | -1) => {
+      const n = Math.max(1, livingEnemies.length);
+      setTargetIdx((t) => (t + (delta === 1 ? 1 : n - 1)) % n);
+    },
+    [livingEnemies.length],
+  );
+
+  const aiming = selectedIdx !== null && needsTarget && !locked;
+
+  useNavScope(stageRef, {
+    id: 'battle',
+    // A duel adapter can render before its view arrives; register only once
+    // there is a stage to navigate.
+    enabled: !!view,
+    onDirection: (dir, meta) => {
+      if (!aiming) return false;
+      // Left/right is the documented aim gesture; up/down is folded in because
+      // the v20 pad build cycled targets on D-pad up and muscle memory is
+      // cheaper to honour than to retrain.
+      cycleTarget(dir === 'right' || dir === 'down' ? 1 : -1);
+      void meta;
+      return true;
+    },
+    onButton: (button, meta) => {
+      if (!view) return false;
+      switch (button) {
+        case 'confirm': {
+          // Throw the picked card — but ONLY when the cursor is on the card
+          // that is actually picked. Two ways this must not fire: with the
+          // ring on Flee, A means Flee; with the ring moved onto a DIFFERENT
+          // card, A means "pick that one up instead", which is what falling
+          // through to the slot's own onClick already does.
+          if (selectedIdx === null) return false;
+          if (!meta.target) {
+            playSelected();
+            return true;
+          }
+          if (meta.target.closest('.hand-slot')?.classList.contains('sel')) {
+            playSelected();
+            return true;
+          }
+          return false;
+        }
+        case 'alt':
+          if (view.commands.useItem) setShowItems((s) => !s);
+          return true;
+        case 'prevTab':
+          // LB cycled the target in the v20 pad build. Kept.
+          if (aiming) cycleTarget(1);
+          return true;
+        case 'nextTab':
+        case 'start':
+          endTurn();
+          return true;
+        case 'info':
+          setPileView((v) => (v === 'discard' ? null : 'discard'));
+          return true;
+        default:
+          return false;
+      }
+    },
+    onCancel: () => {
+      // Same three things Escape has always cleared, in one place.
+      setSelectedIdx(null);
+      setShowItems(false);
+      setPileView(null);
+      return true;
+    },
+  });
+
+  // Two ways combat destroys the element the cursor is sitting on: the hand
+  // fan remounts wholesale on `handKey` each turn, and playing a card unmounts
+  // that one slot. Both drop focus to <body>, which for a pad player means the
+  // ring simply disappears. Re-seat it whenever the hand changes shape or the
+  // FX lock lifts.
+  useRefocusOn([view?.handKey, view?.hand.length, locked]);
+
+  // Opening the pouch with X should put the cursor in it — otherwise the tray
+  // appears and the ring is still down on the hand, which reads as "nothing
+  // happened".
+  const itemsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    let raf = 0;
-    const poll = () => {
-      raf = requestAnimationFrame(poll);
-      const pad = navigator.getGamepads?.()[0];
-      if (!pad || !view) return;
-      const pressed = pad.buttons.map((b) => b.pressed);
-      const was = padPrev.current;
-      const edge = (i: number) => pressed[i] && !was[i];
-      if (edge(14)) setSelectedIdx((s) => Math.max(0, (s ?? 0) - 1));
-      if (edge(15)) setSelectedIdx((s) => Math.min(view.hand.length - 1, (s ?? -1) + 1));
-      if (edge(4) || edge(12)) setTargetIdx((t) => (t + 1) % Math.max(1, livingEnemies.length));
-      if (edge(0) && selectedIdx !== null) playSelected();
-      if (edge(1)) setSelectedIdx(null);
-      if (edge(5) || edge(9)) endTurn();
-      padPrev.current = pressed;
-    };
-    raf = requestAnimationFrame(poll);
-    return () => cancelAnimationFrame(raf);
-  }, [view, selectedIdx, livingEnemies.length, playSelected, endTurn]);
+    if (showItems && getInputMode() !== 'pointer') focusFirstIn(itemsRef.current);
+  }, [showItems]);
 
   function nameOf(uid: string): string {
     return view ? view.nameForUid(uid) : '';
@@ -607,13 +736,21 @@ export function BattleStage({ view }: { view: BattleView | null }) {
     const stageRect = stageRef.current.getBoundingClientRect();
     const fromEl = slotRefs.current.get(selectedIdx);
     const hoveredEl = hoveredEnemyUid ? enemyRefs.current.get(hoveredEnemyUid) : null;
-    if (fromEl && (hoveredEl || mousePos)) {
+    // v21: the aim line is the signature read of this fight, and a controller
+    // has no cursor to draw it toward — so when the last input came from a pad
+    // or a key it anchors on the foe `targetIdx` is sitting on instead. Purely
+    // additive: with a pointer, `hoveredEl`/`mousePos` still decide everything,
+    // exactly as before.
+    const padAimEl =
+      !hoveredEl && inputMode !== 'pointer' ? enemyRefs.current.get(livingEnemies[targetIdx]?.uid ?? '') ?? null : null;
+    const snapEl = hoveredEl ?? padAimEl;
+    if (fromEl && (snapEl || mousePos)) {
       const fromRect = fromEl.getBoundingClientRect();
       const x1 = fromRect.left - stageRect.left + fromRect.width / 2;
       const y1 = fromRect.top - stageRect.top;
-      const x2 = hoveredEl ? hoveredEl.getBoundingClientRect().left - stageRect.left + hoveredEl.getBoundingClientRect().width / 2 : mousePos!.x;
-      const y2 = hoveredEl ? hoveredEl.getBoundingClientRect().top - stageRect.top + hoveredEl.getBoundingClientRect().height / 2 : mousePos!.y;
-      targetLine = { path: buildTargetLinePath(lineStyle, x1, y1, x2, y2), snapped: !!hoveredEl };
+      const x2 = snapEl ? snapEl.getBoundingClientRect().left - stageRect.left + snapEl.getBoundingClientRect().width / 2 : mousePos!.x;
+      const y2 = snapEl ? snapEl.getBoundingClientRect().top - stageRect.top + snapEl.getBoundingClientRect().height / 2 : mousePos!.y;
+      targetLine = { path: buildTargetLinePath(lineStyle, x1, y1, x2, y2), snapped: !!snapEl };
     }
   }
 
@@ -682,21 +819,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
       )}
 
       {view.mercy && view.commands.mercySpare && view.commands.mercyFinish && !locked && (
-        <div className="mercy-overlay">
-          <div className="mercy-box">
-            <p className="mercy-text">
-              It stops fighting. It lowers its head, bares its neck, and waits — for the blow, or for your hand.
-            </p>
-            <div className="btn-row" style={{ justifyContent: 'center' }}>
-              <button className="btn primary" onClick={view.commands.mercySpare}>
-                🤲 Spare it
-              </button>
-              <button className="btn danger" onClick={view.commands.mercyFinish}>
-                🗡️ Finish it
-              </button>
-            </div>
-          </div>
-        </div>
+        <MercyPrompt onSpare={view.commands.mercySpare} onFinish={view.commands.mercyFinish} />
       )}
 
       {/* ===== MTG-Arena battlefield: enemies in the TOP row, party in the BOTTOM row.
@@ -906,6 +1029,10 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         <div className="bf-row party-row">
           <div
             className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${preTargetUid === 'hero' ? 'pre-target' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${hero.hp <= hero.maxHp * 0.25 ? 'hp-danger' : ''}`}
+            // Only a cursor stop while it is actually a choice. A mending card
+            // aimed at an ally was mouse-only before this — nothing consumes
+            // directions in that mode, so plain spatial focus reaches the row.
+            {...(allyAimable && !locked ? navItem({ key: 'ally-hero', label: `Mend ${hero.name}` }) : {})}
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
@@ -953,6 +1080,9 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             <div
               key={m.uid}
               className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${preTargetUid === m.uid ? 'pre-target' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
+              {...(allyAimable && !locked && m.isAlive()
+                ? navItem({ key: `ally-${m.uid}`, label: `Mend ${m.nickname}, ${m.hp} of ${m.maxHp}` })
+                : {})}
               onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
               title={
                 allyAimable && m.isAlive()
@@ -1028,7 +1158,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
 
       {/* Always rendered with fixed height so entering aim mode never reflows the stage. */}
       <p className={`target-hint ${needsTarget && !locked ? 'on' : ''}`} aria-hidden={!(needsTarget && !locked)}>
-        Choose a target — click a foe, or ◀ ▶ then Enter
+        Choose a target — click a foe, or ◀ ▶ / D-pad, then Enter or Ⓐ
       </p>
 
       {pileView && (
@@ -1056,7 +1186,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
       )}
 
       {showItems && view.commands.useItem && (
-        <div className="battle-items">
+        <div className="battle-items" ref={itemsRef}>
           {[...new Set(hero.inventory)].map((name) => {
             const def = CONSUMABLES[name];
             if (!def) return null;
@@ -1116,6 +1246,12 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                 }}
                 className={`hand-slot ${selectedIdx === i ? 'sel' : ''}`}
                 style={{ ['--i' as string]: i }}
+                // The slot is the nav cell, not the card inside it: battle.css
+                // has lifted `.hand-slot:focus-within` since the Tab-only days,
+                // so focusing the slot reuses the exact hover gesture. Cards
+                // you cannot afford stay focusable on purpose — you still want
+                // to be able to read them.
+                {...navItem({ key: `hand-${inst.uid}`, initial: i === 0, label: `${card.name}, ${card.cost} vigor` })}
                 onMouseEnter={() => sfx('cardHover')}
                 onClick={() => playable && selectCard(i)}
                 onTouchStart={() => playable && selectCard(i)}

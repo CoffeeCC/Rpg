@@ -4,6 +4,9 @@ import { MonsterInstance } from '../entities/MonsterInstance';
 import { startBattle, playCard, endTurn } from '../systems/cardBattle';
 import { getCard } from '../data/cards';
 import { GATES } from '../data/gates';
+import { FAMILY_KITS, type EnemyMove } from '../data/enemyAi';
+import { moveElement } from '../data/damageTypes';
+import { speciesMatching } from '../data/species';
 import { BALANCE } from '../data/balance';
 import { randInt } from '../random';
 import { gameReducer, initialGameState, type GameState } from '../game';
@@ -154,6 +157,155 @@ describe('balance sim: win-rate cells (greedy policy, v5 fixed danger bands)', (
     // reps). The design claim guarded here is "a tame still helps at all";
     // 300 trials + a >=1 floor puts the flake odds under 1%.
     expect(wrParty - wrSolo).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MAGDEF pass: magical damage meets Magic Defense.
+//
+// Win rate is the WRONG instrument for this change and measuring proved it:
+// magic is only 21-38% of incoming damage in the gates that have any, so a
+// 400-trial win-rate cell (sigma ~2.5%) buries the effect in noise — a
+// coefficient sweep over 0.55/0.8/1.0/1.3 produced deltas of -6..+4 with no
+// monotone trend. What follows is therefore a CLOSED-FORM measurement: the
+// kit-weighted expected damage of one enemy turn, with no randomness in it at
+// all. It is the same arithmetic intentFromMove performs, weighted by the same
+// selection weights rollKitIntent uses.
+//
+// Two claims are guarded:
+//   1. switching MAGDEF on is near-neutral for a hero who ignores it (so this
+//      pass did not quietly reduce or inflate the difficulty of the game), and
+//   2. a hero who invests in it measurably takes less magic (so the stat is
+//      worth its attribute points and is no longer a trap).
+// ---------------------------------------------------------------------------
+
+/** Expected telegraphed damage from one enemy turn, weighted over its kit.
+ *  `useMagdef: false` reproduces the pre-pass engine, where every blow met DEF. */
+function expectedTurnDamage(hero: Character, enemy: MonsterInstance, useMagdef: boolean): number {
+  const kit = FAMILY_KITS[enemy.family];
+  // Regular mobs use guard/buff/debuff at half their authored weight.
+  const weightOf = (m: EnemyMove) => (m.kind === 'guard' || m.kind === 'buff' || m.kind === 'debuff' ? Math.max(1, Math.floor(m.weight / 2)) : m.weight);
+  let damage = 0;
+  let weight = 0;
+  for (const move of kit.moves) {
+    weight += weightOf(move);
+    if (move.kind === 'guard' || move.kind === 'buff' || move.kind === 'debuff') continue;
+    const magical = useMagdef && moveElement(move) !== 'None';
+    const mitigation = magical ? hero.getMagicDefense() * BALANCE.intentMagicDefMitigation : hero.getDefense() * BALANCE.intentDefMitigation;
+    const perHit = Math.max(1, Math.round(enemy.getAttack() * BALANCE.intentBasicMult * move.power - mitigation));
+    damage += weightOf(move) * perHit * (move.kind === 'multi' ? (move.hits ?? 2) : 1);
+  }
+  return damage / weight;
+}
+
+/** Averages expectedTurnDamage over every species a gate floor can spawn. */
+function gateExpectedDamage(hero: Character, gate: GateId, floor: number, useMagdef: boolean): number {
+  const spawn = GATES[gate].floors[floor].spawn;
+  const pool = speciesMatching(spawn.families, spawn.tierMin, spawn.tierMax);
+  let total = 0;
+  for (const species of pool) {
+    // Mid-jitter level, fixed personality: no randomness anywhere in the cell.
+    const enemy = new MonsterInstance({ speciesId: species.id, level: Math.max(1, 1 + spawn.levelBonus + 2), personalityId: 'valiant' });
+    total += expectedTurnDamage(hero, enemy, useMagdef);
+  }
+  return total / pool.length;
+}
+
+/** Same total attribute points, spent differently. */
+function heroSpending(cycle: Stat[], level: number): Character {
+  const hero = freshHero('Human', 'Warrior');
+  levelHeroTo2(hero, level, cycle);
+  return hero;
+}
+function levelHeroTo2(hero: Character, targetLevel: number, cycle: Stat[]) {
+  let idx = 0;
+  while (hero.level < targetLevel) {
+    hero.gainExp(hero.expToNext());
+    while (hero.attributePoints > 0) {
+      hero.spendAttributePoint(cycle[idx % cycle.length]);
+      idx++;
+    }
+  }
+}
+
+const MAGDEF_CELLS: { gate: GateId; floor: number; level: number }[] = [
+  { gate: 'verdant', floor: 0, level: 1 },
+  { gate: 'hollow', floor: 0, level: 5 },
+  { gate: 'hollow', floor: 3, level: 10 },
+  { gate: 'sunken', floor: 0, level: 8 },
+  { gate: 'sunken', floor: 3, level: 12 },
+  { gate: 'storm', floor: 0, level: 12 },
+  { gate: 'storm', floor: 3, level: 16 },
+  { gate: 'abyss', floor: 0, level: 16 },
+  { gate: 'abyss', floor: 4, level: 22 },
+];
+
+describe('balance sim: MAGDEF is live without moving the difficulty curve', () => {
+  it('a hero who ignores MAGDEF sees incoming damage shift by under 3% in every gate', () => {
+    for (const { gate, floor, level } of MAGDEF_CELLS) {
+      const hero = heroSpending(STAT_CYCLE, level); // never spends a point on MAGDEF
+      const before = gateExpectedDamage(hero, gate, floor, false);
+      const after = gateExpectedDamage(hero, gate, floor, true);
+      const shift = after / before - 1;
+      // Measured: 0.0% (verdant/hollow-1/storm-1) to +1.7% (abyss floor 5).
+      expect(Math.abs(shift), `${gate} floor ${floor + 1}: incoming damage moved ${(shift * 100).toFixed(1)}%`).toBeLessThan(0.03);
+    }
+  });
+
+  it('gates with no magic in their kits are bit-for-bit unchanged', () => {
+    // Verdant is Slime/Bug/Plant and Hollow floor 1 is Beast/Material — not one
+    // magical move between them. Turning MAGDEF on must do exactly nothing here,
+    // which is the strongest available proof that physical combat is untouched.
+    for (const { gate, floor, level } of [
+      { gate: 'verdant' as GateId, floor: 0, level: 1 },
+      { gate: 'hollow' as GateId, floor: 0, level: 5 },
+      { gate: 'storm' as GateId, floor: 0, level: 12 },
+    ]) {
+      const hero = heroSpending(STAT_CYCLE, level);
+      expect(gateExpectedDamage(hero, gate, floor, true)).toBe(gateExpectedDamage(hero, gate, floor, false));
+    }
+  });
+
+  it('a hero who invests in MAGDEF measurably takes less, in the gates that cast', () => {
+    // Same level, same number of attribute points, spent differently.
+    for (const { gate, floor, level, atLeast } of [
+      { gate: 'sunken' as GateId, floor: 0, level: 8, atLeast: 0.05 },
+      { gate: 'sunken' as GateId, floor: 3, level: 12, atLeast: 0.05 },
+      { gate: 'abyss' as GateId, floor: 0, level: 16, atLeast: 0.05 },
+      { gate: 'abyss' as GateId, floor: 4, level: 22, atLeast: 0.04 },
+    ]) {
+      const dumped = heroSpending(STAT_CYCLE, level);
+      const invested = heroSpending(['MAGDEF', 'MAGDEF', 'STR', 'DEF'], level);
+      expect(invested.getMagicDefense()).toBeGreaterThan(dumped.getMagicDefense());
+      const a = gateExpectedDamage(dumped, gate, floor, true);
+      const b = gateExpectedDamage(invested, gate, floor, true);
+      const cut = 1 - b / a;
+      // Measured: 8.2% (sunken f1), 8.3% (sunken f4), 10.4% (abyss f1), 7.3% (abyss f5).
+      expect(cut, `${gate} floor ${floor + 1}: MAGDEF investment cut only ${(cut * 100).toFixed(1)}%`).toBeGreaterThanOrEqual(atLeast);
+    }
+  });
+
+  it('the same investment buys nothing where nothing casts — it is a specialisation, not a second Defense', () => {
+    for (const { gate, floor, level } of [
+      { gate: 'verdant' as GateId, floor: 0, level: 1 },
+      { gate: 'hollow' as GateId, floor: 0, level: 5 },
+    ]) {
+      const dumped = heroSpending(STAT_CYCLE, level);
+      const invested = heroSpending(['MAGDEF', 'MAGDEF', 'STR', 'DEF'], level);
+      // Strictly worse or equal: the MAGDEF hero spent points that bought no
+      // mitigation here. This is the cost the stat is supposed to carry.
+      expect(gateExpectedDamage(invested, gate, floor, true)).toBeGreaterThanOrEqual(gateExpectedDamage(dumped, gate, floor, true));
+    }
+  });
+
+  it('sunken floor-1 (Undead/Devil — the first gate that really casts) stays inside a survivable band', () => {
+    const hero = freshHero('Human', 'Warrior');
+    levelHeroTo(hero, 8);
+    const wr = winRate(hero, [], floor1Spawn('sunken'), 50);
+    // Documented pre-pass measurement for this cell: 61-78%. Wide guard band —
+    // fails only if enemy casters become trivial or become lethal.
+    expect(wr).toBeGreaterThanOrEqual(30);
+    expect(wr).toBeLessThanOrEqual(98);
   });
 });
 

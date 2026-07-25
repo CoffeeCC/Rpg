@@ -1,0 +1,283 @@
+/* =========================================================================
+   THE RECRUIT DRILL — Bram's rail, and his notice on the Watch Ledger.
+
+   A NEW stylesheet on purpose. battle.css, floor.css, App.css and v16.css are
+   all being reworked by a lighting pass right now, and appending to any of
+   them would collide. Nothing in here overrides an existing selector: every
+   rule is under .drill-* or .ledger-standing-*, both of which are new.
+
+   Palette is read from the app's existing custom properties where they exist,
+   with literal fallbacks, so a lighting pass that retunes --ink or --gold
+   carries this along instead of leaving it stranded.
+   ========================================================================= */
+
+.drill-rail {
+  position: fixed;
+  left: 14px;
+  top: 96px;
+  z-index: 70;
+  width: 330px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+
+  /* The one rule this component's correctness depends on. Bram's rail floats
+     over a battlefield whose cards and foes must stay clickable; it has no
+     controls of its own, so it should never receive a pointer event at all. */
+  pointer-events: none;
+
+  padding: 14px 16px 12px;
+  border: 1px solid rgba(198, 164, 96, 0.45);
+  border-left: 3px solid rgba(198, 164, 96, 0.75);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(24, 21, 17, 0.96), rgba(16, 14, 12, 0.97));
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+  color: #d9cdb4;
+  font-size: 13px;
+  line-height: 1.5;
+  animation: drillRailIn 320ms ease-out both;
+}
+
+@keyframes drillRailIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+.drill-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid rgba(198, 164, 96, 0.25);
+}
+
+.drill-head-name {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #c6a460;
+}
+
+.drill-head-count {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  color: rgba(217, 205, 180, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ruled ticks, one per beat — a ledger's margin, not a progress bar. */
+.drill-ticks {
+  display: flex;
+  gap: 4px;
+  margin: 9px 0 11px;
+}
+
+.drill-tick {
+  flex: 1;
+  height: 3px;
+  border-radius: 1px;
+  background: rgba(217, 205, 180, 0.16);
+  transition: background 220ms ease;
+}
+
+.drill-tick.done {
+  background: rgba(198, 164, 96, 0.55);
+}
+
+.drill-tick.now {
+  background: #c6a460;
+  box-shadow: 0 0 7px rgba(198, 164, 96, 0.75);
+}
+
+.drill-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #efe3c8;
+}
+
+.drill-lines p {
+  margin: 0 0 8px;
+  color: rgba(217, 205, 180, 0.9);
+}
+
+.drill-lines p:last-child {
+  margin-bottom: 0;
+}
+
+/* The opportunistic status lesson. Set apart so it reads as a margin note
+   rather than as part of the numbered lesson, because it is not one. */
+.drill-aside {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-left: 2px solid rgba(140, 170, 130, 0.55);
+  background: rgba(90, 120, 84, 0.13);
+  border-radius: 2px;
+}
+
+.drill-aside p {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: rgba(206, 220, 200, 0.92);
+}
+
+.drill-aside p:last-child {
+  margin-bottom: 0;
+}
+
+/* The single thing the recruit must do. One per beat, always visible. */
+.drill-ask {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(198, 164, 96, 0.5);
+  border-radius: 3px;
+  background: rgba(198, 164, 96, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.drill-ask-label {
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(198, 164, 96, 0.85);
+}
+
+.drill-ask-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f2e7cd;
+}
+
+.drill-foot {
+  margin: 10px 0 0;
+  font-size: 11px;
+  font-style: italic;
+  color: rgba(217, 205, 180, 0.5);
+}
+
+/* Narrow / Steam Deck-ish widths: the rail would crowd the hand fan, so it
+   moves to the top of the stage and gives up its long-form paragraphs' width
+   rather than its content. */
+@media (max-width: 1180px) {
+  .drill-rail {
+    left: 8px;
+    top: 72px;
+    width: 268px;
+    font-size: 12px;
+    padding: 11px 12px 10px;
+  }
+
+  .drill-title {
+    font-size: 13.5px;
+  }
+}
+
+/* =========================================================================
+   Bram's standing order, pinned first on the Watch Ledger board.
+   ========================================================================= */
+
+.ledger-standing {
+  position: relative;
+  margin: 0 0 16px;
+  padding: 16px 18px 14px;
+  border: 1px solid rgba(198, 164, 96, 0.5);
+  border-left: 4px solid #c6a460;
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgba(46, 40, 30, 0.55), rgba(28, 24, 19, 0.6));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+/* A recruit who has never drilled gets a lit edge. A veteran gets a note. */
+.ledger-standing.unsigned {
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(198, 164, 96, 0.3),
+    0 0 22px rgba(198, 164, 96, 0.18);
+}
+
+.ledger-standing-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.ledger-standing-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #efe3c8;
+  letter-spacing: 0.01em;
+}
+
+.ledger-standing-stamp {
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(198, 164, 96, 0.55);
+  color: #c6a460;
+}
+
+.ledger-standing-stamp.done {
+  border-color: rgba(150, 180, 140, 0.5);
+  color: rgba(170, 200, 160, 0.9);
+}
+
+.ledger-standing-giver {
+  font-size: 12px;
+  font-style: italic;
+  color: rgba(217, 205, 180, 0.62);
+  margin-bottom: 8px;
+}
+
+.ledger-standing-text {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: rgba(217, 205, 180, 0.9);
+}
+
+.ledger-standing-ask {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8d9b6;
+}
+
+.ledger-standing-teaches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ledger-standing-teaches span {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(198, 164, 96, 0.13);
+  border: 1px solid rgba(198, 164, 96, 0.28);
+  color: rgba(230, 216, 186, 0.85);
+}
+
+.ledger-standing-reward {
+  font-size: 12.5px;
+  color: rgba(217, 205, 180, 0.75);
+  margin: 0 0 12px;
+}
+
+.ledger-standing-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}

@@ -11,6 +11,9 @@ import { PAINTED_TOWN } from '../art/painted';
 import { SLOT_COUNT, getSlotSummary, loadFromSlot, importSaveFromFile } from '../platform/browserSave';
 import { loadTellings } from '../platform/tellings';
 
+/** What the book calls a hero who never gave it a name. */
+const THE_NAMELESS = 'The Nameless';
+
 export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }) {
   const [name, setName] = useState('');
   const [race, setRace] = useState<RaceName>('Human');
@@ -18,7 +21,10 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canBegin = name.trim().length > 0;
+  // A hero left unnamed is not a blocked form — it's an unwritten story, and the
+  // Chronicler has a word for that. Leaving this optional is also what makes the
+  // forge reachable on a controller, where there is no keyboard to summon.
+  const heroName = name.trim() || THE_NAMELESS;
   const telling = loadTellings().telling;
   const saves = Array.from({ length: SLOT_COUNT }, (_, i) => i + 1)
     .map((slot) => getSlotSummary(slot))
@@ -26,7 +32,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
 
   // Live preview: build a throwaway hero so the numbers you'll start with are
   // shown before you commit, and they update as you pick race/class.
-  const preview = useMemo(() => new Character(name.trim() || 'Nameless', race, className), [name, race, className]);
+  const preview = useMemo(() => new Character(heroName, race, className), [heroName, race, className]);
   const stats: [string, number][] = [
     ['HP', preview.maxHp],
     ['MP', preview.maxMp],
@@ -115,7 +121,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
               <span className="forge-hero-plinth" aria-hidden="true" />
             </div>
             <p className="forge-hero-title">
-              {name.trim() || 'The Nameless'} — {race} {className}
+              {heroName} — {race} {className}
             </p>
             <div className="forge-stats">
               {stats.map(([k, v]) => (
@@ -159,14 +165,13 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="name your hero"
+            placeholder={THE_NAMELESS}
             maxLength={24}
-            aria-label="Name your hero"
+            aria-label={`Name your hero — left empty, they begin as ${THE_NAMELESS}`}
           />
           <button
             className="btn primary forge-begin"
-            disabled={!canBegin}
-            onClick={() => dispatch({ type: 'CREATE_CHARACTER', name: name.trim(), race, className })}
+            onClick={() => dispatch({ type: 'CREATE_CHARACTER', name: heroName, race, className })}
           >
             {telling > 1 ? 'Begin the Next Telling' : 'Begin the Telling'}
           </button>

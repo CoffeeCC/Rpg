@@ -1,4 +1,4 @@
-import type { AffixDef, ItemRarity, ItemTypeName, ItemV2, RolledAffix } from '../types';
+import type { AffixDef, ItemRarity, ItemTypeName, ItemV2, RolledAffix, UniqueDef } from '../types';
 import { AFFIXES, RARE_NAME_PREFIXES, RARE_NAME_SUFFIXES } from '../data/affixes';
 import { UNIQUES } from '../data/uniques';
 import { ITEM_TYPES, MATERIALS } from '../data/items';
@@ -71,10 +71,21 @@ function computeValue(baseType: ItemTypeName, material: string, ilvl: number, ra
   return Math.max(1, Math.round(base * (1 + 0.4 * affixCount) * RARITY_VALUE_MULT[rarity] * (1 + ilvl * 0.06)));
 }
 
-function buildLegendary(ilvl: number): ItemV2 | null {
-  const eligible = UNIQUES.filter((u) => u.minIlvl <= ilvl + 2);
-  if (eligible.length === 0) return null;
-  const def = eligible[randInt(eligible.length)];
+/**
+ * How much likelier a Legendary roll is to land on a set piece the player is
+ * already part-way to owning.
+ *
+ * Without this, sets are unwearable. A Legendary roll picks uniformly from
+ * every eligible unique (thirty of them at depth), so assembling four specific
+ * ones inside a single telling is a lottery nobody wins — exactly the "set you
+ * can only complete by luck across forty hours" failure. At weight 4 a missing
+ * piece is still not guaranteed; it is merely the way to bet. The dusk gives
+ * you more of what you are already wearing.
+ */
+const SET_AFFINITY_WEIGHT = 4;
+
+/** Turn a UniqueDef into a real item at the given ilvl. */
+function materializeUnique(def: UniqueDef, ilvl: number): ItemV2 {
   const typeInfo = ITEM_TYPES[def.baseType];
   const material = typeInfo.materials[Math.min(typeInfo.materials.length - 1, Math.floor(def.minIlvl / 3) + 1)];
   return {
@@ -92,6 +103,42 @@ function buildLegendary(ilvl: number): ItemV2 | null {
     value: computeValue(def.baseType, material, def.minIlvl, 'Legendary', def.affixes.length),
     uniqueId: def.id,
   };
+}
+
+/**
+ * Forge one NAMED unique, regardless of drop luck. This is the Smith's recast:
+ * Grude can name every plate on her back wall, so she can also name the one
+ * you are missing. Returns null for an id no unique answers to.
+ */
+export function forgeUnique(uniqueId: string, ilvl: number): ItemV2 | null {
+  const def = UNIQUES.find((u) => u.id === uniqueId);
+  if (!def) return null;
+  return materializeUnique(def, Math.max(ilvl, def.minIlvl));
+}
+
+/** Every unique the given ilvl can currently produce. The honest denominator. */
+export function eligibleUniqueIds(ilvl: number): string[] {
+  return UNIQUES.filter((u) => u.minIlvl <= ilvl + 2).map((u) => u.id);
+}
+
+function buildLegendary(ilvl: number, affinity: readonly string[] = []): ItemV2 | null {
+  const eligible = UNIQUES.filter((u) => u.minIlvl <= ilvl + 2);
+  if (eligible.length === 0) return null;
+  // Weighted pick. With an empty affinity every weight is 1 and this is
+  // exactly the uniform draw it replaced.
+  const preferred = new Set(affinity);
+  const weights = eligible.map((u) => (preferred.has(u.id) ? SET_AFFINITY_WEIGHT : 1));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = randInt(total);
+  let idx = 0;
+  for (let i = 0; i < eligible.length; i++) {
+    if (roll < weights[i]) {
+      idx = i;
+      break;
+    }
+    roll -= weights[i];
+  }
+  return materializeUnique(eligible[idx], ilvl);
 }
 
 /** Smith-forged monster charm: always Magic+ with 2 guaranteed affixes. */
@@ -138,13 +185,20 @@ export function forgeTrinket(ilvl: number, luck = 0): ItemV2 {
   };
 }
 
-/** Generate one item. ilvl drives material, implicits, and affix tiers. */
-export function generateItem(ilvl: number, luck = 0, bias = 0): ItemV2 {
+/**
+ * Generate one item. ilvl drives material, implicits, and affix tiers.
+ *
+ * `affinity` is a list of unique ids this drop should lean toward if it comes
+ * up Legendary — in practice, the set pieces the hero is missing. It only ever
+ * reweights a roll that was ALREADY going to be Legendary; it never makes a
+ * Legendary more likely, so it cannot be used to inflate drop quality.
+ */
+export function generateItem(ilvl: number, luck = 0, bias = 0, affinity: readonly string[] = []): ItemV2 {
   const level = Math.max(1, ilvl);
   const rarity = rollRarity(luck, bias);
 
   if (rarity === 'Legendary') {
-    const unique = buildLegendary(level);
+    const unique = buildLegendary(level, affinity);
     if (unique) return unique;
     // No unique available this low - fall through as Rare.
   }

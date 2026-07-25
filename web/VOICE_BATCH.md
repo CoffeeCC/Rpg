@@ -85,17 +85,24 @@ grude                                                   <- MISSING (known, PLAN9
 chronicler                                              <- MISSING (found during this pass)
 ```
 
-**`grude` — Smith.** Never had an id, so he has always been silent. He is the
-only townsperson who has never spoken aloud.
+**`grude` — Smith.** Never had an id, so she has always been silent. She is the
+only townsperson who has never spoken aloud. **Blocked on a voice slot, not a
+brief:** the ElevenLabs account caps at 10 custom voices and all 10 are in use
+(9 mapped NPCs + the Chronicler's). Adding Grude needs an 11th — either free a
+slot or raise the plan limit. Her voice has been designed and auditioned; only
+the save is outstanding.
 
-**`chronicler` — the archivist.** This one is a surprise worth knowing about.
-Three chronicler clips *do* exist (`chronicler_0..2.mp3`) but they were made with
-a voice whose id was never written down — it is not in `npc_voices.json` and not
-in any of the old python scripts. Those three still play. Anything new for the
-Chronicler cannot be matched to them until the id is recovered. If it is lost,
-re-voice all 15 of his lines with a fresh id rather than shipping two different
-narrators (delete the three keys from `npcLineAudio.ts` and re-run; the generator
-will regenerate them under `extra_chronicler_*`).
+**`chronicler` — the archivist. RECOVERED, 2026-07-25.** The lost voice is
+**`BkjG8thInSFJlI7Rkffc`**, named "Deckard" in the ElevenLabs library — it was
+never written into `npc_voices.json` or any of the old python scripts, which is
+why it read as missing. Paul confirmed by ear against `chronicler_0.mp3`. No
+re-voicing is needed and the three existing clips stay.
+
+The id is deliberately **not yet in `npc_voices.json`**: adding it without
+generating his 12 pending clips leaves him with an id and only 3 voiced lines,
+which trips the real invariant in `townVoice.test.ts` ("every NPC with a voice id
+keeps a body of voiced lines"). Add the mapping and run the generator in the same
+change, not separately.
 
 ### What I need from you
 
@@ -114,9 +121,15 @@ Either paste ids from voices you already have in the ElevenLabs library, or
 design them from these directions (taken from `VOICE_BIBLE` in
 `src/engine/data/npcs.ts`, same shape as the descriptions in `gen_voices.py`):
 
-> **Grude** — "An old male smith, low and gravelled, patient and unhurried, with
-> long pauses; a man who fitted armour to boys who did not come home and now
-> talks to the metal instead. No self-pity, no volume."
+> **Grude** — "An older woman, heavyset and weathered by the forge, low and
+> gravelled, patient and unhurried, with long pauses; she fitted armour to boys
+> who did not come home and now talks to the metal instead. No self-pity, no
+> volume."
+
+Grude is a **woman** — see `public/art/npcs/grude.jpg` (v13, 2026-07-21). An
+earlier draft of this file described her as male; that was never in VOICE_BIBLE
+and never in her dialogue, which is entirely gender-neutral. Check the portrait
+before writing a voice brief.
 
 > **Chronicler** — "A faceless archivist, even and unhurried, neither warm nor
 > cold; the narrator's voice. Reads a margin note half a step quieter than the

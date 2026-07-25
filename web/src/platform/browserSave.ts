@@ -1,5 +1,5 @@
 import type { GameState } from '../engine/game';
-import { serializeGameState, deserializeGameState, type SaveData } from '../engine/systems/saveGame';
+import { serializeGameState, readSaveData, SAVE_VERSION, type SaveData } from '../engine/systems/saveGame';
 
 const SLOT_PREFIX = 'rpg-save-slot-';
 export const SLOT_COUNT = 3;
@@ -11,6 +11,12 @@ export interface SlotSummary {
   where: string;
   orbs: number;
   savedAt: string;
+  /**
+   * Where this save sits relative to the running build. 'older' saves are
+   * carried forward by the migration chain on load; 'later' ones cannot be
+   * read and say so when the player tries.
+   */
+  age: 'older' | 'current' | 'later';
 }
 
 function slotKey(slot: number): string {
@@ -21,7 +27,12 @@ function readSlot(slot: number): SaveData | null {
   const raw = localStorage.getItem(slotKey(slot));
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as SaveData;
+    const parsed: unknown = JSON.parse(raw);
+    // JSON.parse happily returns numbers, strings and null. Anything that is
+    // not an object is not a save, and letting it through means every reader
+    // below has to re-check.
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+    return parsed as SaveData;
   } catch {
     return null;
   }
@@ -34,15 +45,19 @@ export function saveToSlot(slot: number, state: GameState): boolean {
   return true;
 }
 
-/** Returns the restored state, or an error message string. */
+/**
+ * Returns the restored state, or an error message string.
+ *
+ * `readSaveData` never throws and its failure messages are already written in
+ * the player's voice, so the message goes straight to the screen. The old
+ * try/catch here could surface a raw `TypeError` text ("Cannot read properties
+ * of undefined") when a save was structurally broken.
+ */
 export function loadFromSlot(slot: number): GameState | string {
   const data = readSlot(slot);
   if (!data) return 'Nothing saved in that slot.';
-  try {
-    return deserializeGameState(data);
-  } catch (err) {
-    return err instanceof Error ? err.message : 'That save could not be loaded.';
-  }
+  const result = readSaveData(data);
+  return result.ok ? result.state : result.message;
 }
 
 export function deleteSlot(slot: number): void {
@@ -54,13 +69,15 @@ export function getSlotSummary(slot: number): SlotSummary | null {
   if (!data) return null;
   const raw = data.state as { player?: { name?: string; level?: number }; screen?: string; orbs?: string[] } | undefined;
   if (!raw?.player?.name) return null;
+  const version = typeof data.version === 'number' && Number.isFinite(data.version) ? Math.floor(data.version) : 0;
   return {
     slot,
     name: raw.player.name,
-    level: raw.player.level ?? 1,
+    level: typeof raw.player.level === 'number' ? raw.player.level : 1,
     where: raw.screen === 'floor' ? 'Exploring' : 'Everdusk',
-    orbs: raw.orbs?.length ?? 0,
-    savedAt: data.savedAt,
+    orbs: Array.isArray(raw.orbs) ? raw.orbs.length : 0,
+    savedAt: typeof data.savedAt === 'string' ? data.savedAt : '',
+    age: version === SAVE_VERSION ? 'current' : version > SAVE_VERSION ? 'later' : 'older',
   };
 }
 
@@ -87,11 +104,14 @@ export function exportSaveToFile(state: GameState): boolean {
 
 /** Returns the restored state, or an error message string. */
 export async function importSaveFromFile(file: File): Promise<GameState | string> {
+  let data: unknown;
   try {
-    const text = await file.text();
-    const data = JSON.parse(text) as SaveData;
-    return deserializeGameState(data);
-  } catch (err) {
-    return err instanceof Error ? err.message : 'That file could not be read as a save.';
+    data = JSON.parse(await file.text());
+  } catch {
+    // Only malformed JSON or an unreadable file lands here; a well-formed but
+    // wrong-shaped file is readSaveData's business, and it phrases it better.
+    return 'That file could not be read as a save.';
   }
+  const result = readSaveData(data);
+  return result.ok ? result.state : result.message;
 }

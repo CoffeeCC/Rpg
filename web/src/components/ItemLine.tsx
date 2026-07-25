@@ -1,5 +1,10 @@
 import type { ItemV2 } from '../engine/types';
 import { gearImage } from '../art/gearArt';
+import { setOfItem } from '../engine/data/sets';
+// Imported here rather than only in the screens: ItemLine renders inside the
+// shop and the forge too, and a set tag that is only styled on the Gear screen
+// is a bug waiting for someone to notice it.
+import '../gearsets.css';
 
 export function ItemLine({ item, showAffixes = true, iconSize = 44 }: { item: ItemV2; showAffixes?: boolean; iconSize?: number }) {
   const implicits: string[] = [];
@@ -7,6 +12,10 @@ export function ItemLine({ item, showAffixes = true, iconSize = 44 }: { item: It
   if (item.implicitMagic) implicits.push(`Mag +${item.implicitMagic}`);
   if (item.implicitDefense) implicits.push(`Def +${item.implicitDefense}`);
   const icon = gearImage(item);
+  // Set membership is rendered inline rather than only in the hover window:
+  // knowing a piece is part of a set is the whole reason to keep it instead of
+  // selling it, and that must not be hover-only information.
+  const set = setOfItem(item);
 
   return (
     <div className="item-line">
@@ -16,6 +25,7 @@ export function ItemLine({ item, showAffixes = true, iconSize = 44 }: { item: It
         <span className="pill">
           {item.baseType} · ilvl {item.ilvl}
         </span>
+        {set && <span className="pill set-pill">{set.name}</span>}
         {showAffixes && (
           <div className="affix-line">
             {[...implicits, ...item.affixes.map((a) => `${a.target} +${a.amount}`)].join(' · ') || 'No bonuses'}

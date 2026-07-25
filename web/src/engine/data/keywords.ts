@@ -15,10 +15,10 @@ export const STAT_LABEL: Record<Stat, string> = {
 
 const STAT_DESC: Record<Stat, string> = {
   STR: 'Increases damage on Strength-scaling cards and raises your max HP.',
-  DEF: 'Reduces damage taken from physical attacks and raises your max HP.',
+  DEF: 'Reduces damage taken from physical attacks — blows with no element and no Intellect behind them — and raises your max HP. It does nothing against magic.',
   DEX: 'Increases movement points on the gate map and improves your odds in speed-based checks.',
   MANA: 'Increases your maximum MP, the resource some skills spend.',
-  MAGDEF: 'Reduces damage taken from magic attacks.',
+  MAGDEF: 'Reduces damage taken from magic — anything carrying an element, and any skill that reads its caster’s Intellect. It replaces Defense entirely against such blows, and is subtracted more steeply than Defense is. Your party monsters read their own.',
   INT: 'Increases damage on Intellect-scaling spells.',
   LUCK: 'Increases your chance to land a critical hit.',
 };

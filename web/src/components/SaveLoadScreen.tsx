@@ -11,8 +11,20 @@ import '../sheets.css';
 // only; every handler is unchanged.
 
 function formatDate(iso: string): string {
+  if (!iso) return 'date unrecorded';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+/**
+ * A word about saves that do not match the running build. Older ones are
+ * walked forward by the migration chain when loaded; newer ones cannot be
+ * read at all, and the only cure is letting the PWA fetch its new bundle.
+ */
+function ageNote(age: 'older' | 'current' | 'later'): string | null {
+  if (age === 'older') return 'From an older age — it will be carried forward.';
+  if (age === 'later') return 'From a later age — reload Everdusk to read it.';
+  return null;
 }
 
 export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameState; backScreen: Screen; dispatch: (a: GameAction) => void }) {
@@ -81,6 +93,7 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
                   </div>
                   <div className="sl-meta">{summary.orbs}/4 orbs</div>
                   <div className="sl-date">{formatDate(summary.savedAt)}</div>
+                  {ageNote(summary.age) && <div className="sl-date sl-age">{ageNote(summary.age)}</div>}
                 </>
               ) : (
                 <div className="sl-empty-label">(empty)</div>

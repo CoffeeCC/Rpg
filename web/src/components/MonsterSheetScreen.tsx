@@ -1,4 +1,4 @@
-import type { GameAction, GameState } from '../engine/game';
+import type { GameAction, GameState, Screen } from '../engine/game';
 import type { ItemV2 } from '../engine/types';
 import { FAMILY_INFO, familyWeakness } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
@@ -64,12 +64,19 @@ function AccessorySlot({
   );
 }
 
-export function MonsterSheetScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+const BACK_LABEL: Partial<Record<Screen, string>> = {
+  floor: '← Back to the expedition',
+  stable: 'Back to the Stable',
+  town: '← Back to town',
+};
+
+export function MonsterSheetScreen({ state, backScreen: from, dispatch }: { state: GameState; backScreen?: Screen; dispatch: (a: GameAction) => void }) {
   const monster = [...state.party, ...state.stable].find((m) => m.uid === state.selectedMonsterUid);
   // Mid-run this sheet must return to the floor — "Back to the Stable" from an
-  // expedition walks away from the run entirely.
-  const backScreen = state.expedition ? 'floor' : 'stable';
-  const backLabel = state.expedition ? '← Back to the expedition' : 'Back to the Stable';
+  // expedition walks away from the run entirely. Otherwise it returns to
+  // whichever room you opened it from; the Stable remains the default.
+  const backScreen: Screen = state.expedition ? 'floor' : (from ?? 'stable');
+  const backLabel = BACK_LABEL[backScreen] ?? 'Back';
   if (!monster) {
     return (
       <div className="panel">

@@ -23,6 +23,7 @@ import { TileFill, pickTileProp, TilePropArt } from '../art/tileArt';
 import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
+import { useNavScope, navItem, focusFirstIn } from '../nav';
 import '../floor.css';
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
@@ -88,8 +89,21 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   const player = state.player!;
   const discount = player.traits.shopDiscount;
   const card = mat.cardId ? getCard(mat.cardId) : null;
+  // The mat is modal in every way that matters: while it is up, the D-pad must
+  // buy things, not walk the hero around behind it. A trapping scope one layer
+  // above the floor's guarantees that without the floor needing to know.
+  const matRef = useRef<HTMLDivElement>(null);
+  useNavScope(matRef, {
+    id: 'floor.merchant',
+    layer: 10,
+    trap: true,
+    onCancel: () => {
+      dispatch({ type: 'MERCHANT_CLOSE' });
+      return true;
+    },
+  });
   return (
-    <div className="merchant-mat">
+    <div className="merchant-mat" ref={matRef}>
       <div className="merchant-head">
         <span className="merchant-title">
           <Icon name="merchant" emoji="🏮" size={18} /> Traveling Merchant
@@ -148,6 +162,13 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   );
 }
 
+const NAV_MOVE = {
+  up: 'north',
+  down: 'south',
+  left: 'west',
+  right: 'east',
+} as const;
+
 export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [showItems, setShowItems] = useState(false);
   const merchantOpen = !!state.pendingMerchant;
@@ -155,17 +176,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const walkingRef = useRef(false);
 
   // PLAN5 #56: keyboard drives the floor.
+  //
+  // v21: the ARROW keys moved out of here and into the nav layer, which routes
+  // them through the same path as the D-pad and the left stick (see the nav
+  // scope below). WASD stays local and stays unconditional — it is muscle
+  // memory, it can never be ambiguous with menu navigation, and keeping it
+  // here means a keyboard player's movement does not depend on where focus is.
+  // Everything Escape and SPACE used to do here is now the nav layer's
+  // `cancel` and `confirm` — leaving them bound in both places fired
+  // END_MAP_TURN twice per press, because both listeners are on `window` and
+  // this one never checked `defaultPrevented`. If you add a key here, check
+  // it against §1 of CONTROLLER.md first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (merchantOpen) {
-        if (e.key === 'Escape') dispatch({ type: 'MERCHANT_CLOSE' });
-        return;
-      }
+      if (merchantOpen) return; // the mat's own nav scope owns input while it is up
       const dirs: Record<string, 'north' | 'south' | 'east' | 'west'> = {
-        ArrowUp: 'north',
-        ArrowDown: 'south',
-        ArrowLeft: 'west',
-        ArrowRight: 'east',
         w: 'north',
         s: 'south',
         a: 'west',
@@ -175,40 +200,78 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       if (dir) {
         e.preventDefault();
         dispatch({ type: 'MOVE', dir });
-      } else if (e.key === ' ' || e.key === 'h' || e.key === 'H') {
+      } else if (e.key === 'h' || e.key === 'H') {
         e.preventDefault();
         dispatch({ type: 'END_MAP_TURN' });
       } else if (e.key === 'i' || e.key === 'I') {
         setShowItems((v) => !v);
-      } else if (e.key === 'Escape') {
-        setShowItems(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [dispatch, merchantOpen]);
 
-  // Gamepad: dpad moves, A holds ground.
-  const padPrev = useRef<boolean[]>([]);
-  useEffect(() => {
-    let raf = 0;
-    const poll = () => {
-      raf = requestAnimationFrame(poll);
-      const pad = navigator.getGamepads?.()[0];
-      if (!pad) return;
-      const pressed = pad.buttons.map((b) => b.pressed);
-      const was = padPrev.current;
-      const edge = (i: number) => pressed[i] && !was[i];
-      if (edge(12)) dispatch({ type: 'MOVE', dir: 'north' });
-      if (edge(13)) dispatch({ type: 'MOVE', dir: 'south' });
-      if (edge(14)) dispatch({ type: 'MOVE', dir: 'west' });
-      if (edge(15)) dispatch({ type: 'MOVE', dir: 'east' });
-      if (edge(0)) dispatch({ type: 'END_MAP_TURN' });
-      padPrev.current = pressed;
-    };
-    raf = requestAnimationFrame(poll);
-    return () => cancelAnimationFrame(raf);
-  }, [dispatch]);
+  // --- Controller / focus navigation -------------------------------------
+  //
+  // The map is a WIDGET: one focusable cell that swallows directions while it
+  // holds the cursor, so the D-pad walks the hero instead of hopping between
+  // buttons. B (or LB/RB) hands the cursor to the toolbar and back — that
+  // hand-off is the only thing a pad player has to learn here.
+  const panelRef = useRef<HTMLDivElement>(null);
+  const topbarRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+
+  const onMap = (el: HTMLElement | null) => !el || el.hasAttribute('data-nav-widget');
+  const toMap = () => {
+    const el = mapRef.current;
+    if (!el) return false;
+    el.focus({ preventScroll: true });
+    return true;
+  };
+
+  useNavScope(panelRef, {
+    id: 'floor',
+    onDirection: (dir, meta) => {
+      // Focus on the map (or nowhere at all) means "walk". Anywhere else, the
+      // default spatial focus movement is what the player wants.
+      if (!onMap(meta.target)) return false;
+      const move = NAV_MOVE[dir];
+      if (!move) return false;
+      dispatch({ type: 'MOVE', dir: move });
+      return true;
+    },
+    onButton: (button, meta) => {
+      switch (button) {
+        case 'confirm':
+          // A on the map holds ground — the v20 pad behaviour, preserved. On a
+          // real control it falls through and presses that control.
+          if (!onMap(meta.target)) return false;
+          dispatch({ type: 'END_MAP_TURN' });
+          return true;
+        case 'alt':
+          setShowItems((v) => !v);
+          return true;
+        case 'start':
+          dispatch({ type: 'END_MAP_TURN' });
+          return true;
+        case 'prevTab':
+        case 'nextTab':
+          return onMap(meta.target) ? focusFirstIn(topbarRef.current) : toMap();
+        default:
+          return false;
+      }
+    },
+    onCancel: () => {
+      if (showItems) {
+        setShowItems(false);
+        return true;
+      }
+      // B toggles the cursor between the map and the toolbar.
+      const active = document.activeElement as HTMLElement | null;
+      return onMap(active) ? focusFirstIn(topbarRef.current) : toMap();
+    },
+  });
+
   const exp = state.expedition;
   const player = state.player;
 
@@ -314,7 +377,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   };
 
   return (
-    <div className="panel floor-panel">
+    <div className="panel floor-panel" ref={panelRef}>
       <h1 className="title">
         {exp.wild ? (
           <>🌫️ Unmapped Wilds, beyond the {gate.name} — Depth {exp.floorIndex + 1}</>
@@ -330,7 +393,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
         {/* v18 #10: every control lives in a compact TOP bar flush with the
             map viewport's top edge — the old side column (and its d-pad) is
             gone; click-to-move + WASD + gamepad cover movement. */}
-        <div className="floor-topbar">
+        <div className="floor-topbar" ref={topbarRef}>
           <div className="btn-row floor-actions">
             <button className="btn small" onClick={() => setShowItems((s) => !s)} disabled={usable.length === 0}>
               <Icon name="itemshop" emoji="🧪" size={18} /> Items ({usable.length})
@@ -368,7 +431,20 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           )}
         </div>
 
-        <div className="map-frame">
+        {/* The war table is one nav cell: focused, it eats the D-pad and walks
+            the hero (see the nav scope above). It announces as a group, not a
+            button — pressing A on it holds ground, it does not "activate". */}
+        <div
+          className="map-frame"
+          ref={mapRef}
+          {...navItem({
+            widget: true,
+            initial: true,
+            role: 'group',
+            key: 'floor-map',
+            label: 'Expedition map — arrows or D-pad to walk, A to hold ground, B for the toolbar',
+          })}
+        >
           <i className="map-corner tl" aria-hidden="true" />
           <i className="map-corner tr" aria-hidden="true" />
           <i className="map-corner bl" aria-hidden="true" />
@@ -465,7 +541,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   // next turn). v18 #8: shown on any REVEALED tile — gating it
                   // to the current light hid the exact warning it exists for.
                   const danger = tile !== TILE.WALL && threat.has(`${x},${y}`);
-                  const prop = tile === TILE.FLOOR ? pickTileProp(x, y) : null;
+                  const prop = tile === TILE.FLOOR ? pickTileProp(x, y, exp.gateId) : null;
                   return (
                     <span
                       key={x}

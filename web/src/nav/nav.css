@@ -1,0 +1,128 @@
+/* ===========================================================================
+   nav.css — THE CURSOR.
+
+   A controller player who cannot see where they are is stuck, so the rule this
+   file enforces is absolute: while the last input came from a pad or the
+   keyboard, the focused element wears a ring, no exceptions, on every screen.
+
+   How, and why it is not just `:focus-visible`:
+
+   `:focus-visible` is a browser heuristic about whether the user "seems to be
+   using the keyboard". A programmatic `element.focus()` — which is how every
+   single pad-driven focus move in this game happens — frequently does not
+   satisfy it, especially right after a mouse click. So navBus publishes the
+   live input device on <html data-nav-input="pad|key|pointer"> and we style
+   plain `:focus` under the two modes that need a cursor. Mouse and touch keep
+   exactly the appearance they have today.
+
+   Palette is the game's own: candle gold on cold ash (index.css).
+   =========================================================================== */
+
+:root {
+  --nav-ring: var(--gold-bright, #e6cf7a);
+  --nav-ring-dim: var(--gold, #c9a227);
+  --nav-ring-width: 2px;
+  --nav-ring-offset: 3px;
+}
+
+/* --- The ring ---------------------------------------------------------- */
+
+html[data-nav-input='pad'] :focus:not(body):not(html),
+html[data-nav-input='key'] :focus:not(body):not(html) {
+  outline: var(--nav-ring-width) solid var(--nav-ring);
+  outline-offset: var(--nav-ring-offset);
+}
+
+/* A steady breath, so the eye finds the cursor on a busy battlefield without
+   anything actually moving (movement would fight the card fan's own idle). */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-nav-input='pad'] :focus:not(body):not(html),
+  html[data-nav-input='key'] :focus:not(body):not(html) {
+    animation: nav-ring-breathe 1.9s ease-in-out infinite;
+  }
+}
+
+@keyframes nav-ring-breathe {
+  0%,
+  100% {
+    outline-color: var(--nav-ring);
+  }
+  50% {
+    outline-color: var(--nav-ring-dim);
+  }
+}
+
+/* Elements that opt in by hand get the full candle treatment: the ring plus a
+   warm bloom. Only applied to `[data-nav-item]` — the clickable divs we
+   converted — because a box-shadow would clobber the hand-tuned shadows that
+   most real buttons in this game already carry. */
+html[data-nav-input='pad'] [data-nav-item]:focus,
+html[data-nav-input='key'] [data-nav-item]:focus {
+  box-shadow:
+    0 0 0 1px rgba(201, 162, 39, 0.35),
+    0 0 18px rgba(230, 207, 122, 0.4);
+}
+
+/* Disabled-but-present controls must never look like the cursor. */
+html[data-nav-input='pad'] [data-nav-disabled]:focus,
+html[data-nav-input='key'] [data-nav-disabled]:focus {
+  outline-color: var(--text-faint, #635e54);
+  animation: none;
+  box-shadow: none;
+}
+
+/* --- Self-navigating widgets ------------------------------------------- */
+
+/* A widget that swallows the D-pad while focused (the floor map, the
+   battlefield) is one big cursor cell. Its ring hugs the frame rather than
+   floating off it, and it says so in words — see CONTROLLER.md §"Widgets that
+   eat directions". */
+html[data-nav-input='pad'] [data-nav-widget]:focus,
+html[data-nav-input='key'] [data-nav-widget]:focus {
+  outline-offset: 0;
+  outline-width: 3px;
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 162, 39, 0.25),
+    0 0 26px rgba(230, 207, 122, 0.28);
+}
+
+html [data-nav-widget]:focus {
+  /* The map already scrolls internally; never let the browser add its own. */
+  outline-offset: 0;
+}
+
+/* --- Battle: the hand ---------------------------------------------------- */
+
+/* battle.css already lifts a hand card on `:focus-within`, from back when the
+   only way in was Tab. Focusing the slot itself now drives that same rule, so
+   pad focus and mouse hover produce one identical gesture. All this adds is
+   the ring on the card's own silhouette instead of its layout box, which the
+   fan's rotation would otherwise leave visibly crooked. */
+html[data-nav-input='pad'] .hand-slot:focus,
+html[data-nav-input='key'] .hand-slot:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+html[data-nav-input='pad'] .hand-slot:focus .playing-card,
+html[data-nav-input='key'] .hand-slot:focus .playing-card {
+  outline: 3px solid var(--nav-ring);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+/* --- Battle: a targetable foe ------------------------------------------- */
+
+/* The aimed enemy already has `.kb-target` from battle.css. When the pad moves
+   focus onto a unit for inspection rather than aiming, keep the ring tight to
+   the figure so it does not swallow the nameplate. */
+html[data-nav-input='pad'] .bf-unit:focus,
+html[data-nav-input='key'] .bf-unit:focus {
+  outline-offset: -2px;
+}
+
+/* --- Nothing here may touch pointer users -------------------------------- */
+
+html[data-nav-input='pointer'] [data-nav-item]:focus {
+  box-shadow: none;
+}

@@ -226,7 +226,9 @@ export const UNIQUES: UniqueDef[] = [
     flavor: "Tied the night her tamer didn't come back. It has not loosened since.",
   },
 
-  // --- Duskbound set ---
+  // --- The Duskbound Vigil (set: see data/sets.ts) ---
+  // Six named pieces, five wearable: the Vigil was issued with both a blade
+  // (Duskfang) and a staff (Cinderwake), and nobody carried both.
   {
     id: 'duskfang',
     name: 'Duskfang',
@@ -331,5 +333,136 @@ export const UNIQUES: UniqueDef[] = [
       { name: 'of the Endless Descent', type: 'suffix', target: 'HP', amount: 50 },
     ],
     flavor: 'Said to have carried its last wearer all the way to the Abyss, and only halfway back.',
+  },
+
+  // --- The Unlit Procession (set: see data/sets.ts) ---
+  // Four pieces, no weapon among them: any class can carry the Procession, and
+  // none of it is armour. The numbers lean on DEX/MANA/LUCK rather than
+  // Defense, so the pieces are individually mediocre for a front-liner and
+  // individually excellent for anyone who would rather act twice than be hit
+  // once. That is the set's whole argument, made before the bonuses arrive.
+  {
+    id: 'pallbearersHood',
+    name: "The Pallbearer's Hood",
+    baseType: 'Headpiece',
+    minIlvl: 7,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 4,
+    affixes: [
+      { name: 'Downcast', type: 'prefix', target: 'DEX', amount: 7 },
+      { name: 'of the Lowered Eye', type: 'suffix', target: 'MANA', amount: 5 },
+      { name: 'of Six Paces', type: 'suffix', target: 'MP', amount: 14 },
+    ],
+    flavor: 'Cut long at the front. You are not required to see where you are going; you are required to keep the step.',
+  },
+  {
+    id: 'quietHands',
+    name: 'Quiet Hands',
+    baseType: 'Glove',
+    minIlvl: 9,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 3,
+    affixes: [
+      { name: 'Unhurried', type: 'prefix', target: 'DEX', amount: 8 },
+      { name: 'of the Even Grip', type: 'suffix', target: 'LUCK', amount: 5 },
+      { name: 'of No Sound At All', type: 'suffix', target: 'MP', amount: 16 },
+    ],
+    flavor: 'The trick is not strength. The trick is never letting the box know it is being carried.',
+  },
+  {
+    id: 'ringOfTheUncounted',
+    name: 'The Ring of the Uncounted',
+    baseType: 'Ring',
+    minIlvl: 11,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 0,
+    affixes: [
+      { name: 'Unnumbered', type: 'prefix', target: 'LUCK', amount: 8 },
+      { name: 'of the Short List', type: 'suffix', target: 'MANA', amount: 7 },
+      { name: 'of Names Withheld', type: 'suffix', target: 'INT', amount: 6 },
+    ],
+    flavor: 'Worn by whoever walked last. There was always a last one, and the roll never said which.',
+  },
+  {
+    id: 'processionalBell',
+    name: 'The Processional Bell',
+    baseType: 'Amulet',
+    minIlvl: 13,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 0,
+    affixes: [
+      { name: 'Muffled', type: 'prefix', target: 'MANA', amount: 9 },
+      { name: 'of the Kept Time', type: 'suffix', target: 'MP', amount: 26 },
+      { name: 'of the Long Walk', type: 'suffix', target: 'DEX', amount: 7 },
+    ],
+    flavor: 'Wrapped in cloth so it keeps the time without announcing it. Some walks are not for the town to hear.',
+  },
+
+  // --- The Ashen Verdict (set: see data/sets.ts) ---
+  // Four pieces, weapon included, and the affixes are lopsided on purpose:
+  // heavy Attack and STR, almost no HP. The Verdict wants the fight over.
+  {
+    id: 'verdictEdge',
+    name: 'The Verdict',
+    baseType: 'Sword',
+    minIlvl: 8,
+    implicitAttack: 9,
+    implicitMagic: 0,
+    implicitDefense: 0,
+    affixes: [
+      { name: 'Summary', type: 'prefix', target: 'Attack', amount: 9 },
+      { name: 'Unappealed', type: 'prefix', target: 'STR', amount: 7 },
+      { name: 'of the Short Hearing', type: 'suffix', target: 'DEX', amount: 5 },
+    ],
+    flavor: 'They were not permitted a defence. Neither, in the end, was the court.',
+  },
+  {
+    id: 'pyreWeave',
+    name: 'Pyreweave',
+    baseType: 'Armor',
+    minIlvl: 12,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 8,
+    affixes: [
+      { name: 'Kindling', type: 'prefix', target: 'STR', amount: 10 },
+      { name: 'of the Stacked Wood', type: 'suffix', target: 'Attack', amount: 8 },
+      { name: 'of Small Comfort', type: 'suffix', target: 'HP', amount: 18 },
+    ],
+    flavor: 'Woven from what the fire did not finish. It is not protective. It is a statement about fire.',
+  },
+  {
+    id: 'emberbittenGrips',
+    name: 'Emberbitten Grips',
+    baseType: 'Glove',
+    minIlvl: 10,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 3,
+    affixes: [
+      { name: 'Scorched', type: 'prefix', target: 'STR', amount: 8 },
+      { name: 'of the Held Coal', type: 'suffix', target: 'Attack', amount: 7 },
+      { name: 'of Proof by Burning', type: 'suffix', target: 'LUCK', amount: 4 },
+    ],
+    flavor: 'The palms are ruined. They were ruined making a point, and the point was taken.',
+  },
+  {
+    id: 'bandOfTheLastArgument',
+    name: 'The Last Argument',
+    baseType: 'Ring',
+    minIlvl: 14,
+    implicitAttack: 0,
+    implicitMagic: 0,
+    implicitDefense: 0,
+    affixes: [
+      { name: 'Conclusive', type: 'prefix', target: 'Attack', amount: 11 },
+      { name: 'of the Closed Book', type: 'suffix', target: 'STR', amount: 9 },
+      { name: 'of Nothing Further', type: 'suffix', target: 'LUCK', amount: 6 },
+    ],
+    flavor: 'Every other argument had been made. This one was worn on the hand and made once.',
   },
 ];

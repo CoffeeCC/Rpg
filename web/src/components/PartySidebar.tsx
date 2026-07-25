@@ -1,11 +1,18 @@
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
+import type { GameAction } from '../engine/game';
 import { FAMILY_INFO } from '../engine/data/species';
 import { SPECIES_CARDS } from '../engine/data/cards';
 import { MonsterArt } from '../art/monsterArt';
 import { HeroArt } from '../art/heroArt';
 import { Bar } from './Bars';
 import { Icon } from './Icon';
+import '../charsheet.css';
+
+// v20: the roster down the right-hand side is now a way in. Each card is a
+// real button — focusable, operable from the keyboard, announced properly —
+// that opens the sheet of whoever it names. The sheets themselves handle
+// getting you back out.
 
 function StatusTags({ entity }: { entity: Character | MonsterInstance }) {
   if (entity.statusEffects.length === 0 && entity.activeMods.length === 0) return null;
@@ -26,10 +33,16 @@ function StatusTags({ entity }: { entity: Character | MonsterInstance }) {
   );
 }
 
-export function PartySidebar({ hero, party }: { hero: Character; party: MonsterInstance[] }) {
+export function PartySidebar({ hero, party, dispatch }: { hero: Character; party: MonsterInstance[]; dispatch: (a: GameAction) => void }) {
   return (
     <>
-      <div className={`party-card ${hero.isAlive() ? '' : 'dead'}`}>
+      <button
+        type="button"
+        className={`party-card psb-card ${hero.isAlive() ? '' : 'dead'}`}
+        onClick={() => dispatch({ type: 'GOTO', screen: 'characterSheet' })}
+        aria-label={`Open ${hero.name}'s character sheet`}
+        title={`${hero.name} — open the character sheet`}
+      >
         <div className="who">
           <span className="name">
             <span className="portrait">
@@ -41,9 +54,19 @@ export function PartySidebar({ hero, party }: { hero: Character; party: MonsterI
         </div>
         <Bar label="HP" current={hero.hp} max={hero.maxHp} kind="hp" />
         <StatusTags entity={hero} />
-      </div>
+        <span className="psb-hint" aria-hidden="true">
+          Character sheet ▸
+        </span>
+      </button>
       {party.map((m) => (
-        <div key={m.uid} className={`party-card ${m.isAlive() ? '' : 'dead'}`}>
+        <button
+          type="button"
+          key={m.uid}
+          className={`party-card psb-card ${m.isAlive() ? '' : 'dead'}`}
+          onClick={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
+          aria-label={`Open ${m.nickname}'s sheet`}
+          title={`${m.nickname} — open their sheet`}
+        >
           <div className="who">
             <span className="name">
               <span className="portrait">
@@ -61,9 +84,16 @@ export function PartySidebar({ hero, party }: { hero: Character; party: MonsterI
           </div>
           <Bar label="HP" current={m.hp} max={m.maxHp} kind="hp" />
           <StatusTags entity={m} />
-        </div>
+          <span className="psb-hint" aria-hidden="true">
+            Companion sheet ▸
+          </span>
+        </button>
       ))}
-      {party.length === 0 && <div className="party-card"><span className="affix-line">No monsters yet. Weaken one in battle and Tame it!</span></div>}
+      {party.length === 0 && (
+        <div className="party-card">
+          <span className="affix-line">No monsters yet. Weaken one in battle and Tame it!</span>
+        </div>
+      )}
     </>
   );
 }

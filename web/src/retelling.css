@@ -1,0 +1,205 @@
+/* ---------------------------------------------------------------------------
+ * The Retelling — the Chronicler explaining the book.
+ *
+ * Styled as the same violet ink as the desk (components/nextDraft.css) and the
+ * Chronicle, because it is literally the same hand writing in all three
+ * places. Nothing here overrides a rule in services.css, sheets.css or
+ * nextDraft.css, so source order between them does not matter — every selector
+ * below is new and unique to this file.
+ * ------------------------------------------------------------------------ */
+
+/* ------------------------------------------------------- a spoken passage */
+
+.chronicler-passage {
+  margin: 12px auto;
+  max-width: 62ch;
+  text-align: left;
+}
+.chronicler-line-p {
+  margin: 0 0 0.7em;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text, #cfc7b6);
+}
+.chronicler-passage .chronicler-margin {
+  margin: 0 0 0.7em;
+  padding-left: 12px;
+  border-left: 1px solid rgba(184, 160, 224, 0.3);
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.55;
+  color: #9b93ab;
+}
+.chronicler-passage .chronicler-margin::before {
+  content: 'margin note — ';
+  font-style: normal;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  color: #8a7bb0;
+}
+
+/* The first page turn is the beat the whole loop hangs on: give it a frame. */
+.rite-passage {
+  padding: 14px 18px;
+  border-top: 1px solid rgba(184, 160, 224, 0.26);
+  border-bottom: 1px solid rgba(184, 160, 224, 0.26);
+  background: linear-gradient(180deg, rgba(184, 160, 224, 0.06), transparent 80%);
+}
+
+/* --------------------------------------------- what carries, what does not */
+
+.carry-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px auto;
+  max-width: 62ch;
+  text-align: left;
+}
+.carry-col {
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 160, 224, 0.2);
+  border-radius: 9px;
+  background: rgba(9, 7, 13, 0.45);
+}
+.carry-heading {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b8a0e0;
+}
+.carry-lost .carry-heading {
+  color: #9a8f86;
+}
+.carry-col ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.carry-col li {
+  margin-bottom: 4px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-dim, #948d7e);
+}
+.carry-lost li {
+  color: #7d756a;
+}
+
+@media (max-width: 620px) {
+  .carry-ledger {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --------------------------------------------------------------- the preface */
+
+.preface-block {
+  margin: 10px 0 4px;
+}
+.preface-toggle {
+  width: 100%;
+}
+.preface-body {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 160, 224, 0.2);
+  border-radius: 9px;
+  background: rgba(9, 7, 13, 0.42);
+}
+
+/* ------------------------------------------------------------- the glossary */
+
+.marginalia-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.margin-entry {
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 160, 224, 0.18);
+  border-radius: 9px;
+  background: rgba(9, 7, 13, 0.42);
+}
+.margin-title {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  color: #d8cdf0;
+}
+.margin-note-prose {
+  margin: 4px 0 6px;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text, #cfc7b6);
+}
+.margin-plain {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 1px solid rgba(184, 160, 224, 0.3);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #9b93ab;
+}
+.margin-plain-tag {
+  margin-right: 6px;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a7bb0;
+}
+
+/* ------------------------------------------------------------- the chronicle */
+
+.timeline-preamble {
+  margin-bottom: 14px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(184, 160, 224, 0.3);
+  font-style: italic;
+  color: #9b93ab;
+}
+
+/* ------------------------------------------------------------ the desk frame */
+
+.desk-second-ledger {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(184, 160, 224, 0.22);
+  font-size: 0.74rem;
+}
+.desk-to-book {
+  margin-top: 12px;
+}
+
+.victory-carry-note {
+  max-width: 62ch;
+  margin: 10px auto 0;
+  font-size: 0.72rem;
+}
+
+/* ---------------------------------------------------------- the frontispiece */
+
+.frontispiece {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 4px 4px;
+}
+.frontispiece .chronicler-passage {
+  max-width: 56ch;
+}
+.frontispiece-premise {
+  margin: 4px auto 12px;
+  max-width: 56ch;
+  padding: 8px 12px;
+  border: 1px solid rgba(184, 160, 224, 0.24);
+  border-radius: 9px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: #9b93ab;
+  text-align: left;
+}
+.frontispiece-premise b {
+  color: #d8cdf0;
+}

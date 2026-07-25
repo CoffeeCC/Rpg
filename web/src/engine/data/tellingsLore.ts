@@ -25,6 +25,34 @@ export const TELLING_EPITAPHS: string[] = [
   'That was the {telling} telling. {name} got as far as {place} and no further. The book does not sigh. The Chronicler sometimes does, on its behalf.',
 ];
 
+/** Records for tellings that reached the end of the book. Slots: {telling} (ordinal), {name}, {level}. */
+export const TRIUMPH_RECORDS: string[] = [
+  'The {telling} telling of {name} reached the last page and did not stop there. The Chronicler wrote the ending down twice, to be sure of it.',
+  '{name}, level {level}, closed the {telling} telling properly. The desk was quiet for a while afterward. It is not used to being finished with.',
+  'Here the {telling} draft ends the way a draft is supposed to. The Chronicler set the quill across the page and left it there overnight.',
+  'The {telling} telling of {name} is not struck through. It is the shorter shelf, and the Chronicler dusts it more often than is strictly required.',
+  'Level {level}, the {telling} telling, and the Hollow Sovereign down. The margin reads: it can be done. The Chronicler underlines this one.',
+  'The {telling} telling holds. {name} walked back out, which the earlier drafts had begun to suggest was not among the available endings.',
+  'A finished page, the {telling}. The Chronicler files it with the others and notices, without saying so, that the stack of endings has grown by one.',
+];
+
+/** Shown at the desk when the book has never yet been finished. No slots. */
+export const CHRONICLER_DRAFT_LINES: string[] = [
+  '"Every draft needs a premise," the Chronicler says, "or it is only a list of things that happened. Choose one, and I will write it in before you begin."',
+  'The Chronicler turns a fresh page and holds the quill above it, waiting. "Tell me what kind of story this one is. I will hold you to it."',
+  '"I can set a condition on the next telling," the Chronicler says. "Not a kindness. A shape. The two are often confused."',
+  '"You have been playing the same draft with better numbers," the Chronicler says, not unkindly. "Let us try a different draft."',
+  'A second ledger, thinner than the first, is slid across the desk. "Premises," the Chronicler says. "What the next telling agrees to before it starts."',
+];
+
+/** Shown at the desk once the Sovereign has fallen at least once. No slots. */
+export const CHRONICLER_DEPTH_LINES: string[] = [
+  '"You finished it," the Chronicler says, and sounds, for one syllable, uncertain what to do with that. "So. There are readings under the reading."',
+  '"The book goes down further than the story does," the Chronicler says. "It always has. I did not mention it, because until now it would only have been cruel."',
+  '"An ending is a place to read from," the Chronicler says, dating a page that has no year on it yet. "Not a place to stop."',
+  'The Chronicler lifts the finished draft and there is another beneath it, in the same hand, harder to read. "Deeper," they say. "That is all the word means here."',
+];
+
 /** Chronicler's desk intro lines (Tavern). One is shown above the boons. No slots. */
 export const CHRONICLER_DESK_LINES: string[] = [
   "The Chronicler does not look up from the page. \"Sit. I have kept your verses. Spend them or don't — the book will still be here either way.\"",

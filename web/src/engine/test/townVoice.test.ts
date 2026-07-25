@@ -205,14 +205,20 @@ describe('voice id coverage', () => {
     }
   });
 
-  // Documents the known gap rather than asserting it away. When Paul adds ids
-  // for grude and the chronicler this test starts failing, which is the signal
-  // to delete it and let the "voiced or newly authored" test above take over.
+  // Documents the known gap rather than asserting it away. When Paul adds an id
+  // for grude this test starts failing, which is the signal to delete it and let
+  // the "voiced or newly authored" test above take over.
+  //
+  // 2026-07-25: the chronicler came off this list. His voice was never missing,
+  // only unrecorded — "Deckard" (BkjG8thInSFJlI7Rkffc) had been used for
+  // chronicler_0..2 and then written down nowhere. Paul confirmed it by ear and
+  // his 12 remaining lines were generated against it.
+  //
+  // grude stays blocked on a voice SLOT, not a brief: the ElevenLabs account
+  // caps at 10 custom voices and all 10 are spoken for. Her voice is designed
+  // and auditioned; it cannot be saved until a slot frees or the plan is raised.
   it('records which NPCs are still waiting on a voice id', () => {
     const missing = [...NPC_IDS].filter((id) => !(VOICE_IDS as Record<string, string>)[id]).sort();
-    expect(missing, 'see art-staging/VOICE_BATCH.md — add ids, then re-run the generator').toEqual([
-      'chronicler',
-      'grude',
-    ]);
+    expect(missing, 'see VOICE_BATCH.md — add ids, then re-run the generator').toEqual(['grude']);
   });
 });

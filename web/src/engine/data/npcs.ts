@@ -160,10 +160,10 @@ export const VOICE_BIBLE: Record<string, VoiceProfile> = {
     core: 'A gatewatch armorer who fitted plate to boys who did not come back, and now talks to the metal instead.',
     speech:
       'Plain, unhurried sentences a touch longer than anyone else\'s in town. Credits steel with intent, moods and memory. Tool and temper vocabulary. Deflects every feeling into the material — then admits, once, at the end of a line, that the deflection is deliberate.',
-    ballast: ['the anvil', 'the forge', 'heat', 'the tongs', 'the gatewatch plate in the back room', 'dents', 'the quench barrel', 'his knees'],
+    ballast: ['the anvil', 'the forge', 'heat', 'the tongs', 'the gatewatch plate in the back room', 'dents', 'the quench barrel', 'her knees'],
     never:
-      'Never raises his voice, never dramatises. Never polishes out a scar. Never names the boys.',
-    direction: 'Low, gravelled, patient. Long pauses where the hammer would fall. Absolutely no self-pity.',
+      'Never raises her voice, never dramatises. Never polishes out a scar. Never names the boys.',
+    direction: 'Low, gravelled, patient — a heavyset older woman, weathered by the forge. Long pauses where the hammer would fall. Absolutely no self-pity.',
   },
   chronicler: {
     id: 'chronicler',
@@ -655,7 +655,7 @@ export const NPCS: NpcDef[] = [
       [
         'One orb. The forge took to a heat I haven\'t coaxed out of it in years. I didn\'t ask it why. You don\'t interrogate good luck.',
         'Brought me a blade to reforge and it went in easy — no fighting me at all. Gear knows when the wind\'s turning. Wears knew it before we did.',
-        'Charcoal\'s burning cleaner. Same collier, same wood. I\'ve stopped writing letters about it — nobody believes a smith about his own fire.',
+        'Charcoal\'s burning cleaner. Same collier, same wood. I\'ve stopped writing letters about it — nobody believes a smith about her own fire.',
         'Sharpened a blade that\'s been dull since the Dimming. Took an afternoon. Should have taken a week. I didn\'t argue with it.',
       ],
       [

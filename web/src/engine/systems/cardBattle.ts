@@ -3,6 +3,7 @@ import { Character } from '../entities/Character';
 import { MonsterInstance, freshUid } from '../entities/MonsterInstance';
 import { CLASS_DECKS, RACE_CARDS, SPECIES_CARDS, TAME_CARD_ID, getCard } from '../data/cards';
 import { getSkill } from '../data/skills';
+import { intentSchool, moveElement, skillSchool, type DamageSchool } from '../data/damageTypes';
 import { STAT_LABEL } from '../data/keywords';
 import { FAMILY_INFO } from '../data/species';
 import { CONSUMABLES } from '../data/items';
@@ -271,10 +272,30 @@ function kitFor(enemy: MonsterInstance, battle: BattleState): EnemyKit | null {
   return FAMILY_KITS[enemy.family] ?? null;
 }
 
+/**
+ * What the defender takes off one incoming blow, before it is telegraphed.
+ *
+ * This is the whole of the MAGDEF change on the receiving side: a magical blow
+ * meets Magic Defense where a physical one meets Defense. Every hero-facing
+ * damage number in the engine goes through here, so the telegraph the player
+ * reads is computed with the same stat that will actually be subtracted.
+ */
+export function heroMitigation(hero: Character, school: DamageSchool): number {
+  return school === 'magical' ? hero.getMagicDefense() * BALANCE.intentMagicDefMitigation : hero.getDefense() * BALANCE.intentDefMitigation;
+}
+
+/** Same rule for a party monster soaking a hit on the hero's behalf. */
+export function monsterMitigation(monster: MonsterInstance, school: DamageSchool): number {
+  return school === 'magical' ? monster.getMagicDefense() * BALANCE.monsterMagicDefFactor : monster.getDefense() * BALANCE.monsterDefFactor;
+}
+
 function intentFromMove(move: EnemyMove, enemy: MonsterInstance, hero: Character): Intent {
   const B = BALANCE;
   const base = { label: move.name, moveId: move.id, moveStatus: move.status };
-  const atk = (mult: number) => Math.max(1, Math.round(enemy.getAttack() * B.intentBasicMult * mult - hero.getDefense() * B.intentDefMitigation));
+  // Kit moves carry no element field; data/damageTypes.ts decides which of them
+  // are sorcery (dragon breath, soul drains, a boss's decree) and which are not.
+  const school: DamageSchool = moveElement(move) === 'None' ? 'physical' : 'magical';
+  const atk = (mult: number) => Math.max(1, Math.round(enemy.getAttack() * B.intentBasicMult * mult - heroMitigation(hero, school)));
   switch (move.kind) {
     case 'attack':
     case 'heavy':
@@ -346,12 +367,14 @@ function rollIntent(enemy: MonsterInstance, hero: Character): Intent {
   if (offense.length > 0 && randInt(100) < B.skillIntentPct) {
     const skill = offense[randInt(offense.length)]!;
     const raw = skill.power * B.intentSkillPowerMult + (skill.scaling === 'STR' ? enemy.getAttack() : enemy.getMagicPower()) * B.intentSkillStatMult;
-    const amount = Math.max(1, Math.round(raw - hero.getDefense() * B.intentDefMitigation));
+    // Skills declare element + scaling, so their school is read straight off.
+    const amount = Math.max(1, Math.round(raw - heroMitigation(hero, skillSchool(skill))));
     return { kind: 'attack', amount, times: 1, skillId: skill.id };
   }
+  // A bare swing carries no skill and no move: a creature hitting you. Physical.
   const swings = randInt(100) < B.doubleSwingPct ? 2 : 1;
   const raw = enemy.getAttack() * (swings === 2 ? B.intentDoubleMult : B.intentBasicMult);
-  return { kind: 'attack', amount: Math.max(1, Math.round(raw - hero.getDefense() * B.intentDefMitigation)), times: swings };
+  return { kind: 'attack', amount: Math.max(1, Math.round(raw - heroMitigation(hero, 'physical'))), times: swings };
 }
 
 export function rollAllIntents(battle: BattleState, hero: Character) {
@@ -755,6 +778,9 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
     fx.push({ fx: 'actor', uid: enemy.uid, label: intent.label ?? INTENT_VERB[intent.kind], side: 'enemy' });
     if (intent.label) log.push(`${enemy.displayName()} — ${intent.label}!`);
     let intentDealt = 0; // v11: total damage this intent, for drain moves
+    // Recomputed rather than stored on the Intent: same inputs, same answer as
+    // the telegraph, and no field added to the serialized Intent shape.
+    const school = intentSchool(intent, getSkill);
     switch (intent.kind) {
       case 'attack': {
         const times = intent.times ?? 1;
@@ -766,7 +792,7 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
           const hitsMonster = !protector && livingMonsters.length > 0;
           if (hitsMonster) {
             const target = livingMonsters[randInt(livingMonsters.length)];
-            const amount = Math.max(1, Math.round((intent.amount ?? 1) * frozenMult(target) - target.getDefense() * BALANCE.monsterDefFactor));
+            const amount = Math.max(1, Math.round((intent.amount ?? 1) * frozenMult(target) - monsterMitigation(target, school)));
             target.takeDamage(amount);
             intentDealt += amount;
             if (intent.moveStatus && intent.moveStatus.target === 'party') {
@@ -774,7 +800,9 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
               fx.push({ fx: 'status', targetUid: target.uid, label: intent.moveStatus.id });
             }
             fx.push({ fx: 'hit', targetUid: target.uid, amount });
-            log.push(`${enemy.displayName()} strikes ${target.displayName()} for ${amount}.`);
+            log.push(
+              `${enemy.displayName()} strikes ${target.displayName()} for ${amount}${school === 'magical' ? ` (magic — ${Math.round(monsterMitigation(target, school))} turned by its Magic Defense)` : ''}.`
+            );
             if (!target.isAlive()) {
               monsterFellThisTurn = true;
               fx.push({ fx: 'ko', targetUid: target.uid });
@@ -803,7 +831,7 @@ export function endTurn(hero: Character, party: MonsterInstance[], battle: Battl
               log.push(`${hero.name} is ${intent.moveStatus.id}.`);
             }
             log.push(
-              `${enemy.displayName()} strikes for ${amount + absorbed}${absorbed > 0 ? ` (${absorbed} warded)` : ''}${braced ? ' - you brace behind the loss, halving it' : ''}.`
+              `${enemy.displayName()} strikes for ${amount + absorbed}${absorbed > 0 ? ` (${absorbed} warded)` : ''}${school === 'magical' ? ` — magic; your Magic Defense already took ${Math.round(heroMitigation(hero, school))} off it` : ''}${braced ? ' - you brace behind the loss, halving it' : ''}.`
             );
           }
         }

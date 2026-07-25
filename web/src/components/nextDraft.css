@@ -1,0 +1,202 @@
+/* ---------------------------------------------------------------------------
+ * The Standing Record / The Next Draft — the Chronicler's second ledger.
+ *
+ * Deliberately styled as a continuation of .chronicler-desk in services.css
+ * (same violet ink, same dashed rules) rather than as a new surface: it is the
+ * same desk, one page further in. Nothing here overrides a services.css rule,
+ * so source order between the two files does not matter.
+ * ------------------------------------------------------------------------ */
+
+.next-draft {
+  padding: 14px 16px 4px;
+  margin-top: 10px;
+  border-top: 1px solid rgba(184, 160, 224, 0.22);
+}
+
+/* ------------------------------------------------------- the standing record */
+
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.record-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid rgba(184, 160, 224, 0.24);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, rgba(184, 160, 224, 0.07), transparent 70%),
+    rgba(9, 7, 13, 0.5);
+}
+.record-value {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.1;
+  color: #d8cdf0;
+}
+.record-label {
+  font-size: 0.72rem;
+  color: var(--text-dim, #948d7e);
+}
+.record-note {
+  font-size: 0.66rem;
+  font-style: italic;
+  color: var(--text-faint, #635e54);
+}
+
+/* -------------------------------------------------------------- the premises */
+
+.draft-heading {
+  margin: 14px 0 2px;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b8a0e0;
+}
+.draft-sub,
+.draft-now {
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.draft-now {
+  padding: 8px 11px;
+  border-left: 2px solid rgba(184, 160, 224, 0.4);
+  border-radius: 0 7px 7px 0;
+  background: rgba(184, 160, 224, 0.05);
+}
+
+/* The premise rows are buttons, so strip the button chrome back to a ledger line. */
+.draft-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.draft-row:hover:not(:disabled) {
+  background: rgba(184, 160, 224, 0.06);
+}
+.draft-row.chosen {
+  background: rgba(184, 160, 224, 0.11);
+}
+.draft-row.chosen .ledger-name {
+  color: #e8dcff;
+}
+.draft-row:disabled {
+  cursor: default;
+}
+.draft-row.locked .ledger-name,
+.draft-row.locked .affix-line,
+.draft-row.locked .draft-terms {
+  color: var(--text-faint, #635e54);
+}
+.draft-row.cant .ledger-name {
+  color: var(--text-dim, #948d7e);
+}
+
+.draft-terms {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #a99cc4;
+}
+.draft-req {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--ember, #b3541e);
+}
+.draft-pill {
+  border-color: rgba(184, 160, 224, 0.4);
+  color: #cdbbee;
+}
+.draft-pill.locked-pill {
+  border-color: rgba(99, 94, 84, 0.5);
+  color: var(--text-faint, #635e54);
+}
+
+/* ------------------------------------------------------------- the readings */
+
+.depth-block {
+  margin-top: 6px;
+}
+.depth-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+.depth-chip {
+  min-width: 42px;
+  padding: 7px 12px;
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: #cdbbee;
+  border: 1px solid rgba(184, 160, 224, 0.35);
+  border-radius: 8px;
+  background: rgba(9, 7, 13, 0.5);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+.depth-chip:hover:not(:disabled) {
+  border-color: rgba(184, 160, 224, 0.7);
+}
+.depth-chip.chosen {
+  color: #f0e6ff;
+  border-color: rgba(184, 160, 224, 0.85);
+  background: rgba(184, 160, 224, 0.18);
+}
+.depth-chip.locked {
+  color: var(--text-faint, #635e54);
+  border-color: rgba(99, 94, 84, 0.4);
+  cursor: default;
+}
+.depth-terms {
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: rgba(9, 7, 13, 0.5);
+}
+.depth-sealed {
+  font-style: italic;
+  font-size: 0.74rem;
+}
+
+/* --------------------------------------------------------- finished tellings */
+
+.triumph-block {
+  margin-top: 12px;
+  padding-top: 4px;
+}
+.triumph-line {
+  margin: 6px 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #c3b8d8;
+}
+.triumph-depth {
+  color: #b8a0e0;
+  font-style: italic;
+}
+
+/* -------------------------------------------------------------- responsive */
+
+@media (max-width: 640px) {
+  .record-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .next-draft {
+    padding: 12px 12px 4px;
+  }
+}

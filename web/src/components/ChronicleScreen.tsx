@@ -5,15 +5,18 @@ import { speciesById } from '../engine/data/species';
 import { MonsterImage } from '../art/MonsterImage';
 import { ChronicleText, type ChronRef } from './ChronicleText';
 import { NpcHost } from './NpcHost';
-import { loadTellings, loadFallenTellings } from '../platform/tellings';
+import { loadTellings, loadFallenTellings, hasTriumphed } from '../platform/tellings';
 import { PRESENT_TELLING_LINES, ordinal } from '../engine/data/tellingsLore';
+import { TELLINGS_PREFACE_TITLE, TIMELINE_PREAMBLE, prefaceFor } from '../engine/data/retellingLore';
+import { depthByLevel, faceableSpeciesCount } from '../engine/data/bindings';
+import { ChroniclerPassage, MarginaliaList } from './BookPanel';
 import '../sheets.css';
 
 // v17 (PLAN7 C5): the Chronicle reads like a tome — tab bar styled as book
 // tabs riding the top edge of the page, entries as ledger lines with year
 // pills. Presentation only; tab state and dispatches unchanged.
 
-type Tab = 'timeline' | 'figures' | 'beasts' | 'artifacts' | 'deeds';
+type Tab = 'timeline' | 'figures' | 'beasts' | 'artifacts' | 'deeds' | 'tellings' | 'marginalia';
 
 const REF_TAB: Record<string, Tab> = { figure: 'figures', beast: 'beasts', artifact: 'artifacts' };
 
@@ -48,6 +51,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
 
   const meta = loadTellings();
   const fallen = loadFallenTellings();
+  const triumphed = hasTriumphed(meta);
   const heroName = state.player?.name ?? 'the newcomer';
   const presentLine = PRESENT_TELLING_LINES[(meta.telling - 1) % PRESENT_TELLING_LINES.length]
     .replaceAll('{telling}', ordinal(meta.telling))
@@ -66,6 +70,8 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
             ['beasts', '🐲 Beasts'],
             ['artifacts', '⚔️ Relics'],
             ['deeds', '✒️ Your Deeds'],
+            ['tellings', '📖 The Tellings'],
+            ['marginalia', '🖋 Marginalia'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} className={`chron-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
@@ -77,6 +83,10 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       <div className="chron-page">
       {tab === 'timeline' && (
         <div className="chronicle-scroll">
+          {/* The one line that reconciles generated world history with the
+              retelling frame: the deep past is regenerated every telling, and
+              until now nothing told the player that was on purpose. */}
+          <p className="chronicle-line timeline-preamble">{TIMELINE_PREAMBLE}</p>
           {world.eras.map((era) => (
             <div key={era.name}>
               <h2 className="title era-heading">{era.name} <span className="pill">{era.startYear}–{era.endYear}</span></h2>
@@ -205,6 +215,83 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
               <span className="chronicle-year">{d.year}</span> <ChronicleText text={d.text} world={world} onRef={onRef} />
             </p>
           ))}
+        </div>
+      )}
+
+      {/* The permanent home of the retelling fiction. The Fallen screen
+          delivers this once, at the moment it matters; this is where a player
+          who wants it again, or wants the rest of it, can always find it. */}
+      {tab === 'tellings' && (
+        <div className="chronicle-scroll">
+          <h2 className="title era-heading">{TELLINGS_PREFACE_TITLE}</h2>
+          <ChroniclerPassage paragraphs={prefaceFor(triumphed)} />
+
+          <h2 className="title era-heading">
+            The Standing Record <span className="pill">across every telling</span>
+          </h2>
+          <p className="chronicle-line">
+            Tellings begun: <b>{meta.telling}</b> · struck through: <b>{fallen.length}</b> · endings reached:{' '}
+            <b>{meta.triumphs.length}</b>
+          </p>
+          <p className="chronicle-line">
+            Species faced: <b>{Math.min(meta.ledger.species.length, faceableSpeciesCount())}/{faceableSpeciesCount()}</b>{' '}
+            · Wardens felled: <b>{meta.ledger.wardens.length}/4</b>
+            {triumphed && (
+              <>
+                {' '}
+                · deepest reading carried to the end: <b>{depthByLevel(meta.ledger.deepest).name}</b>
+              </>
+            )}
+          </p>
+          <p className="subtitle">Verses banked: ✒️ {meta.verses}. The Chronicler keeps his desk at the tavern.</p>
+
+          <h2 className="title era-heading">
+            The Drafts <span className="pill">kept, not discarded</span>
+          </h2>
+          <p className="chronicle-line present-telling-line">{presentLine}</p>
+          {fallen.length === 0 && meta.triumphs.length === 0 && (
+            <p className="subtitle">
+              Nothing has been struck through yet. The Chronicler has ruled the page and is waiting to find out what
+              kind of page it is.
+            </p>
+          )}
+          {fallen
+            .slice()
+            .reverse()
+            .map((f) => (
+              <p className="chronicle-line struck-telling" key={`t-${f.telling}`}>
+                <span className="chronicle-year">✗</span> <s>{f.epitaph}</s>
+              </p>
+            ))}
+          {meta.triumphs.length > 0 && (
+            <>
+              <h2 className="title era-heading">
+                The Shorter Shelf <span className="pill">endings</span>
+              </h2>
+              {meta.triumphs
+                .slice()
+                .reverse()
+                .map((t) => (
+                  <p className="chronicle-line" key={`v-${t.telling}-${t.name}`}>
+                    <span className="chronicle-year">✓</span> {t.line}
+                    {t.depth > 0 && <> — {depthByLevel(t.depth).name}</>}
+                  </p>
+                ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Everdusk has no tutorial, no help screen and no glossary. This is it:
+          the Chronicler's annotations on the practical business of a telling,
+          each entry said once in voice and once plainly. */}
+      {tab === 'marginalia' && (
+        <div className="chronicle-scroll">
+          <p className="chronicle-line timeline-preamble">
+            Notes made in the margins over a long time, for a reader the Chronicler has not met. Each is written twice:
+            once as it is meant, and once as it is.
+          </p>
+          <MarginaliaList triumphed={triumphed} />
         </div>
       )}
       </div>

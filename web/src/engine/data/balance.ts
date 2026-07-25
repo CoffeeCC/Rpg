@@ -36,12 +36,28 @@ export const BALANCE = {
   intentBasicMult: 1.6, // 0.9-1.6
   intentDoubleMult: 0.75, // per-hit mult on double swings
   intentDefMitigation: 0.3, // hero defense factor subtracted, 0.3-0.8
+  // Magic is met by MAGDEF (Character.getMagicDefense) instead of DEF.
+  //
+  // Deliberately ~2.3x steeper than intentDefMitigation, for two measured
+  // reasons. (1) Magic is a MINORITY of incoming damage — measured share of
+  // telegraphed damage by gate: verdant 0%, hollow-1 0%, sunken 24%, abyss 36%.
+  // At the same 0.3 a point of MAGDEF would be worth a third of a point of DEF
+  // in expectation, i.e. still a trap. (2) DEF carries riders MAGDEF does not
+  // (2 max HP per trained point, and half of it arms every guard card with
+  // Block), so equal coefficients would leave MAGDEF strictly dominated.
+  //
+  // At 0.7 a default Warrior's two walls come out near-identical through the
+  // mid-game (L8: DEF 13 -> 3.9 turned aside, MAGDEF 5 -> 3.5), so switching
+  // this stat on is close to damage-neutral for a player who ignores it, and
+  // only separates builds that deliberately invest or dump. Range 0.5-0.9.
+  intentMagicDefMitigation: 0.7,
   doubleSwingPct: 30, // 10-30
   defendIntentPct: 8, // 8-20
   debuffIntentPct: 6, // rolled after defend, 6-18
   skillIntentPct: 70, // 40-70
   monsterHitSplit: 30, // % of attacks aimed at party monsters, 20-40
   monsterDefFactor: 0.2, // party-monster defense factor vs intents
+  monsterMagicDefFactor: 0.35, // party-monster MAGDEF factor vs magical intents, 0.25-0.45
 
   // --- Hero card scaling ---
   scalingDivisor: 2, // stat/this added to card amounts, 2-3

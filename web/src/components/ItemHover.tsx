@@ -2,6 +2,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ItemV2 } from '../engine/types';
 import { gearImage } from '../art/gearArt';
+import { setOfItem, wearableMax } from '../engine/data/sets';
+import '../gearsets.css';
 
 // v12: PoE/Diablo-style hover windows. Wrap any item row/slot in <ItemHover>
 // and a full stat card follows the cursor — rarity header, implicits, affixes,
@@ -43,6 +45,11 @@ export function ItemHover({
   if (item.implicitDefense) implicits.push(`+${item.implicitDefense} Defense`);
   const icon = gearImage(item);
   const changed = metrics?.filter((m) => m.after !== m.now) ?? [];
+  // The set's full ladder. The LIVE count of what is worn belongs on the Gear
+  // screen, which owns the loadout; this window only ever describes the piece
+  // under the cursor, so it states the thresholds without claiming which one
+  // is active.
+  const set = setOfItem(item);
 
   return (
     <span className="item-hover-anchor" onMouseEnter={move} onMouseMove={move} onMouseLeave={() => setPos(null)}>
@@ -76,6 +83,18 @@ export function ItemHover({
               </div>
             )}
             {item.affixes.length === 0 && implicits.length === 0 && <div className="item-tip-block item-tip-plain">No enchantments. Honest metal.</div>}
+            {set && (
+              <div className="item-tip-block item-tip-set">
+                <div className="item-tip-setname">
+                  {set.name} <span className="item-tip-setcount">({wearableMax(set)} pieces)</span>
+                </div>
+                {set.bonuses.map((bonus) => (
+                  <div key={bonus.pieces} className="item-tip-setline">
+                    <b>{bonus.pieces} worn:</b> {bonus.terms}
+                  </div>
+                ))}
+              </div>
+            )}
             {changed.length > 0 && (
               <div className="item-tip-block item-tip-compare">
                 {changed.map((m) => {

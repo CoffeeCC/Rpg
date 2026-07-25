@@ -22,7 +22,7 @@ import {
   type BattleState,
 } from './systems/cardBattle';
 import { breed, canBreed } from './systems/breeding';
-import { generateItem, forgeCharm, forgeTrinket } from './systems/lootGen';
+import { generateItem, forgeCharm, forgeTrinket, forgeUnique } from './systems/lootGen';
 import { generateWorld, forgeArtifactItem } from './systems/worldgen';
 import {
   newExpedition,
@@ -55,8 +55,21 @@ import { CLASS_DECKS, RACE_CARDS, REWARD_POOLS, TAME_CARD_ID, getCard } from './
 import { BALANCE } from './data/balance';
 import { NPCS } from './data/npcs';
 import { randInt } from './random';
-import { bankFall, loadTellings } from '../platform/tellings';
+import { bankFall, bankTriumph, loadTellings, recordLedger, vaultKeepOnTriumph } from '../platform/tellings';
+import { hasDrilled } from '../platform/drillRecord';
+import { UNIQUES } from './data/uniques';
+import { setCardIds, setStandings } from './data/sets';
 import { TAME_LINES, BREEDING_COVENANT_LINES } from './data/covenantLore';
+import { bindingById, depthByLevel, runModifiers, type RunModifiers } from './data/bindings';
+import {
+  DRILL_HALT_LINES,
+  DRILL_LEAVE_LINE,
+  DRILL_NUDGE,
+  DRILL_OPPONENT,
+  DRILL_PASS_LINES,
+  DRILL_REWARD,
+  DRILL_TAME_LINE,
+} from './data/drill';
 
 export type Screen =
   | 'create'
@@ -89,6 +102,8 @@ export const MAX_ACTIVE_MONSTERS = 2;
 export const STABLE_CAP = 20;
 const ARTIFACT_CHEST_CHANCE = BALANCE.artifactChestChance;
 const MAX_LOG_LINES = 80;
+/** Flat verse award for carrying a telling all the way to the end of the book. */
+const BALANCE_TRIUMPH_BASE = 25;
 const GEAR_STOCK_SIZE = BALANCE.gearStockSize;
 
 export interface QuestProgress {
@@ -100,6 +115,86 @@ export interface QuestProgress {
 
 export interface PendingEvent {
   eventId: string;
+}
+
+/**
+ * Bram's recruit drill, while it is running. See data/drill.ts for the lesson.
+ *
+ * The live beat is DERIVED from these counters rather than stored as "the UI
+ * is on step 4", so it cannot desync from the fight the player is actually in:
+ * every field here is a fact about what the recruit has done, and `drillBeat`
+ * below is the only thing that turns facts into a lesson. Add a beat by adding
+ * a fact and a clause, never by incrementing a cursor from a component.
+ */
+export interface DrillState {
+  cardsPlayed: number;
+  turnsTaken: number;
+  /** An enemy-targeted card has resolved. */
+  aimed: boolean;
+  /** Vigor has been run to nothing at least once. */
+  spentOut: boolean;
+  /** Block has been raised at least once. */
+  guarded: boolean;
+  /** A second aimed card, after the guard lesson. */
+  aimedLate: boolean;
+  /** A status has landed on the recruit — unlocks the (optional) aside. */
+  sawStatus: boolean;
+  /** Bram called a halt on what would have been a fall. */
+  halted: boolean;
+  outcome: 'running' | 'passed' | 'halted' | 'left';
+}
+
+function freshDrill(): DrillState {
+  return {
+    cardsPlayed: 0,
+    turnsTaken: 0,
+    aimed: false,
+    spentOut: false,
+    guarded: false,
+    aimedLate: false,
+    sawStatus: false,
+    halted: false,
+    outcome: 'running',
+  };
+}
+
+/**
+ * Which lesson is live, read off what the recruit has actually done.
+ *
+ * Each entry is "this lesson has landed". The live beat is the first one that
+ * has not. Recomputed from scratch on every action and monotonic in every
+ * input, so the rail can never jump backwards.
+ *
+ * THE PATIENCE CLAUSES ARE NOT DECORATION. Playing this in a browser turned up
+ * the failure they exist to prevent: a recruit who ended their turn with vigor
+ * still on the table sat on "spend the rest" forever, and because the ladder
+ * was strictly sequential the drill never went on to teach end-turn, intents,
+ * block or the loss condition at all. A tutorial beat that requires an
+ * optional action is a trap, and one that requires a card the shuffle may not
+ * have dealt (a recruit can go four turns without drawing a guard) is a worse
+ * one. So every lesson after the first also comes off after enough turns have
+ * passed: Bram says the thing, the player does it or does not, and the drill
+ * keeps moving either way.
+ *
+ * Beat 0 is the deliberate exception. There is no drill without a first card,
+ * and its ask says exactly what to do.
+ */
+export function drillBeat(d: DrillState): number {
+  const landed = [
+    d.aimed, //                                  0 vigor, cost, targeting
+    d.spentOut || d.turnsTaken >= 1, //          1 a turn is more than one card
+    d.turnsTaken >= 1, //                        2 handing the turn back
+    d.turnsTaken >= 2, //                        3 reading the intent it declared
+    d.guarded || d.turnsTaken >= 4, //           4 block, and that block is spent
+    d.aimedLate || d.turnsTaken >= 5, //         5 the weakness sigil
+  ];
+  const next = landed.findIndex((done) => !done);
+  return next === -1 ? 6 : next; //              6 the loss condition
+}
+
+/** True while a drill battle is the fight on screen. */
+export function inDrill(state: GameState): boolean {
+  return !!state.drill && state.drill.outcome === 'running' && !!state.battle;
 }
 
 export interface TavernLine {
@@ -160,6 +255,40 @@ export interface GameState {
    * DuelTransport (and, later, by the server), not by the single-player state.
    */
   duelRecord?: { wins: number; losses: number; draws: number };
+  /**
+   * The Next Draft (see src/engine/data/bindings.ts). The premise and the
+   * Depth are read ONCE from the Tellings book at CREATE_CHARACTER and copied
+   * here, so a run's shape can never shift under it because the player went
+   * back to the desk mid-telling. Optional: saves written before the Next
+   * Draft existed load as an unbound surface telling, which is exactly what
+   * they were.
+   */
+  binding?: string | null;
+  depth?: number;
+  /** Species ids faced during THIS telling; folded into the Ledger at the desk and at run end. */
+  discovered?: string[];
+  /**
+   * Bram's recruit drill. All three optional and safely defaulted, so a save
+   * or a book written before the drill existed loads as "a tamer who has not
+   * drilled this telling" — which is true, and costs them nothing but a note
+   * on a board they were already reading.
+   */
+  drill?: DrillState | null;
+  /** The drill has been passed in THIS telling. Gates the (one-time) payment. */
+  drillDone?: boolean;
+  /** The gentle nudge has already been made this telling. Never made twice. */
+  drillNudged?: boolean;
+  /**
+   * This HUMAN has drilled before, in some earlier telling. Read once from the
+   * watch-house sheet at CREATE_CHARACTER and copied here — the same idiom as
+   * `binding` and `depth`, and for the same reason: the reducer must not go
+   * reading localStorage on every action, and the answer must not change
+   * under a telling that is already in progress.
+   *
+   * It suppresses the nudge and demotes the board notice. It never removes
+   * the drill: a veteran who wants it again can always take it.
+   */
+  drillKnown?: boolean;
   log: string[];
 }
 
@@ -175,6 +304,17 @@ export type GameAction =
   | { type: 'MERCHANT_CLOSE' }
   | { type: 'FORGE_CHARM' }
   | { type: 'FORGE_TRINKET' }
+  /**
+   * Grude's back wall. The localStorage side of both of these has ALREADY
+   * happened, in the Forge screen's click handler — see the note on
+   * `withdrawFromVault`. These two cases only move the item between the hero's
+   * bag and nowhere, and both are written to be no-ops on a second application
+   * so StrictMode's double-invoke cannot duplicate or lose a piece.
+   */
+  | { type: 'VAULT_DEPOSIT'; uid: string }
+  | { type: 'VAULT_WITHDRAW'; item: ItemV2 }
+  /** Grude names the piece you are missing, for gold and a Legendary you are not using. */
+  | { type: 'RECAST_SET_PIECE'; uid: string }
   | { type: 'OPEN_MONSTER'; uid: string }
   | { type: 'MONSTER_EQUIP'; monsterUid: string; itemUid: string }
   | { type: 'MONSTER_UNEQUIP'; monsterUid: string; slot: 'charm' | 'trinket' }
@@ -201,6 +341,10 @@ export type GameAction =
   | { type: 'BREED'; parentA: string; parentB: string; skillIds: string[] }
   | { type: 'ACCEPT_QUEST'; questId: string }
   | { type: 'CLAIM_QUEST'; questId: string }
+  /** Bram's mock fight. Startable from the Watch Ledger, any number of times. */
+  | { type: 'START_DRILL' }
+  /** Walk out of the drill mid-lesson. Always available, never penalised. */
+  | { type: 'DRILL_LEAVE' }
   | { type: 'UPGRADE_CARD'; cardId: string }
   | { type: 'LEGEND_SEEN' }
   | { type: 'DUEL_RESULT'; result: 'win' | 'loss' | 'draw'; opponent: string }
@@ -236,8 +380,89 @@ export function initialGameState(): GameState {
     selectedMonsterUid: null,
     fallenSummary: null,
     lastFx: [],
+    binding: null,
+    depth: 0,
+    discovered: [],
+    drill: null,
+    drillDone: false,
+    drillNudged: false,
     log: [],
   };
+}
+
+/**
+ * The premise this telling is being played under. Cheap enough to recompute
+ * per call, and recomputing keeps it impossible for a stale merged copy to
+ * drift away from the state it came from.
+ */
+export function modsOf(state: GameState): RunModifiers {
+  return runModifiers(state.binding, state.depth);
+}
+
+/**
+ * The cards a hero's matched gear is putting in the deck right now.
+ *
+ * Recomputed at the top of every battle rather than cached anywhere, because
+ * the Gear screen is reachable mid-expedition: a player who swaps the fourth
+ * piece of a set on between two fights must walk into the next one holding what
+ * they just earned. Reading the worn equipment directly is what makes that
+ * free — there is no stored copy that can go stale, and nothing to persist.
+ */
+function setCardsFor(player: Character): string[] {
+  return setCardIds(Object.values(player.equipment));
+}
+
+/**
+ * The set pieces this hero is missing from sets they have already begun.
+ *
+ * Handed to `generateItem` so a Legendary roll leans toward completing what is
+ * already started. Counts pieces in the bag as well as worn ones: a player who
+ * has just pulled a piece off Grude's wall and not equipped it yet is still
+ * mid-set, and the dark should know that.
+ */
+function setAffinityFor(player: Character): string[] {
+  const out: string[] = [];
+  for (const standing of setStandings(Object.values(player.equipment), player.items)) {
+    const have = new Set([...standing.wornIds, ...standing.bagIds]);
+    for (const id of standing.set.members) {
+      if (!have.has(id)) out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * What Grude could name for you right now: the pieces missing from sets you
+ * have already begun, and only those she could plausibly have seen at your
+ * depth (the same `minIlvl + 2` window a drop uses, so the recast can never
+ * hand a level-3 hero a piece the gates would not have shown them).
+ *
+ * Exported because the Forge screen must be able to say whether the service is
+ * available BEFORE the player pays for it.
+ */
+export function recastCandidates(player: Character): string[] {
+  return setAffinityFor(player).filter((id) => {
+    const def = UNIQUES.find((u) => u.id === id);
+    return !!def && def.minIlvl <= player.level + 2;
+  });
+}
+
+/**
+ * The recast price. Steep on purpose: it is the deterministic path to finishing
+ * a set, and it already consumes a Legendary on top of the gold. Late-game gold
+ * has few sinks left once the deck is reforged, which is exactly the hole this
+ * fills.
+ */
+export function recastCost(player: Character): number {
+  return 250 + player.level * 20;
+}
+
+/** Note a species as faced. Mutates the (already cloned) state; set-union, so safe to repeat. */
+function discover(state: GameState, speciesIds: (string | undefined)[]): void {
+  if (!state.discovered) state.discovered = [];
+  for (const id of speciesIds) {
+    if (id && !state.discovered.includes(id)) state.discovered.push(id);
+  }
 }
 
 /** v11: a bed at the Held Breath. Scales with level so rest stays a decision. */
@@ -296,6 +521,8 @@ function cloneCore(state: GameState): GameState {
     },
     seen: { ...state.seen },
     lastFx: [],
+    discovered: [...(state.discovered ?? [])],
+    drill: state.drill ? { ...state.drill } : null,
     log: state.log,
   };
 }
@@ -389,14 +616,27 @@ function beginBattle(state: GameState, log: string[], opts: { boss?: boolean; fo
   let famousBeastId: string | undefined;
   let enemies: MonsterInstance[];
 
+  const mods = modsOf(state);
+  // A Depth reads the same page with older things living on it.
+  const spawn = mods.enemyLevelBonus
+    ? { ...floor.spawn, levelBonus: floor.spawn.levelBonus + mods.enemyLevelBonus }
+    : floor.spawn;
+
   if (opts.boss) {
-    enemies = [MonsterInstance.createBoss(gate.bossFamily, gate.bossTier, gate.bossName, gate.bossLevel)];
+    enemies = [MonsterInstance.createBoss(gate.bossFamily, gate.bossTier, gate.bossName, gate.bossLevel + mods.enemyLevelBonus)];
     log.push(`${gate.bossName} bars the way.`);
   } else {
-    const count = 1 + (randInt(100) < BALANCE.packOf2Pct ? 1 : 0) + (randInt(100) < BALANCE.packOf3Pct ? 1 : 0);
+    const count =
+      1 +
+      (randInt(100) < BALANCE.packOf2Pct ? 1 : 0) +
+      (randInt(100) < BALANCE.packOf3Pct ? 1 : 0) +
+      mods.packBonus;
     enemies = [];
     for (let i = 0; i < count; i++) {
-      enemies.push(MonsterInstance.createWild(floor.spawn, i === 0 ? opts.forceRarity : undefined));
+      // Elites forced by a Binding are Alphas, never Rares: a Rare lead is the
+      // famous-beast substitution hook below, and legends should stay rationed.
+      const lead = opts.forceRarity ?? (randInt(100) < mods.eliteChance ? ('Alpha' as const) : undefined);
+      enemies.push(MonsterInstance.createWild(spawn, i === 0 ? lead : undefined));
     }
     // Famous beast substitution: a Rare spawn in a haunted gate becomes the legend.
     if (state.world && enemies[0].rarity === 'Rare') {
@@ -404,7 +644,7 @@ function beginBattle(state: GameState, log: string[], opts: { boss?: boolean; fo
       if (beast) {
         const legend = new MonsterInstance({
           speciesId: beast.speciesId,
-          level: 3 + floor.spawn.levelBonus + beast.might,
+          level: 3 + spawn.levelBonus + beast.might,
           rarity: 'Rare',
           nickname: beast.name,
         });
@@ -415,25 +655,93 @@ function beginBattle(state: GameState, log: string[], opts: { boss?: boolean; fo
       }
     }
     if (!famousBeastId) log.push(`Enemies from the dark: ${enemies.map((e) => e.displayName()).join(', ')}.`);
+    // The Covenant Kept: the dark is minded to be kept this telling. Applied at
+    // spawn, and a failed offer never clears it, so it holds all encounter.
+    if (mods.wildTameBonus) for (const e of enemies) e.tameBonus += mods.wildTameBonus;
   }
+
+  discover(state, enemies.map((e) => e.speciesId));
 
   state.battle = startBattle(state.player, state.party, enemies, {
     isBossFight: !!opts.boss,
     gateId: state.expedition.gateId,
-    expeditionExtras: state.expeditionExtras,
+    // Matched gear rides in alongside the Boon cards, and is rebuilt from the
+    // worn pieces every time rather than kept on the state.
+    expeditionExtras: [...state.expeditionExtras, ...setCardsFor(state.player)],
     famousBeastId,
   });
   state.screen = 'battle';
 }
 
+/**
+ * Decide what the deck carries INTO an expedition.
+ *
+ * The base rule is that Boon cards last exactly one expedition. The Long
+ * Memory suspends that rule for a whole telling — which is the single largest
+ * shape change any premise makes, because it turns each gate into a step in
+ * one growing deck instead of five separate ten-card runs. The Borrowed Page
+ * instead hands you three cards you did not choose, every time.
+ */
+function openExpeditionDeck(state: GameState, lines: string[]): void {
+  const mods = modsOf(state);
+  const kept = mods.keepCards ? [...state.expeditionExtras] : [];
+  const seeded: string[] = [];
+  let guard = 0;
+  while (seeded.length < mods.seedCards && guard++ < 60) {
+    const pool = randInt(100) < 65 ? REWARD_POOLS.uncommon : REWARD_POOLS.rare;
+    const id = pool[randInt(pool.length)];
+    if (getCard(id)) seeded.push(id);
+  }
+  state.expeditionExtras = [...kept, ...seeded];
+  if (kept.length) lines.push(`The telling has not forgotten: ${kept.length} card${kept.length === 1 ? '' : 's'} carried through from before.`);
+  if (seeded.length) {
+    lines.push(`Someone else's cards are already in your hand: ${seeded.map((id) => getCard(id)!.name).join(', ')}.`);
+  }
+}
+
+/**
+ * Leaving a gate alive. Normally the Boon cards fade on the way out; under
+ * The Long Memory they come home with you. Both exits from a gate (walking
+ * back out of the entrance, and burning a Witchwick) route through here so the
+ * premise cannot be dodged by picking the other door.
+ */
+function closeExpeditionDeck(state: GameState, lines: string[], fadeLine: string): void {
+  if (modsOf(state).keepCards && state.expeditionExtras.length) {
+    lines.push(`The cards do not fade. This telling keeps what it was given (${state.expeditionExtras.length} held).`);
+    return;
+  }
+  state.expeditionExtras = [];
+  lines.push(fadeLine);
+}
+
+/**
+ * How many cards a Boon lays out. Never below one: a premise may make the
+ * choice harder, but it may never take the choice away entirely.
+ */
+export function rewardChoiceCount(state: GameState): number {
+  return Math.max(1, (state.player?.traits.rewardChoices ?? 3) + modsOf(state).rewardDelta);
+}
+
 function offerReward(state: GameState): void {
+  const mods = modsOf(state);
   const roll = (): string => {
     const r = randInt(100);
-    const pool = r < 60 ? REWARD_POOLS.common : r < 90 ? REWARD_POOLS.uncommon : REWARD_POOLS.rare;
+    // The Thin Ledger buys nothing in town, so the dark deals in better cards.
+    const pool = mods.richPools
+      ? r < 25
+        ? REWARD_POOLS.common
+        : r < 70
+          ? REWARD_POOLS.uncommon
+          : REWARD_POOLS.rare
+      : r < 60
+        ? REWARD_POOLS.common
+        : r < 90
+          ? REWARD_POOLS.uncommon
+          : REWARD_POOLS.rare;
     return pool[randInt(pool.length)];
   };
   const offered = new Set<string>();
-  const choices = state.player?.traits.rewardChoices ?? 3;
+  const choices = rewardChoiceCount(state);
   let guard = 0;
   while (offered.size < choices && guard++ < 60) {
     const id = roll();
@@ -458,11 +766,16 @@ function beginUnitBattle(state: GameState, unit: FloorUnit, lines: string[]): vo
   let enemies: MonsterInstance[] = [];
   let famousBeastId: string | undefined;
 
+  const mods = modsOf(state);
+  const spawn = mods.enemyLevelBonus
+    ? { ...floor.spawn, levelBonus: floor.spawn.levelBonus + mods.enemyLevelBonus }
+    : floor.spawn;
+
   if (unit.kind === 'miniboss') {
     enemies = [
       new MonsterInstance({
         speciesId: unit.speciesId!,
-        level: unit.level ?? 3,
+        level: (unit.level ?? 3) + mods.enemyLevelBonus,
         rarity: 'Rare',
         nickname: unit.label.split(',')[0],
       }),
@@ -473,23 +786,26 @@ function beginUnitBattle(state: GameState, unit: FloorUnit, lines: string[]): vo
   } else if (unit.kind === 'tamer') {
     const count = 2 + (randInt(100) < 40 ? 1 : 0);
     for (let i = 0; i < count; i++) {
-      const m = MonsterInstance.createWild(floor.spawn);
+      const m = MonsterInstance.createWild(spawn);
       m.nickname = bestowName();
       // Loyalty: a bonded beast does not yield to a stranger easily.
-      m.tameBonus = state.player.traits.charmedTongue ? -15 : -30;
+      m.tameBonus = (state.player.traits.charmedTongue ? -15 : -30) + mods.wildTameBonus;
       enemies.push(m);
     }
     lines.push(`${unit.label} whistles, and their beasts answer. "Show me yours."`);
   } else {
-    enemies = [new MonsterInstance({ speciesId: unit.speciesId!, level: unit.level ?? 1 })];
-    if (randInt(100) < BALANCE.packOf2Pct) enemies.push(MonsterInstance.createWild(floor.spawn));
+    enemies = [new MonsterInstance({ speciesId: unit.speciesId!, level: (unit.level ?? 1) + mods.enemyLevelBonus })];
+    if (randInt(100) < BALANCE.packOf2Pct || mods.packBonus > 0) enemies.push(MonsterInstance.createWild(spawn));
+    if (mods.wildTameBonus) for (const e of enemies) e.tameBonus += mods.wildTameBonus;
     lines.push(`${unit.label} is upon you.`);
   }
+
+  discover(state, enemies.map((e) => e.speciesId));
 
   state.battle = startBattle(state.player, state.party, enemies, {
     isBossFight: false,
     gateId: exp.gateId,
-    expeditionExtras: state.expeditionExtras,
+    expeditionExtras: [...state.expeditionExtras, ...setCardsFor(state.player)],
     famousBeastId,
   });
   state.battle.unitId = unit.id;
@@ -640,7 +956,8 @@ function adoptMonster(state: GameState, tamed: MonsterInstance, lines: string[])
   // v11: the Covenant of Names — every taming is a promise the dusk counts.
   const covenantLine = TAME_LINES[(state.party.length + state.stable.length) % TAME_LINES.length];
   lines.push(covenantLine.replaceAll('{monster}', species).replaceAll('{name}', state.player!.name));
-  const levelFloor = state.player!.level - 2;
+  // The Covenant Kept: a beast that agrees to be kept does not start behind you.
+  const levelFloor = state.player!.level - (modsOf(state).tamedAtLevel ? 0 : 2);
   if (tamed.level < levelFloor) {
     while (tamed.level < levelFloor) tamed.gainExp(tamed.expToNext() - tamed.exp);
     tamed.hp = tamed.maxHp;
@@ -685,13 +1002,19 @@ function endBattlePeacefully(state: GameState, lines: string[]): void {
 function handleDefeat(state: GameState, log: string[]): void {
   // PLAN5 #49: death is real now. The run ends; the Chronicler banks Verses.
   const player = state.player!;
-  const verses =
-    player.level +
-    state.orbs.length * 2 +
-    state.chronicle.beastsSlain.length +
-    state.questLog.filter((q) => q.claimed).length;
+  const mods = modsOf(state);
+  const verses = Math.round(
+    (player.level +
+      state.orbs.length * 2 +
+      state.chronicle.beastsSlain.length +
+      state.questLog.filter((q) => q.claimed).length) *
+      mods.verseMult,
+  );
   const place = state.battle?.gateId ? GATES[state.battle.gateId].name : state.expedition ? GATES[state.expedition.gateId].name : 'the road';
   bankFall(state.runId, verses, { name: player.name, place, level: player.level });
+  // Everything this draft showed the Chronicler is kept, even though it failed.
+  // Set-union, so calling it here as well as at the desk costs nothing.
+  recordLedger({ species: state.discovered ?? [], wardens: state.defeatedBosses });
   state.fallenSummary = {
     verses,
     level: player.level,
@@ -705,6 +1028,139 @@ function handleDefeat(state: GameState, log: string[]): void {
   state.pendingMerchant = null;
   state.screen = 'fallen';
   log.push('The dark takes what it is owed. Somewhere in Everdusk, the Chronicler dips a quill.');
+}
+
+// ---------------------------------------------------------------------------
+// The recruit drill. Lines and lesson live in data/drill.ts.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the article the watch keeps penned, and start a REAL fight with it.
+ *
+ * The whole point of the drill is that it is not a slideshow: this goes
+ * through `startBattle` like every other encounter, so the player learns the
+ * actual battlefield with the actual cards from their actual deck, and the
+ * one renderer in BattleScreen needs no idea any of this is happening.
+ *
+ * Two dials make it safe, and they are the only two:
+ *   * HP up. A level-1 goober dies to one good opening turn, which would end
+ *     the lesson three beats in. 60 is about four turns of a starting deck.
+ *   * Attack down. `deriveStats` floors every stat at 1, so a large negative
+ *     STR bonus reliably produces the smallest swing the game can express.
+ * Neither of these is a guarantee, so there is a third dial that IS one —
+ * see `haltDrill`, which makes a fall structurally impossible rather than
+ * merely unlikely.
+ */
+function beginDrill(state: GameState, lines: string[]): void {
+  if (!state.player) return;
+  const exhibit = new MonsterInstance({
+    speciesId: DRILL_OPPONENT.speciesId,
+    level: 1,
+    nickname: DRILL_OPPONENT.nickname,
+    bonusStats: { ...EMPTY_DRILL_STATS, STR: DRILL_OPPONENT.strPenalty },
+    personalityId: DRILL_OPPONENT.personalityId,
+  });
+  exhibit.maxHp = DRILL_OPPONENT.hp;
+  exhibit.hp = DRILL_OPPONENT.hp;
+
+  // The recruit walks in whole and alone. No party — the drill teaches the
+  // hero's own cards, and a beast in the line would add a second HP bar, a
+  // second set of cards and the two-active limit to a lesson that is already
+  // seven beats long. It also means nothing the player owns can be hurt here.
+  state.battle = startBattle(state.player, [], [exhibit], {
+    isBossFight: false,
+    gateId: null,
+    expeditionExtras: [],
+  });
+  state.drill = freshDrill();
+  state.screen = 'battle';
+  lines.push('Watch Captain Bram opens the ledger to a clean page. "Drill begins."');
+}
+
+const EMPTY_DRILL_STATS = { STR: 0, DEF: 0, DEX: 0, MANA: 0, MAGDEF: 0, INT: 0, LUCK: 0 };
+
+/**
+ * Fold what just happened into the drill's counters.
+ *
+ * Called after every battle action while a drill is running. Every field is a
+ * plain observation of state that already exists — nothing here decides what
+ * the player is being taught, it only records what they did. `drillBeat` does
+ * the deciding, from these facts alone.
+ */
+function noteDrillProgress(state: GameState, ev: { played?: boolean; aimedAtFoe?: boolean; endedTurn?: boolean }): void {
+  const d = state.drill;
+  const b = state.battle;
+  if (!d || !b || d.outcome !== 'running') return;
+  if (ev.played) d.cardsPlayed += 1;
+  if (ev.aimedAtFoe) {
+    if (d.guarded) d.aimedLate = true;
+    d.aimed = true;
+  }
+  if (ev.endedTurn) d.turnsTaken += 1;
+  if (b.heroBlock > 0) d.guarded = true;
+  if ((state.player?.statusEffects.length ?? 0) > 0) d.sawStatus = true;
+  // "Out of vigor" also covers the honest case where the candles are lit but
+  // nothing in hand is affordable — a recruit must not be told to keep
+  // spending money they cannot spend.
+  const affordable = b.hand.some((inst) => (getCard(inst.cardId)?.cost ?? 99) <= b.energy);
+  if (b.energy <= 0 || !affordable) d.spentOut = true;
+}
+
+/**
+ * Close the drill and put the recruit back on the board, whole.
+ *
+ * ALWAYS restores: the hero leaves the yard at full health with no statuses
+ * and no lingering stat mods, whatever happened in it. A tutorial that leaves
+ * you poisoned and at nine hit points has taught you the wrong lesson about
+ * whether it was safe to try.
+ *
+ * Pays exactly once per telling (`drillDone`). Repeating the drill is free,
+ * encouraged, and worth nothing — which is the correct incentive: it is there
+ * for the confused, not for the efficient.
+ */
+function endDrill(state: GameState, outcome: DrillState['outcome'], lines: string[]): void {
+  const player = state.player;
+  state.battle = null;
+  state.screen = 'questBoard';
+  if (state.drill) state.drill = { ...state.drill, outcome };
+  if (player) {
+    player.hp = player.maxHp;
+    player.statusEffects = [];
+    player.activeMods = [];
+  }
+  if (outcome !== 'passed') return;
+
+  if (state.drillDone) {
+    lines.push('Bram makes a mark, then crosses it out. "Already logged. The ledger pays a thing once."');
+    return;
+  }
+  state.drillDone = true;
+  lines.push(...DRILL_PASS_LINES);
+  if (player) {
+    player.addGold(DRILL_REWARD.gold);
+    player.addConsumable(DRILL_REWARD.consumable.name, DRILL_REWARD.consumable.count);
+    lines.push(
+      `The watch pays its recruits: +${DRILL_REWARD.gold}g, and ${DRILL_REWARD.consumable.count}× ${DRILL_REWARD.consumable.name} from the guardhouse stores.`,
+    );
+  }
+}
+
+/**
+ * The hard non-lethality guarantee.
+ *
+ * The soft dials in `beginDrill` make a fall unlikely; this makes it
+ * impossible. A drill can never reach `handleDefeat`, so it can never bank a
+ * fall, never end a telling and never write a page in the Chronicler's book.
+ * A tutorial that can close your run is not a tutorial, it is an ambush.
+ *
+ * It is not silently swallowed, though — Bram calls the halt out loud and
+ * names what would have happened, which is the loss-condition lesson taught by
+ * demonstration instead of by casualty.
+ */
+function haltDrill(state: GameState, lines: string[]): void {
+  if (state.drill) state.drill.halted = true;
+  lines.push(...DRILL_HALT_LINES);
+  endDrill(state, 'halted', lines);
 }
 
 function applyEventOutcomes(state: GameState, outcomes: EventOutcome[], log: string[]) {
@@ -723,7 +1179,7 @@ function applyEventOutcomes(state: GameState, outcomes: EventOutcome[], log: str
         break;
       }
       case 'item': {
-        const item = generateItem(player.level + outcome.ilvlBonus, player.effectiveStat('LUCK'), 1);
+        const item = generateItem(player.level + outcome.ilvlBonus, player.effectiveStat('LUCK'), 1, setAffinityFor(player));
         player.addItem(item);
         log.push(`Received: ${item.name} [${item.rarity}]`);
         break;
@@ -801,6 +1257,17 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       }
       if (meta.purchased.includes('oil')) player.stats.DEX += 4;
       if (meta.purchased.includes('lantern-luck')) player.stats.LUCK += 4;
+
+      // The Next Draft: the premise the Chronicler wrote in before you began.
+      // Read ONCE, here, and copied onto the state — going back to the desk
+      // mid-telling must never reshape the telling you are already inside.
+      const binding = bindingById(meta.binding);
+      const depth = depthByLevel(meta.depth);
+      const mods = runModifiers(meta.binding, meta.depth);
+      // A premise outranks a boon: The Thin Ledger empties the purse even if
+      // Well-Provisioned filled it, because that is the whole of the premise.
+      if (mods.startGold !== null) player.gold = mods.startGold;
+
       player.recomputeDerived();
       player.hp = player.maxHp;
       const next = initialGameState();
@@ -811,14 +1278,57 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       next.screen = 'town';
       next.pendingStory = 0;
       next.storyChapter = 0;
+      next.binding = meta.binding;
+      next.depth = meta.depth;
+      next.discovered = [];
+      // Same read-once idiom as the premise above: whether this HUMAN has been
+      // taught combat is settled at character creation and does not move again.
+      next.drillKnown = hasDrilled();
       next.gearStock = restockGear(player);
       next.log = [`The realm of ${next.world.name} takes its shape around Everdusk. Welcome, ${player.name}.`];
+
+      if (mods.startCompanion) {
+        const companion = MonsterInstance.createWild(GATES.verdant.floors[0].spawn);
+        companion.nickname = bestowName();
+        companion.isTamed = true;
+        companion.hp = companion.maxHp;
+        companion.mp = companion.maxMp;
+        next.party.push(companion);
+        next.discovered.push(companion.speciesId);
+        next.log.push(`${companion.nickname} the ${companion.species.name} was waiting at the road, and does not explain itself.`);
+      }
+      if (binding) next.log.push(`This telling is bound: ${binding.name}. ${binding.terms}`);
+      if (depth.depth > 0) next.log.push(`Read at ${depth.name}. ${depth.terms}`);
       return next;
     }
 
     case 'STORY_CONTINUE': {
       if (state.pendingStory === null) return state;
       const finished = state.pendingStory;
+      if (finished === 5 && state.player) {
+        // A telling that reaches the end of the book was, until now, worth
+        // nothing at the desk: the Victory screen restarts without banking or
+        // turning the page, so winning cost you a telling's verses. Bank it
+        // here instead. Idempotent per runId, same guard as a death.
+        const mods = modsOf(state);
+        const verses = Math.round(
+          (BALANCE_TRIUMPH_BASE +
+            state.player.level * 2 +
+            state.orbs.length * 3 +
+            state.chronicle.beastsSlain.length +
+            state.questLog.filter((q) => q.claimed).length) *
+            mods.verseMult,
+        );
+        recordLedger({ species: state.discovered ?? [], wardens: state.defeatedBosses });
+        bankTriumph(state.runId, verses, { name: state.player.name, level: state.player.level, depth: state.depth ?? 0 });
+        // A telling that reached the end leaves what it was carrying on the
+        // back wall. Only a triumph does this; the dark keeps what a death was
+        // holding. Idempotent per runId, on the wall's own guard.
+        vaultKeepOnTriumph(state.runId, [
+          ...Object.values(state.player.equipment).filter((i): i is ItemV2 => !!i),
+          ...state.player.items,
+        ]);
+      }
       return { ...state, pendingStory: null, screen: finished === 5 ? 'victory' : state.screen };
     }
 
@@ -828,6 +1338,25 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const seen = { ...state.seen };
       if (action.screen === 'questBoard') seen.questCount = availableQuests(state).length;
       if (action.screen === 'tavern') seen.tavernChapter = Math.max(seen.tavernChapter, state.storyChapter);
+      // Paul's "before we leave for a gate": the one and only auto-suggestion,
+      // fired when a tamer who has never drilled first goes looking at gates.
+      // It is a LINE, not a gate — nothing is blocked, nothing is modal, and a
+      // player who wants to just go simply keeps walking. Once per telling.
+      if (
+        action.screen === 'gateSelect' &&
+        !state.drillKnown &&
+        !state.drillDone &&
+        !state.drillNudged
+      ) {
+        return {
+          ...state,
+          screen: action.screen,
+          lastTalk: null,
+          seen,
+          drillNudged: true,
+          log: pushLog(state.log, DRILL_NUDGE),
+        };
+      }
       return { ...state, screen: action.screen, lastTalk: null, seen };
     }
 
@@ -838,9 +1367,10 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const next = cloneCore(state);
       next.expedition = newExpedition(action.gateId, next.world, next.chronicle, next.party.length + next.stable.length > 0);
       next.expedition.movLeft = movFor(next.player!);
-      next.expeditionExtras = [];
+      const entryLines = [`You step through the ${gate.name}.`];
+      openExpeditionDeck(next, entryLines);
       next.screen = 'floor';
-      next.log = pushLog(state.log, `You step through the ${gate.name}.`);
+      next.log = pushLog(state.log, ...entryLines);
       applyQuestEvent(next.questLog, { type: 'reachFloor', gate: action.gateId, floor: 1 }, next.log);
       return next;
     }
@@ -855,9 +1385,10 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const seed = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
       next.expedition = newWildExpedition(action.gateId, seed, next.world, next.chronicle, next.party.length + next.stable.length > 0);
       next.expedition.movLeft = movFor(next.player!);
-      next.expeditionExtras = [];
+      const wildLines = [`You leave the mapped floors of the ${gate.name} behind. The dark ahead has no name yet.`];
+      openExpeditionDeck(next, wildLines);
       next.screen = 'floor';
-      next.log = pushLog(state.log, `You leave the mapped floors of the ${gate.name} behind. The dark ahead has no name yet.`);
+      next.log = pushLog(state.log, ...wildLines);
       return next;
     }
 
@@ -943,10 +1474,10 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
             lines.push(`You climb back up. Floor ${next.expedition.floorIndex + 1}.`);
           } else {
             next.expedition = null;
-            next.expeditionExtras = [];
             next.pendingMerchant = null;
             next.screen = 'town';
-            lines.push('You step back through the gate into Everdusk. The expedition cards fade like a dream on waking.');
+            lines.push('You step back through the gate into Everdusk.');
+            closeExpeditionDeck(next, lines, 'The expedition cards fade like a dream on waking.');
           }
           next.log = pushLog(state.log, ...lines);
           return next;
@@ -971,7 +1502,12 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
               next.chronicle.deeds.push({ year: deedYear(next.world!), text: `${next.player!.name} recovered ${artifact.name} from the ${gate.name}.` });
               lines.push(`Beneath the dust: ${artifact.name}.`);
             } else {
-              const item = generateItem(next.player!.level + floor.spawn.levelBonus + 1, next.player!.effectiveStat('LUCK'), 1);
+              const item = generateItem(
+                next.player!.level + floor.spawn.levelBonus + 1,
+                next.player!.effectiveStat('LUCK'),
+                1,
+                setAffinityFor(next.player!),
+              );
               next.player!.addItem(item);
               lines.push(`The chest yields ${item.name} [${item.rarity}].`);
             }
@@ -981,7 +1517,12 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
         case TILE.SECRET: {
           if (!isOpened(exp, tx, ty)) {
             exp.opened.push(openKey(exp, tx, ty));
-            const item = generateItem(next.player!.level + floor.spawn.levelBonus + 2, next.player!.effectiveStat('LUCK'), 2);
+            const item = generateItem(
+              next.player!.level + floor.spawn.levelBonus + 2,
+              next.player!.effectiveStat('LUCK'),
+              2,
+              setAffinityFor(next.player!),
+            );
             next.player!.addItem(item);
             lines.push(`A hollow no map records. Inside: ${item.name} [${item.rarity}] — and a cache of cards.`);
             next.log = pushLog(state.log, ...lines);
@@ -1108,6 +1649,61 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       return next;
     }
 
+    case 'VAULT_DEPOSIT': {
+      if (!state.player || state.screen !== 'smith') return state;
+      const next = cloneCore(state);
+      const idx = next.player!.items.findIndex((i) => i.uid === action.uid);
+      // Already gone: this is the second pass of a double-invoke, and the
+      // piece is safely on the wall. Nothing to do and nothing to report.
+      if (idx === -1) return state;
+      const [item] = next.player!.items.splice(idx, 1);
+      next.log = pushLog(
+        state.log,
+        `Grude takes ${item.name} without comment and finds it a place on the back wall. It is not yours for the rest of this telling.`,
+      );
+      return next;
+    }
+
+    case 'VAULT_WITHDRAW': {
+      if (!state.player || state.screen !== 'smith') return state;
+      // Same guard from the other direction: if the piece is already in the
+      // bag, the wall has already given it up and this pass must not add a
+      // second copy.
+      if (state.player.items.some((i) => i.uid === action.item.uid)) return state;
+      const next = cloneCore(state);
+      next.player!.addItem(action.item);
+      next.log = pushLog(state.log, `She lifts ${action.item.name} down off the wall and puts it in your hands. "Mind it."`);
+      return next;
+    }
+
+    case 'RECAST_SET_PIECE': {
+      if (!state.player || state.screen !== 'smith') return state;
+      const player = state.player;
+      const offering = player.items.find((i) => i.uid === action.uid);
+      // The offering must be Legendary — she melts a named thing to make
+      // another named thing, and will not do it with ordinary stock.
+      if (!offering || offering.rarity !== 'Legendary') return state;
+      const wanted = recastCandidates(player);
+      if (wanted.length === 0) return state;
+      const cost = recastCost(player);
+      const next = cloneCore(state);
+      const idx = next.player!.items.findIndex((i) => i.uid === action.uid);
+      if (idx === -1) return state;
+      if (!next.player!.spendGold(cost)) {
+        next.log = pushLog(state.log, 'The smith names a price your purse cannot argue with.');
+        return next;
+      }
+      const forged = forgeUnique(wanted[randInt(wanted.length)], next.player!.level);
+      if (!forged) return state;
+      next.player!.items.splice(idx, 1);
+      next.player!.addItem(forged);
+      next.log = pushLog(
+        state.log,
+        `Grude turns ${offering.name} over twice, then puts it in the fire. What comes back out is ${forged.name}. "I knew the shape of it. I know all their shapes."`,
+      );
+      return next;
+    }
+
     case 'OPEN_MONSTER': {
       if (!state.player) return state;
       if (![...state.party, ...state.stable].some((m) => m.uid === action.uid)) return state;
@@ -1195,10 +1791,11 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
         return next;
       }
       next.expedition = null;
-      next.expeditionExtras = [];
       next.pendingMerchant = null;
       next.screen = 'town';
-      next.log = pushLog(state.log, 'You burn the Witchwick down to the wax. The dusk folds once, politely, and you are home. The reward cards fade like a dream on waking.');
+      const homeLines = ['You burn the Witchwick down to the wax. The dusk folds once, politely, and you are home.'];
+      closeExpeditionDeck(next, homeLines, 'The reward cards fade like a dream on waking.');
+      next.log = pushLog(state.log, ...homeLines);
       return next;
     }
 
@@ -1246,6 +1843,23 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const lines = [...result.log];
 
       reapFallen(next, lines);
+      // The drill forks BEFORE any of the real consequences below: no spoils,
+      // no quest credit, no adoption, no card reward. Nothing that happens in
+      // the yard is entered against your name, exactly as Bram promises.
+      if (next.drill && next.drill.outcome === 'running') {
+        const aimedAtFoe = !!action.targetUid && state.battle.enemies.some((e) => e.uid === action.targetUid);
+        noteDrillProgress(next, { played: true, aimedAtFoe });
+        if (result.outcome === 'tamed') {
+          // Reaching out at the article is the right instinct in the wrong
+          // yard. It is neither punished nor rewarded with a free monster.
+          lines.push(DRILL_TAME_LINE);
+          endDrill(next, 'passed', lines);
+        } else if (result.outcome === 'victory') {
+          endDrill(next, 'passed', lines);
+        }
+        next.log = pushLog(state.log, ...lines);
+        return next;
+      }
       if (result.outcome === 'tamed' && result.tamed) {
         adoptMonster(next, result.tamed, lines);
         if (next.battle!.enemies.some((e) => e.isAlive())) {
@@ -1267,6 +1881,14 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       next.lastFx = result.fx;
       const lines = [...result.log];
       reapFallen(next, lines);
+      if (next.drill && next.drill.outcome === 'running') {
+        noteDrillProgress(next, { endedTurn: true });
+        // `handleDefeat` is unreachable from a drill. This is the guarantee.
+        if (result.outcome === 'defeat') haltDrill(next, lines);
+        else if (result.outcome === 'victory') endDrill(next, 'passed', lines);
+        next.log = pushLog(state.log, ...lines);
+        return next;
+      }
       if (result.outcome === 'victory') handleVictory(next, lines);
       else if (result.outcome === 'defeat') handleDefeat(next, lines);
       next.log = pushLog(state.log, ...lines);
@@ -1285,6 +1907,15 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
     case 'FLEE_BATTLE': {
       if (!state.player || !state.battle || state.screen !== 'battle') return state;
       const next = cloneCore(state);
+      // Nobody rolls dice to walk out of a training yard. A drill's exit is
+      // the same door as DRILL_LEAVE, so a failed flee can never hand the
+      // article a free round against a recruit who had already had enough.
+      if (next.drill && next.drill.outcome === 'running') {
+        const lines = [DRILL_LEAVE_LINE];
+        endDrill(next, 'left', lines);
+        next.log = pushLog(state.log, ...lines);
+        return next;
+      }
       if (attemptFlee(next.player!, next.battle!)) {
         next.battle = null;
         next.screen = 'floor';
@@ -1310,7 +1941,11 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const lines: string[] = [];
       if (action.cardId && next.pendingReward!.includes(action.cardId) && getCard(action.cardId)) {
         next.expeditionExtras.push(action.cardId);
-        lines.push(`${getCard(action.cardId)!.name} joins your deck — for as long as this expedition lasts.`);
+        lines.push(
+          modsOf(next).keepCards
+            ? `${getCard(action.cardId)!.name} joins your deck — and this telling does not give things back.`
+            : `${getCard(action.cardId)!.name} joins your deck — for as long as this expedition lasts.`,
+        );
       } else {
         lines.push('You leave the cards where they lie.');
       }
@@ -1488,6 +2123,28 @@ function gameReducerCore(state: GameState, action: GameAction): GameState {
       const next = cloneCore(state);
       next.questLog.push({ id: quest.id, progress: 0, complete: false, claimed: false });
       next.log = pushLog(state.log, `Quest accepted: ${quest.name}.`);
+      return next;
+    }
+
+    case 'START_DRILL': {
+      // Repeatable on purpose, from the board, forever. The only bar is being
+      // in town with a hero — a player mid-expedition cannot duck into the
+      // guardhouse to top up, and a player who wants the lesson again at hour
+      // forty is entitled to it.
+      if (!state.player || state.screen !== 'questBoard' || state.battle) return state;
+      const next = cloneCore(state);
+      const lines: string[] = [];
+      beginDrill(next, lines);
+      next.log = pushLog(state.log, ...lines);
+      return next;
+    }
+
+    case 'DRILL_LEAVE': {
+      if (!state.drill || state.drill.outcome !== 'running') return state;
+      const next = cloneCore(state);
+      const lines = [DRILL_LEAVE_LINE];
+      endDrill(next, 'left', lines);
+      next.log = pushLog(state.log, ...lines);
       return next;
     }
 

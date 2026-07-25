@@ -25,6 +25,19 @@
    the map may carry a hard-coded pixel size.
    ========================================================================= */
 
+/* v21 · THE LIGHT MODEL. lighting.css owns every lit surface in the game —
+   the Lantern-as-light-source, the key-light shadow direction, the map
+   vignette, the hero's pool, the battle footlights and the reduced-motion
+   kill switch. It is imported HERE, and only here, on purpose:
+     · @import must precede all rules, so it cannot simply be appended;
+     · floor.css is the LAST of the app's stylesheets to load (FloorScreen.tsx
+       imports it, after App.tsx has pulled in App/battle/v5/v16 and nav.css),
+       so an @import at the top of this file lands lighting.css after all of
+       them and its rules win equal-specificity ties against every one.
+   floor.css's own rules still come after lighting.css and still have the last
+   word on the map screen — see §9 at the bottom. */
+@import './lighting.css';
+
 /* --- 1 · Cell sizing rides the --cell token --------------------------------- */
 .map-grid {
   --cell: 48px;
@@ -94,9 +107,16 @@
   width: calc(var(--cell) * 0.58);
   height: calc(var(--cell) * 0.58);
 }
+/* Ground clutter must read as *scenery lying in shadow*, not as a ghost of
+   itself. Transparency over a dark backdrop was doing the latter: at 0.58 the
+   prop blended into the floor and lost both colour and edge, so painted rocks
+   and bones looked washed out rather than dim.
+   Keep the sprite near-solid and push it back with luminance instead. It stays
+   subordinate to interactive tiles, which announce themselves with coloured
+   drop-shadow halos (see below) rather than by out-shouting the clutter. */
 .map-grid .map-cell .tile-prop {
-  opacity: 0.58;
-  filter: brightness(0.78) saturate(0.65);
+  opacity: 0.92;
+  filter: brightness(0.82) saturate(0.85);
 }
 
 /* Interactive tiles keep their colour-coded halo at the bigger size, so
@@ -510,11 +530,14 @@
 }
 
 /* Legend chips docked on the map viewport's bottom edge. Right padding
-   clears the corner Lantern end-turn button (~105px, panel-pinned). */
+   clears the corner Lantern end-turn button (~105px, panel-pinned).
+   v21: 130 → 142. The Lantern moved 10px further in from the panel edge so
+   its aura has room to fall off before the border (see §9 / lighting.css §3),
+   which costs the chip dock the same 10px plus a little slack. */
 .floor-panel .legend-chips {
   flex: 0 0 auto;
   margin: 0;
-  padding-right: 130px;
+  padding-right: 142px;
 }
 .floor-panel .legend-chip.threat-chip {
   flex-basis: auto; /* inline chip in the dock, not a full-width row */
@@ -627,5 +650,77 @@
   .floor-topbar .mov-pip {
     width: 11px;
     height: 11px;
+  }
+}
+
+/* --- 9 · The Lantern's dock (v21) -------------------------------------------
+   APPENDED AT FILE END DELIBERATELY. This repo has been bitten before by a
+   media-query-guarded rule losing to a later unconditional rule of the same
+   specificity; the rules below are unconditional and must beat App.css's
+   `.floor-lantern-turn` (0,1,0), so end-of-the-last-stylesheet is where they
+   belong. The one thing here that a media query DOES need to override is
+   re-stated inside the landscape-phone block at the very bottom.
+
+   PAUL'S BUG: "the end turn button also overlaps with trying to use items on
+   party members." Two independent causes, and both had to go:
+
+     1. HIT AREA. Diagnosed and fixed in lighting.css §1 — the wrapper <div>
+        and the rectangular <img> were taking clicks across the full 128x158
+        box. Verified with elementFromPoint + a real synthesised click.
+
+     2. LAYOUT, fixed here. FloorScreen renders the field-items list
+        (`{showItems && <div className="option-list">}`) as the LAST child of
+        the panel, i.e. straight into the corner the Lantern is docked in. The
+        top bar already reserved room for the Lantern (`.floor-actions .btn-row
+        { padding-right: 130px }` in App.css) and so did the legend dock (§7) —
+        the items list was simply never given the same treatment, so with a
+        full party the right-hand target buttons laid out directly underneath
+        it. A round hit area does not save a button that is *positioned* under
+        the Lantern; the space has to be reserved.
+
+   REGRESSION GUARD — READ §7 BEFORE CHANGING ANY NUMBER HERE. The Lantern's
+   footprint in this corner is what pushed the floor panel's scrollable
+   overflow and produced "the window scrolling on the map screen" in v18. The
+   cure was `overflow: clip` on `.game-main > .panel.floor-panel` (clips, but
+   is NOT a scroll container). Moving the Lantern INWARD as v21 does can only
+   reduce that overflow, never re-create it — and the guard was re-measured
+   after this change: forcing `panel.scrollTop = 9999` still moves the title
+   plaque by exactly 0px. Do not swap that `clip` back to `hidden`. */
+.floor-panel > .floor-lantern-turn {
+  /* Same two tokens the light field in lighting.css §3 is positioned from, so
+     the flame and the light it casts can never drift apart. Moved in from
+     App.css's 14px/10px: the extra room lets the aura reach zero alpha before
+     the panel's border instead of being cut off on it, and it stops the "END
+     TURN" caption being clipped by the panel's bottom edge. */
+  right: var(--lt-inset-x, 24px);
+  bottom: var(--lt-inset-y, 26px);
+}
+
+/* Cause 2. ~105px of Lantern plus slack; matches the legend dock in §7. */
+.floor-panel > .option-list {
+  padding-right: 130px;
+}
+
+/* Landscape phones: the legend is hidden and battle.css shrinks the Lantern
+   to 72x90, so the corner needs far less clearance and vertical space is the
+   scarce resource. Restated AFTER §9's unconditional rules — the same
+   source-order trap §8's header warns about. */
+@media (max-height: 500px) {
+  .floor-panel > .floor-lantern-turn {
+    right: 8px;
+    bottom: 8px;
+  }
+  .floor-panel > .option-list {
+    padding-right: 72px;
+  }
+  .floor-panel {
+    --lt-inset-x: 8px;
+    --lt-inset-y: 8px;
+    /* battle.css shrinks .lantern-turn to 72x90 here, so the flame sits in a
+       different place inside the dock — re-derive rather than let the
+       full-size constants in lighting.css §3 aim the light at empty air.
+       Panel padding is 8px/10px/6px in this band, not 14/20/12. */
+    --lt-flame-x: calc(var(--lt-inset-x) + 30px - 10px);
+    --lt-flame-y: calc(var(--lt-inset-y) + 41px - 6px);
   }
 }

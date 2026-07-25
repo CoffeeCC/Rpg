@@ -19,6 +19,7 @@ import { QuestBoardScreen } from './components/QuestBoardScreen';
 import { TavernScreen } from './components/TavernScreen';
 import { ChronicleScreen } from './components/ChronicleScreen';
 import { CharacterSheetScreen } from './components/CharacterSheetScreen';
+import { GearScreen } from './components/GearScreen';
 import { DeckScreen } from './components/DeckScreen';
 import { CardCodexScreen } from './components/CardCodexScreen';
 import { SmithScreen } from './components/SmithScreen';
@@ -167,6 +168,18 @@ function App() {
 
   const player = state.player;
   const backScreen: Screen = state.expedition ? 'floor' : 'town';
+
+  // v20: the roster in the sidebar opens a companion's sheet from wherever you
+  // happen to be, so "Back to the Stable" is no longer always true. Remember
+  // the last screen that wasn't the companion sheet and return there instead.
+  // Mid-expedition the floor still wins — walking out of a run by accident is
+  // the one mistake this must never allow.
+  const roomBefore = useRef<Screen>('town');
+  useEffect(() => {
+    if (state.screen !== 'monsterSheet') roomBefore.current = state.screen;
+  }, [state.screen]);
+  const monsterBackScreen: Screen = state.expedition ? 'floor' : roomBefore.current === 'stable' ? 'stable' : backScreen;
+
   /** What the player is looking at — the real screen, or the one being held
    *  on stage for the length of the transition's cover phase. */
   const view: Screen = heldScreen ?? state.screen;
@@ -328,8 +341,8 @@ function App() {
         {view === 'cardCodex' && <CardCodexScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {view === 'smith' && <SmithScreen state={state} dispatch={dispatch} />}
         {view === 'characterSheet' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
-        {view === 'monsterSheet' && <MonsterSheetScreen state={state} dispatch={dispatch} />}
-        {view === 'equipment' && <CharacterSheetScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
+        {view === 'monsterSheet' && <MonsterSheetScreen state={state} backScreen={monsterBackScreen} dispatch={dispatch} />}
+        {view === 'equipment' && <GearScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {view === 'saveLoad' && <SaveLoadScreen state={state} backScreen={backScreen} dispatch={dispatch} />}
         {view === 'victory' && <VictoryScreen state={state} dispatch={dispatch} />}
         {view === 'fallen' && <FallenScreen state={state} dispatch={dispatch} />}
@@ -338,7 +351,7 @@ function App() {
 
       {!inBattle ? (
         <aside className="game-sidebar">
-          <PartySidebar hero={player} party={state.party} />
+          <PartySidebar hero={player} party={state.party} dispatch={dispatch} />
           <div className="game-log side-log">
             <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
           </div>
