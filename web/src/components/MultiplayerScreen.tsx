@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import type { CardDef, CardInstance } from '../engine/types';
-import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { buildDeck } from '../engine/systems/cardBattle';
 import { getCard, TAME_CARD_ID } from '../engine/data/cards';
 import { DUEL_PARTY_MAX, isFairMatch, rivalById, rivalsForLevel, type RivalTamer } from '../engine/data/duelParty';
 import {
+  DUEL_FOE_HERO_UID,
   LocalTransport,
   beastContributesCards,
+  duelCardAction,
+  localizeDuelFx,
   makeMirrorSide,
   makeRivalSide,
   validateDuelSide,
@@ -16,20 +18,31 @@ import {
   type DuelTransport,
   type DuelView,
 } from '../engine/systems/duel';
+import { BattleStage, type BattleView } from './BattleScreen';
 import { CardView } from './CardView';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
+import { PAINTED_TOWN } from '../art/painted';
 import { Icon } from './Icon';
 import { play as sfx } from '../platform/sfx';
 import '../duel.css';
 
 // ---------------------------------------------------------------------------
-// The Duelling Ring.
+// The Duelling Ring — PRE-MATCH and POST-MATCH only.
 //
-// This screen talks to a DuelTransport and nothing else. It never calls the
-// duel reducer, never touches a BattleState, and never reads the opponent's
-// hand — it renders whatever redacted DuelView the transport pushes and sends
-// DuelActions back. Swapping LocalTransport for a WebSocketTransport is a
-// one-line change in `startMatch` below; not a line of this markup moves.
+// v20: this screen no longer draws a fight. Paul, on v19: "why is the duel
+// screen so different from our regular battle screen? its just like fighting
+// in a menu?" — he was right, and the honest fix was not to redress this file
+// but to delete its board entirely. A duel IS a battle, so it renders in
+// BattleStage (components/BattleScreen.tsx), the same renderer the gates use:
+// painted backdrop, top/bottom rows, portrait chips, candle rail, MTG-scale
+// piles, lantern end-turn, hand fan, staggered FX with actor banners.
+//
+// What is left here is everything that is NOT the fight: mode select, rival
+// select, party/deck terms, and the verdict. Plus the ADAPTER — the function
+// that turns a redacted `DuelView` into a `BattleView` and routes player
+// intent back through `transport.submitAction(...)`. This file still talks to
+// a DuelTransport and nothing else: it never calls the duel reducer, never
+// touches a BattleState, and never sees the opponent's hand.
 // ---------------------------------------------------------------------------
 
 type Phase = 'menu' | 'setup' | 'duel';
@@ -39,21 +52,19 @@ function freshSeed(): number {
   return (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0;
 }
 
-const INTENT_VERB: Record<string, string> = {
-  attack: 'Strikes',
-  defend: 'Hardens',
-  heal: 'Mends',
-  howl: 'Gathers',
-  buff: 'Gathers',
-  debuff: 'Curses',
-};
-
-/** Cards that ask you to pick a target before they resolve. */
-function needsAim(card: CardDef): 'enemy' | 'ally' | null {
-  if (card.target === 'enemy') return 'enemy';
-  const heals = card.effects.some((e) => e.kind === 'heal');
-  const hurts = card.effects.some((e) => e.kind === 'damage' || e.kind === 'drain' || e.kind === 'resolveDamage');
-  return heals && !hurts ? 'ally' : null;
+/**
+ * How long BattleStage will take to play an fx batch out. Must match the
+ * pacing in BattleScreen.tsx: beats clamp to 500–800ms with a 900ms tail.
+ *
+ * The AI opponent is paced against this. Without it, LocalTransport's next
+ * action lands mid-playback, the stage sees a new fx array, cancels its
+ * remaining timers and the player watches half a turn — the numbers are all
+ * correct, the fight just becomes unreadable. So the transport's scheduler
+ * waits for the stage instead of racing it.
+ */
+function fxPlaybackMs(count: number): number {
+  if (count === 0) return 0;
+  return count * Math.min(800, Math.max(500, 12000 / count)) + 900;
 }
 
 export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
@@ -67,12 +78,13 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
   const [seed, setSeed] = useState<number>(freshSeed);
   const [matchKey, setMatchKey] = useState(0);
   const [view, setView] = useState<DuelView | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
   const [confirmConcede, setConfirmConcede] = useState(false);
 
   const transportRef = useRef<DuelTransport | null>(null);
   const reportedRef = useRef<number>(-1);
   const setupRef = useRef<{ mine: DuelSetupSide; foe: DuelSetupSide } | null>(null);
+  /** Wall-clock instant the battlefield finishes showing what it was just sent. */
+  const stageBusyUntil = useRef<number>(0);
 
   const party = useMemo(
     () => pickedUids.map((uid) => roster.find((m) => m.uid === uid)).filter((m): m is MonsterInstance => !!m),
@@ -118,15 +130,25 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     if (phase !== 'duel') return;
     const built = setupRef.current;
     if (!built) return;
+    stageBusyUntil.current = 0;
     // ⇩ THE SEAM. A networked duel replaces exactly this line with
     //   `new WebSocketTransport(url, matchId, token)`. Everything below —
-    //   subscription, rendering, submitAction — is transport-agnostic.
+    //   subscription, the adapter, submitAction — is transport-agnostic.
     const transport: DuelTransport = new LocalTransport(
       { seed, matchId: `local-${seed.toString(36)}-${matchKey}`, a: built.mine, b: built.foe },
-      { aiDelayMs: 720 },
+      {
+        aiDelayMs: 720,
+        // The opponent moves when the battlefield has finished showing the
+        // last move — see fxPlaybackMs. A server would pace itself the same
+        // way (or the client would buffer); either way the seam is unchanged.
+        schedule: (fn, ms) => setTimeout(fn, Math.max(ms, stageBusyUntil.current - Date.now())),
+      },
     );
     transportRef.current = transport;
-    const off = transport.onState(setView);
+    const off = transport.onState((next) => {
+      stageBusyUntil.current = Date.now() + fxPlaybackMs(next.fx.length);
+      setView(next);
+    });
     return () => {
       off();
       transport.dispose();
@@ -159,7 +181,6 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     setupRef.current = { mine, foe };
     setSeed(nextSeed);
     setView(null);
-    setSelected(null);
     setConfirmConcede(false);
     setMatchKey((k) => k + 1);
     setPhase('duel');
@@ -172,40 +193,101 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     );
   }
 
-  function submit(handIndex: number, targetUid?: string) {
-    const transport = transportRef.current;
-    if (!transport) return;
-    sfx('cardPlay');
-    transport.submitAction({ kind: 'playCard', side: transport.localSide, handIndex, targetUid });
-    setSelected(null);
-  }
+  // ==========================================================================
+  // THE ADAPTER — a redacted DuelView in, a BattleView out.
+  //
+  // Everything the battlefield draws comes from `view`; everything the player
+  // does goes back out through `transport.submitAction`. Note what is NOT
+  // here: no items (a duel takes nothing in from the pouch), no taming (you do
+  // not take a rival's beast), no mercy (a rival's beasts do not beg), and
+  // Flee is replaced by Concede. Each of those is an ABSENT COMMAND, and
+  // BattleStage hides the control for it — the renderer never forks.
+  //
+  // The opponent's hand crosses this boundary as a COUNT (`foe.handCount`).
+  // There is nowhere in this function it could be anything else: `viewFor`
+  // does not put their cards in the view. See duel.test.ts.
+  // ==========================================================================
+  // Memoised on the view so the fx ARRAY IDENTITY is stable across re-renders:
+  // BattleStage keys "have I already played this batch?" on it. `you.id` is the
+  // seat this snapshot was redacted for, which is the seat we are.
+  const localFx = useMemo(
+    () => (view ? localizeDuelFx(view.fx, view.fxFrom, view.you.id) : []),
+    [view],
+  );
 
-  function onCardClick(handIndex: number) {
-    if (!view?.yourTurn) return;
-    const inst = view.you.hand[handIndex];
-    const card = inst ? getCard(inst.cardId) : undefined;
-    if (!card) return;
-    if (selected === handIndex) {
-      setSelected(null);
-      return;
-    }
-    const aim = needsAim(card);
-    if (aim === 'enemy' && view.foe.party.some((m) => m.isAlive())) {
-      setSelected(handIndex);
-      return;
-    }
-    if (aim === 'ally' && view.you.party.some((m) => m.isAlive() && m.hp < m.maxHp)) {
-      setSelected(handIndex);
-      return;
-    }
-    submit(handIndex);
-  }
+  const submit = useCallback(
+    (handIndex: number, targetUid?: string) => {
+      const transport = transportRef.current;
+      if (!transport) return;
+      transport.submitAction(duelCardAction(transport.localSide, handIndex, targetUid));
+    },
+    [],
+  );
 
-  const aimMode: 'enemy' | 'ally' | null = (() => {
-    if (selected === null || !view) return null;
-    const card = getCard(view.you.hand[selected]?.cardId ?? '');
-    return card ? needsAim(card) : null;
-  })();
+  const battleView: BattleView | null = useMemo(() => {
+    if (!view || view.outcome.kind !== 'ongoing') return null;
+    const you = view.you;
+    const foe = view.foe;
+    const nameOf = (uid: string): string => {
+      if (uid === 'hero') return you.hero.name;
+      if (uid === DUEL_FOE_HERO_UID) return foe.name;
+      return (
+        you.party.find((m) => m.uid === uid)?.nickname ??
+        foe.party.find((m) => m.uid === uid)?.nickname ??
+        ''
+      );
+    };
+    return {
+      variant: 'duel',
+      hero: you.hero,
+      party: you.party,
+      enemies: foe.party,
+      intents: foe.intents,
+      enemyBlock: foe.beastBlock,
+      heroBlock: you.block,
+      hand: you.hand,
+      energy: you.energy,
+      maxEnergy: you.maxEnergy,
+      drawPile: you.drawPile,
+      discardPile: you.discardPile,
+      exhaustPile: you.exhaustPile,
+      handKey: you.turn,
+      // The ring is chalked in Everdusk, not in the gates — the town's own
+      // painting stands in for a gate backdrop.
+      backdrop: <img className="painted-scene" src={PAINTED_TOWN} alt="" />,
+      portrait: {
+        kind: 'tamer',
+        uid: DUEL_FOE_HERO_UID,
+        hero: foe.hero,
+        name: foe.name,
+        handCount: foe.handCount,
+      },
+      banner: `⚔️ ${foe.name}${foe.title ? ` — ${foe.title}` : ''}`,
+      roundLabel: `Round ${view.round} · ${view.yourTurn ? 'your move' : 'their move'}`,
+      mercy: false,
+      yourTurn: view.yourTurn,
+      showTameOdds: false,
+      log: view.log,
+      allyNames: [you.name, ...you.party.map((m) => m.nickname)],
+      fx: localFx,
+      nameForUid: nameOf,
+      commands: {
+        playCard: submit,
+        endTurn: () => {
+          const transport = transportRef.current;
+          if (!transport) return;
+          transport.submitAction({ kind: 'endTurn', side: transport.localSide });
+        },
+        // No useItem: a duel is fought with cards and beasts, nothing else.
+        // No mercy verdict: a rival's beasts fight to the last and walk home.
+        retreat: {
+          label: 'Concede',
+          title: 'Yield the ring',
+          run: () => setConfirmConcede(true),
+        },
+      },
+    };
+  }, [view, localFx, submit]);
 
   // ==========================================================================
   // Menu — the shell a server browser will grow into
@@ -231,8 +313,9 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
             </span>
             <span className="duel-mode-sub">Trial of Beasts · versus the house</span>
             <p className="duel-mode-desc">
-              Pick your beasts and take a rival tamer's challenge — or your own reflection's. Your party fights on the
-              same cards, the same statuses, the same rules as the dark below. It costs nothing but the afternoon.
+              Pick your beasts and take a rival tamer's challenge — or your own reflection's. Fought on the same
+              battlefield as the dark below: the same cards, the same statuses, the same rules. It costs nothing but
+              the afternoon.
             </p>
           </button>
 
@@ -440,7 +523,7 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
   }
 
   // ==========================================================================
-  // The duel itself
+  // Chalking the circle — the transport has not pushed its first view yet
   // ==========================================================================
   if (!view) {
     return (
@@ -451,6 +534,9 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     );
   }
 
+  // ==========================================================================
+  // The verdict
+  // ==========================================================================
   if (view.outcome.kind !== 'ongoing') {
     const local = transportRef.current?.localSide ?? 'a';
     const won = view.outcome.kind === 'win' && view.outcome.winner === local;
@@ -483,203 +569,37 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     );
   }
 
-  const foeIntents = view.foe.intents;
-
-  const renderFigure = (m: MonsterInstance, mine: boolean, aimable: boolean, block: number) => {
-    const intent = mine ? undefined : foeIntents[m.uid];
-    const pct = Math.max(0, Math.round((m.hp / m.maxHp) * 100));
-    const body = (
-      <>
-        {block > 0 && <span className="duel-block">🛡{block}</span>}
-        <MonsterImage speciesId={m.speciesId} size={62} rarity={m.rarity} facing={mine ? 'right' : 'left'} />
-        <span className="duel-figure-name" title={`${m.nickname} — Lv ${m.level} ${m.species.name}`}>
-          {m.nickname}
-        </span>
-        <div className="duel-hpbar">
-          <div className={`duel-hpfill${mine ? ' mine' : ''}`} style={{ width: `${pct}%` }} />
-        </div>
-        <span className="duel-hptext">
-          {m.hp}/{m.maxHp}
-        </span>
-        <span className="duel-figure-sub">
-          Lv {m.level} · {m.personality?.name ?? '—'}
-        </span>
-        {(m.statusEffects.length > 0 || m.activeMods.length > 0) && (
-          <span className="duel-tags">
-            {m.statusEffects.map((s) => (
-              <span className="duel-tag bad" key={s.name}>
-                {s.name} {s.turns}
-              </span>
-            ))}
-            {m.activeMods.map((mod, i) => (
-              <span className="duel-tag" key={`${mod.stat}-${i}`}>
-                {mod.stat}
-                {mod.amount > 0 ? '↑' : '↓'}
-              </span>
-            ))}
-          </span>
-        )}
-        {intent && (
-          <span className="duel-intent" title={intent.label ?? INTENT_VERB[intent.kind]}>
-            {intent.label ?? INTENT_VERB[intent.kind] ?? intent.kind}
-            {intent.kind === 'attack' && intent.amount ? ` ⚔${intent.amount}${(intent.times ?? 1) > 1 ? `×${intent.times}` : ''}` : ''}
-            {intent.kind === 'defend' && intent.amount ? ` 🛡${intent.amount}` : ''}
-          </span>
-        )}
-      </>
-    );
-    const classes = `duel-figure${m.isAlive() ? '' : ' down'}${aimable ? ' aimable' : ''}`;
-    return aimable ? (
-      <button key={m.uid} className={classes} onClick={() => selected !== null && submit(selected, m.uid)}>
-        {body}
-      </button>
-    ) : (
-      <div key={m.uid} className={classes}>
-        {body}
-      </div>
-    );
-  };
-
-  const tamerPlate = (
-    side: DuelView['you'] | DuelView['foe'],
-    hero: Character,
-    mine: boolean,
-    active: boolean,
-    figures: React.ReactNode,
-  ) => (
-    <div className={`duel-side${active ? ' active' : ''}`}>
-      <div className="duel-tamer">
-        <span className="duel-tamer-name">{side.name}</span>
-        <span className="duel-tamer-title">{side.title}</span>
-        {mine && (
-          <span className="duel-vigor" title={`Vigor ${side.energy}/${side.maxEnergy}`}>
-            {Array.from({ length: Math.max(side.maxEnergy, side.energy) }, (_, i) => (
-              <span key={i} className={`duel-pip${i < side.energy ? ' lit' : ''}`} />
-            ))}
-          </span>
-        )}
-        <span className="duel-counts">
-          <span title="Tamer">
-            ♥ {hero.hp}/{hero.maxHp}
-          </span>
-          {side.block > 0 && <span title="Ward">🛡 {side.block}</span>}
-          <span title="Hand">🖐 {side.handCount}</span>
-          <span title="Draw pile">🂠 {side.drawCount}</span>
-          <span title="Discard">♺ {side.discardCount}</span>
-        </span>
-      </div>
-      <div className="duel-row">{figures}</div>
-    </div>
-  );
-
+  // ==========================================================================
+  // The fight — rendered by the ONE battlefield. The confirm is a fixed
+  // overlay sibling so the stage below it stays the untouched renderer.
+  // ==========================================================================
   return (
-    <div className="panel duel-panel">
-      <h1 className="title">
-        ⚔️ Round {view.round} — {view.yourTurn ? 'your move' : `${view.foe.name} is thinking`}
-      </h1>
-
-      <div className="duel-board">
-        <div className="duel-field">
-          {tamerPlate(
-            view.foe,
-            view.foe.hero,
-            false,
-            !view.yourTurn,
-            view.foe.party.map((m) => renderFigure(m, false, aimMode === 'enemy' && m.isAlive(), view.foe.beastBlock[m.uid] ?? 0)),
-          )}
-          {tamerPlate(
-            view.you,
-            view.you.hero,
-            true,
-            view.yourTurn,
-            view.you.party.map((m) => renderFigure(m, true, aimMode === 'ally' && m.isAlive(), view.you.beastBlock[m.uid] ?? 0)),
-          )}
-
-          <div className="duel-hand">
-            {view.you.hand.map((inst, i) => {
-              const card = getCard(inst.cardId);
-              if (!card) return null;
-              const source = view.you.party.find((m) => m.uid === inst.sourceMonsterUid);
-              const affordable = view.yourTurn && card.cost <= view.you.energy;
-              return (
-                <button
-                  key={inst.uid}
-                  className={`duel-card-slot${selected === i ? ' selected' : ''}`}
-                  disabled={!view.yourTurn}
-                  onMouseEnter={() => sfx('cardHover')}
-                  onClick={() => onCardClick(i)}
-                >
-                  <CardView
-                    card={card}
-                    hero={view.you.hero}
-                    sourceMonster={source}
-                    width={126}
-                    playable={affordable}
-                    selected={selected === i}
-                    upgraded={!!inst.upgraded}
-                  />
-                </button>
-              );
-            })}
-            {view.you.hand.length === 0 && <p className="duel-note">Your hand is empty. End the turn and draw again.</p>}
-          </div>
-
-          <div className="duel-actions">
-            <button
-              className="btn primary"
-              disabled={!view.yourTurn}
-              onClick={() => {
-                const transport = transportRef.current;
-                if (!transport) return;
-                sfx('endTurn');
-                setSelected(null);
-                transport.submitAction({ kind: 'endTurn', side: transport.localSide });
-              }}
-            >
-              End turn
-            </button>
-            {selected !== null && (
-              <button className="btn" onClick={() => setSelected(null)}>
-                Cancel aim
+    <>
+      <BattleStage key={matchKey} view={battleView} />
+      {confirmConcede && (
+        <div className="duel-yield">
+          <div className="duel-yield-box">
+            <p className="duel-yield-text">Yield the ring to {view.foe.name}?</p>
+            <div className="btn-row" style={{ justifyContent: 'center' }}>
+              <button
+                className="btn danger"
+                onClick={() => {
+                  const transport = transportRef.current;
+                  setConfirmConcede(false);
+                  if (!transport) return;
+                  sfx('uiClick');
+                  transport.submitAction({ kind: 'concede', side: transport.localSide });
+                }}
+              >
+                Yield
               </button>
-            )}
-            {aimMode === 'enemy' && <span className="duel-hint">Choose which of their beasts takes it.</span>}
-            {aimMode === 'ally' && <span className="duel-hint">Choose which of yours to mend.</span>}
-            <span style={{ marginLeft: 'auto' }} />
-            {confirmConcede ? (
-              <>
-                <span className="duel-hint">Yield the ring?</span>
-                <button
-                  className="btn danger"
-                  onClick={() => {
-                    const transport = transportRef.current;
-                    if (!transport) return;
-                    transport.submitAction({ kind: 'concede', side: transport.localSide });
-                    setConfirmConcede(false);
-                  }}
-                >
-                  Yield
-                </button>
-                <button className="btn small" onClick={() => setConfirmConcede(false)}>
-                  No
-                </button>
-              </>
-            ) : (
-              <button className="btn small" disabled={!view.yourTurn} onClick={() => setConfirmConcede(true)}>
-                Concede
+              <button className="btn" onClick={() => { sfx('uiClick'); setConfirmConcede(false); }}>
+                Fight on
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="duel-log">
-          {view.log.slice(-40).map((line, i) => (
-            <div key={`${i}-${line}`} className={`duel-log-line${line.startsWith('—') || line.startsWith('⸻') ? ' turn' : ''}`}>
-              {line}
             </div>
-          ))}
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

@@ -163,15 +163,18 @@ export const SERVICE_BARKS: Record<string, Partial<Record<BarkContext, string[]>
     ],
   },
   chronicler: {
+    // v20: three lines moved from here into EXTRA_VOICED_LINES.chronicler (the
+    // ones with clips on disk), so the archivist is heard rather than read on
+    // most visits. Replaced in kind — this pool is still eight deep.
     default: [
-      '[margin note] Subject entered. Noted without comment, for once.',
       'The page waits for you the way it always has. Ink doesn\'t get impatient. I do, a little.',
-      'Every deed gets a line, eventually. Some get more than one. Try to earn the second.',
       '[margin note] Habits repeat. So does the handwriting, oddly.',
-      'A story once written down has a way of not staying finished. You\'d know.',
       'I record. I do not editorialize. This entry is an exception.',
       '[margin note] The ink took faster than usual today. Make of that what you like.',
       'Every chronicle needs a subject who keeps giving it reasons to continue.',
+      '[margin note] Subject is reading over my shoulder. Permitted. Noted.',
+      'An archive is not a memory. A memory forgives things. Bear that in mind.',
+      'I have shelved better deeds than yours and worse ones. The shelf makes no distinction. I do.',
     ],
     postOrb: [
       '[margin note] Orb recovered. The page brightened at the edges. First time in three centuries the ink\'s done that on its own.',

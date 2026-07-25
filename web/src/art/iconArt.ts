@@ -104,7 +104,9 @@ export const ICON_ART: Record<string, string> = {
   ward: 'art/icons/ward.png',
   waterpool: 'art/icons/waterpool.png',
   debris: 'art/icons/debris.png',
-  archway: 'art/icons/archway.png',
+  // v19: 'archway' was retired — a painted stone doorway used as floor decoration
+  // read as the real 🚪 way-back tile and sent players hunting for doors that
+  // weren't there. See the prop rules in art/tileArt.tsx before adding another.
 };
 
 export const SPRITE_ART: Record<string, string> = {

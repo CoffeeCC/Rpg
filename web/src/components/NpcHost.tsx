@@ -36,9 +36,11 @@ export function pickBark(npcId: string, state: GameState): string {
   const pools = SERVICE_BARKS[npcId];
   if (!pools) return '';
   const seed = (state.player?.gold ?? 0) + state.party.length * 7 + state.chronicle.deeds.length * 13 + state.screen.length;
-  // v13: the nine voiced NPCs mostly speak a recorded extra line (so you HEAR
-  // them); one visit in three drops back to a context-aware service bark for
-  // variety. Grude/chronicler have no extra pool and always use serviceBarks.
+  // v13: a voiced NPC mostly speaks a recorded extra line (so you HEAR them);
+  // one visit in three drops back to a context-aware service bark for variety.
+  // v20: Grude and the Chronicler have extra pools now too — anyone still
+  // without one simply falls through to serviceBarks, which is the intended
+  // extension point rather than a special case.
   const voiced = EXTRA_VOICED_LINES[npcId];
   if (voiced && voiced.length > 0 && seed % 3 !== 0) {
     return voiced[seed % voiced.length];

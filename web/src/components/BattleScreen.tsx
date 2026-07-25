@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { GameAction, GameState } from '../engine/game';
-import type { CardDef, CardInstance, FxEvent, Intent } from '../engine/types';
+import type { CardDef, CardInstance, FxEvent, GateId, Intent } from '../engine/types';
+import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
 import { CONSUMABLES } from '../engine/data/items';
@@ -17,6 +18,92 @@ import { LanternTurn } from './LanternTurn';
 import { LogPanel } from './LogPanel';
 import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
+
+// ===========================================================================
+// THE ONE BATTLEFIELD.
+//
+// v20: there is exactly ONE renderer for a fight in this game — `BattleStage`
+// below. It used to read `GameState` directly, which is why v19's duels ended
+// up with a second, parallel combat UI (a fight "in a menu"). It now renders
+// from a `BattleView` view-model plus a `BattleCommands` command interface,
+// and there are two adapters:
+//
+//   * `useSoloBattleView` (this file) — GameState in, GameAction dispatches out.
+//     `BattleScreen` is the single-player entry point and its behaviour is
+//     unchanged: same dispatches, same FX pacing, same aim flow, same keys.
+//   * the duel adapter (MultiplayerScreen.tsx) — a redacted `DuelView` in,
+//     `transport.submitAction(...)` out.
+//
+// WHERE A MODE LACKS A FEATURE, THE ADAPTER OMITS THE COMMAND AND THIS FILE
+// HIDES THE CONTROL. It must never grow a `if (duel)` branch around a row, a
+// figure, or a plate — that is the fork this refactor exists to delete. The
+// only mode-aware dressing allowed is `variant`, and only for chrome that has
+// no single-player counterpart at all (the round line, the rival's face-down
+// hand).
+// ===========================================================================
+
+/** The face of the opposition, in the top portrait chip. */
+export type BattlePortrait =
+  /** Solo: the boss, else the pack leader. `boss` folds in the boss bar. */
+  | { kind: 'beast'; unit: MonsterInstance; boss: boolean }
+  /** Duel: the rival tamer, with their redacted hand SIZE (never contents). */
+  | { kind: 'tamer'; uid: string; hero: Character; name: string; handCount: number };
+
+/**
+ * Everything the battlefield can do. An absent command is an unavailable
+ * feature: the control for it is not rendered. That is the whole mechanism —
+ * no capability flags to keep in sync, no branches in the markup.
+ */
+export interface BattleCommands {
+  playCard(handIndex: number, targetUid?: string): void;
+  endTurn(): void;
+  /** Absent where there is no pouch to reach into (a duel takes nothing in). */
+  useItem?(name: string, targetUid?: string): void;
+  /** The way out: "Flee" in the gates, "Concede" in the ring. */
+  retreat?: { label: string; title: string; run(): void };
+  /** The mercy verdict. Wild beasts beg; a rival's beasts do not. */
+  mercySpare?(): void;
+  mercyFinish?(): void;
+}
+
+/** Everything the battlefield draws. Entities are live objects, read at render. */
+export interface BattleView {
+  variant: 'solo' | 'duel';
+  hero: Character;
+  party: MonsterInstance[];
+  enemies: MonsterInstance[];
+  intents: Record<string, Intent | undefined>;
+  enemyBlock: Record<string, number>;
+  heroBlock: number;
+  hand: CardInstance[];
+  energy: number;
+  maxEnergy: number;
+  drawPile: CardInstance[];
+  discardPile: CardInstance[];
+  exhaustPile: CardInstance[];
+  /** Remount key for the hand fan, so a new turn re-deals it. */
+  handKey: number;
+  /** The painted scene behind the fight, or null for the bare stage. */
+  backdrop: ReactNode | null;
+  portrait: BattlePortrait | null;
+  /** Line across the top of the stage (the rival's name, a tamer's whistle). */
+  banner: string | null;
+  /** Duel only: "Round 3 · your move". */
+  roundLabel: string | null;
+  /** A beaten beast is begging. Wild encounters only. */
+  mercy: boolean;
+  /** False locks every control — a duel's off-turn, in practice. */
+  yourTurn: boolean;
+  /** Taming is impossible in a duel, so the odds badge has nothing to say. */
+  showTameOdds: boolean;
+  log: string[];
+  allyNames: string[];
+  /** Already addressed in THIS player's uid space (see localizeDuelFx). */
+  fx: FxEvent[];
+  /** Actor-banner name for an fx uid. */
+  nameForUid(uid: string): string;
+  commands: BattleCommands;
+}
 
 interface Popup {
   id: number;
@@ -93,7 +180,90 @@ function fxSound(fx: FxEvent): SfxName | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Adapter (a): the single-player game. GameState in, GameAction out.
+// ---------------------------------------------------------------------------
+
+/**
+ * Projects `GameState` onto the battlefield. Every field is a direct reference
+ * or a verbatim copy of the expression the v19 BattleScreen inlined, and every
+ * command is the exact dispatch it used to make — a duel must not be able to
+ * move a single number in a wild fight.
+ *
+ * Memoised on the reducer state itself: `cloneCore` builds a fresh state (and
+ * fresh combatants) for every battle action, so state identity is precisely as
+ * fresh as reading `state.battle.energy` inline was, while staying stable
+ * across re-renders that changed nothing.
+ */
+function useSoloBattleView(state: GameState, dispatch: (a: GameAction) => void): BattleView | null {
+  return useMemo((): BattleView | null => {
+    const player = state.player;
+    const battle = state.battle;
+    if (!player || !battle) return null;
+
+    const living = battle.enemies.filter((e) => e.isAlive());
+    const boss = battle.isBossFight ? battle.enemies[0] : null;
+    // The face of the opposition for the top portrait: the boss, else the pack leader.
+    const leadEnemy = boss ?? living[0] ?? battle.enemies[0];
+    const gateId: GateId | null = battle.gateId;
+
+    return {
+      variant: 'solo',
+      hero: player,
+      party: state.party,
+      enemies: battle.enemies,
+      intents: battle.intents,
+      enemyBlock: battle.enemyBlock,
+      heroBlock: battle.heroBlock,
+      hand: battle.hand,
+      energy: battle.energy,
+      maxEnergy: battle.maxEnergy,
+      drawPile: battle.drawPile,
+      discardPile: battle.discardPile,
+      exhaustPile: battle.exhaustPile,
+      handKey: battle.turn ?? battle.drawPile.length + battle.discardPile.length,
+      backdrop: gateId
+        ? PAINTED_BACKDROPS[gateId]
+          ? <img className="painted-scene" src={PAINTED_BACKDROPS[gateId]} alt="" />
+          : <BattleBackdrop gateId={gateId} />
+        : null,
+      portrait: leadEnemy ? { kind: 'beast', unit: leadEnemy, boss: !!boss } : null,
+      banner: battle.tamerName ? `⚔️ ${battle.tamerName} — a rival's beasts answer the whistle` : null,
+      roundLabel: null,
+      mercy: !!battle.mercy,
+      yourTurn: true,
+      showTameOdds: true,
+      log: state.log,
+      allyNames: [player.name, ...state.party.map((m) => m.nickname)],
+      fx: state.lastFx,
+      nameForUid: (uid) =>
+        uid === 'hero'
+          ? state.player?.name ?? 'You'
+          : state.party.find((m) => m.uid === uid)?.nickname ??
+            state.battle?.enemies.find((e) => e.uid === uid)?.displayName() ??
+            '',
+      commands: {
+        playCard: (handIndex, targetUid) => dispatch({ type: 'PLAY_CARD', handIndex, targetUid }),
+        endTurn: () => dispatch({ type: 'END_TURN' }),
+        useItem: (name, targetUid) => dispatch({ type: 'BATTLE_ITEM', name, targetUid }),
+        retreat: { label: 'Flee', title: 'Attempt to flee', run: () => dispatch({ type: 'FLEE_BATTLE' }) },
+        mercySpare: () => dispatch({ type: 'MERCY_SPARE' }),
+        mercyFinish: () => dispatch({ type: 'MERCY_FINISH' }),
+      },
+    };
+  }, [state, dispatch]);
+}
+
+/** Single-player entry point. App.tsx renders this; it renders the one stage. */
 export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  return <BattleStage view={useSoloBattleView(state, dispatch)} />;
+}
+
+// ---------------------------------------------------------------------------
+// The battlefield itself.
+// ---------------------------------------------------------------------------
+
+export function BattleStage({ view }: { view: BattleView | null }) {
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [targetIdx, setTargetIdx] = useState(0);
   const [showItems, setShowItems] = useState(false);
@@ -102,7 +272,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [flashing, setFlashing] = useState<Record<string, string>>({});
   const [impactFx, setImpactFx] = useState<Record<string, ImpactKind>>({});
   const [shaking, setShaking] = useState(false);
-  const [locked, setLocked] = useState(false);
+  const [fxLock, setFxLock] = useState(false);
   // v15 readability: whose action is resolving right now (banner + figure glow).
   const [actorBanner, setActorBanner] = useState<{ name: string; label: string; side: 'ally' | 'enemy' } | null>(null);
   const [actingUid, setActingUid] = useState<string | null>(null);
@@ -112,7 +282,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredEnemyUid, setHoveredEnemyUid] = useState<string | null>(null);
-  // Retro-RPG encounter transition (flash + iris wipe) — BattleScreen mounts fresh
+  // Retro-RPG encounter transition (flash + iris wipe) — BattleStage mounts fresh
   // each time a fight starts, so a mount-only effect fires exactly once per encounter.
   const [entering, setEntering] = useState(true);
   useEffect(() => {
@@ -124,16 +294,18 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const stageRef = useRef<HTMLDivElement>(null);
 
-  const player = state.player;
-  const battle = state.battle;
+  // Locked = the fight is resolving, OR (in a duel) it is not your turn. Both
+  // mean "hands off", and every control already keys off this one flag.
+  const locked = fxLock || (view ? !view.yourTurn : false);
+  const fx = view?.fx;
 
-  const livingEnemies = useMemo(() => (battle ? battle.enemies.filter((e) => e.isAlive()) : []), [battle]);
+  const livingEnemies = useMemo(() => (view ? view.enemies.filter((e) => e.isAlive()) : []), [view]);
 
   const selectedCard: CardDef | null = useMemo(() => {
-    if (!battle || selectedIdx === null) return null;
-    const inst = battle.hand[selectedIdx];
+    if (!view || selectedIdx === null) return null;
+    const inst = view.hand[selectedIdx];
     return inst ? getCard(inst.cardId) ?? null : null;
-  }, [battle, selectedIdx]);
+  }, [view, selectedIdx]);
 
   const needsTarget = selectedCard?.target === 'enemy';
   // v11: self-heal cards can be aimed at a wounded party monster instead.
@@ -145,9 +317,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
   // --- FX consumption: STAGGERED playback so the fight reads sequentially ---
   useEffect(() => {
-    if (!state.lastFx.length || processedFx.current === state.lastFx) return;
-    processedFx.current = state.lastFx;
-    const fxList = state.lastFx;
+    if (!fx || !fx.length || processedFx.current === fx) return;
+    processedFx.current = fx;
+    const fxList = fx;
     // v18 pacing: v15's ~½s beats still read as a blur in live play. Beats now
     // clamp to 500–800ms — a normal round runs at the full 800ms a beat, and
     // only very long rounds compress toward the 500ms floor (~12s budget).
@@ -155,22 +327,16 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     // The +900 tail lets the last actor banner HOLD on screen instead of
     // vanishing the instant its final number lands.
     const total = fxList.length * step + 900;
-    setLocked(true);
+    setFxLock(true);
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    fxList.forEach((fx, i) => {
+    fxList.forEach((ev, i) => {
       timers.push(
         setTimeout(() => {
-          if (fx.fx === 'actor') {
+          if (ev.fx === 'actor') {
             // Banner whose turn this is; the figure lights up with it.
-            const name =
-              fx.uid === 'hero'
-                ? state.player?.name ?? 'You'
-                : state.party.find((m) => m.uid === fx.uid)?.nickname ??
-                  state.battle?.enemies.find((e) => e.uid === fx.uid)?.displayName() ??
-                  '';
-            setActorBanner({ name, label: fx.label, side: fx.side });
-            setActingUid(fx.uid);
+            setActorBanner({ name: nameOf(ev.uid), label: ev.label, side: ev.side });
+            setActingUid(ev.uid);
             // v18 pre-attack beat: ring the unit the NEXT effect will land on,
             // so "what's about to happen" reads before the number does. Pure
             // presentation — derived from the fx order the engine already emits.
@@ -178,43 +344,43 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             setPreTargetUid(upcoming && 'targetUid' in upcoming ? upcoming.targetUid : null);
             return;
           }
-          const sound = fxSound(fx);
+          const sound = fxSound(ev);
           if (sound) sfx(sound);
-          if (fx.fx === 'shake') {
+          if (ev.fx === 'shake') {
             setShaking(true);
             setTimeout(() => setShaking(false), 400);
             return;
           }
           // The telegraph ring comes off the moment its promised hit lands.
-          if ('targetUid' in fx) setPreTargetUid((cur) => (cur === fx.targetUid ? null : cur));
+          if ('targetUid' in ev) setPreTargetUid((cur) => (cur === ev.targetUid ? null : cur));
           let popup: Popup | null = null;
-          if (fx.fx === 'status') popup = { id: ++popupSeq, targetUid: fx.targetUid, text: fx.label, kind: 'status' };
-          else if (fx.fx === 'tameTry')
-            popup = { id: ++popupSeq, targetUid: fx.targetUid, text: fx.success ? 'TAMED' : 'refused', kind: fx.success ? 'heal' : 'status' };
-          else if (fx.fx === 'block') popup = { id: ++popupSeq, targetUid: fx.targetUid, text: `+${fx.amount}`, kind: 'block' };
-          else if (fx.fx === 'heal') popup = { id: ++popupSeq, targetUid: fx.targetUid, text: `+${fx.amount}`, kind: 'heal' };
-          else if (fx.fx !== 'ko')
-            popup = { id: ++popupSeq, targetUid: fx.targetUid, text: `${fx.amount ?? ''}${fx.crit ? '!' : ''}`, kind: fx.crit ? 'crit' : 'damage' };
+          if (ev.fx === 'status') popup = { id: ++popupSeq, targetUid: ev.targetUid, text: ev.label, kind: 'status' };
+          else if (ev.fx === 'tameTry')
+            popup = { id: ++popupSeq, targetUid: ev.targetUid, text: ev.success ? 'TAMED' : 'refused', kind: ev.success ? 'heal' : 'status' };
+          else if (ev.fx === 'block') popup = { id: ++popupSeq, targetUid: ev.targetUid, text: `+${ev.amount}`, kind: 'block' };
+          else if (ev.fx === 'heal') popup = { id: ++popupSeq, targetUid: ev.targetUid, text: `+${ev.amount}`, kind: 'heal' };
+          else if (ev.fx !== 'ko')
+            popup = { id: ++popupSeq, targetUid: ev.targetUid, text: `${ev.amount ?? ''}${ev.crit ? '!' : ''}`, kind: ev.crit ? 'crit' : 'damage' };
           if (popup) {
             const p = popup;
             setPopups((prev) => [...prev, p]);
             setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== p.id)), 1250);
           }
-          const flashClass = fx.fx === 'ko' ? 'flash-ko' : fx.fx === 'status' ? '' : `flash-${fx.fx}`;
+          const flashClass = ev.fx === 'ko' ? 'flash-ko' : ev.fx === 'status' ? '' : `flash-${ev.fx}`;
           if (flashClass) {
-            setFlashing((prev) => ({ ...prev, [fx.targetUid]: flashClass }));
+            setFlashing((prev) => ({ ...prev, [ev.targetUid]: flashClass }));
             setTimeout(() => setFlashing((prev) => {
               const next = { ...prev };
-              delete next[fx.targetUid];
+              delete next[ev.targetUid];
               return next;
             }), 360);
           }
-          if (IMPACT_KINDS.has(fx.fx)) {
-            const kind = fx.fx as ImpactKind;
-            setImpactFx((prev) => ({ ...prev, [fx.targetUid]: kind }));
+          if (IMPACT_KINDS.has(ev.fx)) {
+            const kind = ev.fx as ImpactKind;
+            setImpactFx((prev) => ({ ...prev, [ev.targetUid]: kind }));
             setTimeout(() => setImpactFx((prev) => {
               const next = { ...prev };
-              if (next[fx.targetUid] === kind) delete next[fx.targetUid];
+              if (next[ev.targetUid] === kind) delete next[ev.targetUid];
               return next;
             }), 450);
           }
@@ -224,15 +390,15 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
     timers.push(
       setTimeout(() => {
-        setLocked(false);
+        setFxLock(false);
         setActorBanner(null);
         setActingUid(null);
         setPreTargetUid(null);
       }, total)
     );
     return () => timers.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- names resolve from the same dispatch that produced the fx
-  }, [state.lastFx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- names resolve from the same update that produced the fx
+  }, [fx]);
 
   useEffect(() => {
     if (targetIdx >= livingEnemies.length) setTargetIdx(Math.max(0, livingEnemies.length - 1));
@@ -261,40 +427,40 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
   const playSelected = useCallback(
     (unitUid?: string) => {
-      if (!battle || locked || selectedIdx === null || !selectedCard) return;
+      if (!view || locked || selectedIdx === null || !selectedCard) return;
       const enemyTarget = selectedCard.target === 'enemy' ? (unitUid ?? livingEnemies[targetIdx]?.uid) : undefined;
       // v11: an ally uid aims a self-heal at that party monster; no uid = hero, as ever.
       const allyTarget = selectedCard.target === 'self' && unitUid && unitUid !== 'hero' ? unitUid : undefined;
       sfx('cardPlay');
       flyGhost(selectedIdx, selectedCard, enemyTarget);
-      dispatch({ type: 'PLAY_CARD', handIndex: selectedIdx, targetUid: enemyTarget ?? allyTarget });
+      view.commands.playCard(selectedIdx, enemyTarget ?? allyTarget);
       setSelectedIdx(null);
       setShowItems(false);
     },
-    [battle, locked, selectedIdx, selectedCard, livingEnemies, targetIdx, dispatch, flyGhost]
+    [view, locked, selectedIdx, selectedCard, livingEnemies, targetIdx, flyGhost]
   );
 
   const selectCard = useCallback(
     (idx: number) => {
-      if (!battle || locked) return;
+      if (!view || locked) return;
       if (selectedIdx === idx) {
-        const card = getCard(battle.hand[idx]?.cardId ?? '');
+        const card = getCard(view.hand[idx]?.cardId ?? '');
         if (card && card.target !== 'enemy') playSelected();
         return;
       }
       sfx('uiClick');
       setSelectedIdx(idx);
     },
-    [battle, locked, selectedIdx, playSelected]
+    [view, locked, selectedIdx, playSelected]
   );
 
   const discardHandGhosts = useCallback(() => {
     const stage = stageRef.current;
-    if (!stage || !battle) return;
+    if (!stage || !view) return;
     const stageRect = stage.getBoundingClientRect();
     const pileEl = stage.querySelector('.pile-discard');
     const pileRect = pileEl ? pileEl.getBoundingClientRect() : stageRect;
-    battle.hand.forEach((inst, i) => {
+    view.hand.forEach((inst, i) => {
       const el = slotRefs.current.get(i);
       const card = getCard(inst.cardId);
       if (!el || !card) return;
@@ -308,25 +474,25 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       setGhosts((prev) => [...prev, ghost]);
       setTimeout(() => setGhosts((prev) => prev.filter((g) => g.id !== ghost.id)), 400);
     });
-  }, [battle]);
+  }, [view]);
 
   const endTurn = useCallback(() => {
-    if (locked) return;
+    if (!view || locked) return;
     sfx('endTurn');
     setSelectedIdx(null);
     setShowItems(false);
     setPileView(null);
     discardHandGhosts();
-    dispatch({ type: 'END_TURN' });
-  }, [dispatch, locked, discardHandGhosts]);
+    view.commands.endTurn();
+  }, [view, locked, discardHandGhosts]);
 
   // --- Keyboard ---
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!battle) return;
+      if (!view) return;
       if (e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
-        if (idx < battle.hand.length) selectCard(idx);
+        if (idx < view.hand.length) selectCard(idx);
       } else if (e.key === 'Enter' && selectedIdx !== null) {
         playSelected();
       } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && needsTarget) {
@@ -335,7 +501,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       } else if (e.key === 'e' || e.key === 'E') {
         endTurn();
       } else if (e.key === 'i' || e.key === 'I') {
-        setShowItems((s) => !s);
+        if (view.commands.useItem) setShowItems((s) => !s);
       } else if (e.key === 'Escape') {
         setSelectedIdx(null);
         setShowItems(false);
@@ -344,7 +510,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [battle, selectedIdx, needsTarget, livingEnemies.length, selectCard, playSelected, endTurn]);
+  }, [view, selectedIdx, needsTarget, livingEnemies.length, selectCard, playSelected, endTurn]);
 
   // --- Basic gamepad support ---
   const padPrev = useRef<boolean[]>([]);
@@ -353,12 +519,12 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     const poll = () => {
       raf = requestAnimationFrame(poll);
       const pad = navigator.getGamepads?.()[0];
-      if (!pad || !battle) return;
+      if (!pad || !view) return;
       const pressed = pad.buttons.map((b) => b.pressed);
       const was = padPrev.current;
       const edge = (i: number) => pressed[i] && !was[i];
       if (edge(14)) setSelectedIdx((s) => Math.max(0, (s ?? 0) - 1));
-      if (edge(15)) setSelectedIdx((s) => Math.min(battle.hand.length - 1, (s ?? -1) + 1));
+      if (edge(15)) setSelectedIdx((s) => Math.min(view.hand.length - 1, (s ?? -1) + 1));
       if (edge(4) || edge(12)) setTargetIdx((t) => (t + 1) % Math.max(1, livingEnemies.length));
       if (edge(0) && selectedIdx !== null) playSelected();
       if (edge(1)) setSelectedIdx(null);
@@ -367,22 +533,26 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
     };
     raf = requestAnimationFrame(poll);
     return () => cancelAnimationFrame(raf);
-  }, [battle, selectedIdx, livingEnemies.length, playSelected, endTurn]);
+  }, [view, selectedIdx, livingEnemies.length, playSelected, endTurn]);
 
-  if (!player || !battle) return null;
+  function nameOf(uid: string): string {
+    return view ? view.nameForUid(uid) : '';
+  }
 
-  const boss = battle.isBossFight ? battle.enemies[0] : null;
-  // The face of the opposition for the top duel portrait: the boss, else the pack leader.
-  const leadEnemy = boss ?? livingEnemies[0] ?? battle.enemies[0];
+  if (!view) return null;
+
+  const hero = view.hero;
+  const portrait = view.portrait;
+  const boss = portrait?.kind === 'beast' && portrait.boss ? portrait.unit : null;
   const popupsFor = (uid: string) => popups.filter((p) => p.targetUid === uid);
 
-  // MTG-style duel portrait HP ring.
+  // MTG-style portrait HP ring.
   const RING_C = 2 * Math.PI * 30;
   const hpRing = (frac: number) => (
-    <svg className="duel-ring-svg" viewBox="0 0 68 68" aria-hidden="true">
-      <circle className="duel-ring-track" cx="34" cy="34" r="30" />
+    <svg className="bf-ring-svg" viewBox="0 0 68 68" aria-hidden="true">
+      <circle className="bf-ring-track" cx="34" cy="34" r="30" />
       <circle
-        className="duel-ring-fill"
+        className="bf-ring-fill"
         cx="34"
         cy="34"
         r="30"
@@ -405,7 +575,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   const renderImpact = (uid: string) => impactFx[uid] && <ImpactEffect kind={impactFx[uid]} />;
 
   const pileContents = (pile: PileId): CardInstance[] =>
-    pile === 'draw' ? battle.drawPile : pile === 'discard' ? battle.discardPile : battle.exhaustPile;
+    pile === 'draw' ? view.drawPile : pile === 'discard' ? view.discardPile : view.exhaustPile;
 
   const pileWidget = (pile: PileId) => {
     const cards = pileContents(pile);
@@ -431,7 +601,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
   // --- Targeting line: from the selected card to the cursor, snapping onto a hovered target.
   // Path shape, color, and arrowhead are keyed off the hero's class — a mage's line arcs high
   // and sparkles, a thief's cuts straight and thin, etc. See src/art/classCursors.ts.
-  const lineStyle = CLASS_LINE_STYLE[player.className];
+  const lineStyle = CLASS_LINE_STYLE[hero.className];
   let targetLine: { path: string; snapped: boolean } | null = null;
   if (needsTarget && !locked && selectedIdx !== null && stageRef.current) {
     const stageRect = stageRef.current.getBoundingClientRect();
@@ -449,9 +619,9 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
   return (
     <div
-      className={`panel battle-stage ${shaking ? 'stage-shake' : ''} ${entering ? 'stage-entering' : ''}`}
+      className={`panel battle-stage ${view.variant === 'duel' ? 'bf-duel' : ''} ${shaking ? 'stage-shake' : ''} ${entering ? 'stage-entering' : ''}`}
       ref={stageRef}
-      style={{ cursor: raceCursor(player.race) }}
+      style={{ cursor: raceCursor(hero.race) }}
       onMouseMove={(e) => {
         if (!needsTarget) return;
         const r = e.currentTarget.getBoundingClientRect();
@@ -503,28 +673,25 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           />
         </svg>
       )}
-      {battle.gateId && (
-        <div className="stage-backdrop">
-          {PAINTED_BACKDROPS[battle.gateId] ? (
-            <img className="painted-scene" src={PAINTED_BACKDROPS[battle.gateId]} alt="" />
-          ) : (
-            <BattleBackdrop gateId={battle.gateId} />
-          )}
+      {view.backdrop && <div className="stage-backdrop">{view.backdrop}</div>}
+      {view.banner && (
+        <div className="tamer-banner">
+          {view.banner}
+          {view.roundLabel && <span className="bf-round">{view.roundLabel}</span>}
         </div>
       )}
-      {battle.tamerName && <div className="tamer-banner">⚔️ {battle.tamerName} — a rival's beasts answer the whistle</div>}
 
-      {battle.mercy && !locked && (
+      {view.mercy && view.commands.mercySpare && view.commands.mercyFinish && !locked && (
         <div className="mercy-overlay">
           <div className="mercy-box">
             <p className="mercy-text">
               It stops fighting. It lowers its head, bares its neck, and waits — for the blow, or for your hand.
             </p>
             <div className="btn-row" style={{ justifyContent: 'center' }}>
-              <button className="btn primary" onClick={() => dispatch({ type: 'MERCY_SPARE' })}>
+              <button className="btn primary" onClick={view.commands.mercySpare}>
                 🤲 Spare it
               </button>
-              <button className="btn danger" onClick={() => dispatch({ type: 'MERCY_FINISH' })}>
+              <button className="btn danger" onClick={view.commands.mercyFinish}>
                 🗡️ Finish it
               </button>
             </div>
@@ -535,13 +702,13 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
       {/* ===== MTG-Arena battlefield: enemies in the TOP row, party in the BOTTOM row.
            Each combatant is a battlefield unit — figure, corner badges, nameplate,
            HP groove — replacing the old ff-box strip entirely. ===== */}
-      <div className="battlefield">
+      <div className={`battlefield ${view.variant === 'duel' ? 'bf-duel' : ''}`}>
         {/* Vigor: a rail of candles down the LEFT edge. One candle per max vigor;
             spending a card snuffs one (flame gutters, smoke curls, wax dims). */}
-        <div className="vigor-rail" title={`Vigor — ${battle.energy} of ${battle.maxEnergy} left to spend on cards`}>
+        <div className="vigor-rail" title={`Vigor — ${view.energy} of ${view.maxEnergy} left to spend on cards`}>
           <div className="vigor-candles">
-            {Array.from({ length: battle.maxEnergy }, (_, i) => (
-              <span key={i} className={`candle ${i < battle.energy ? 'lit' : 'out'}`}>
+            {Array.from({ length: view.maxEnergy }, (_, i) => (
+              <span key={i} className={`candle ${i < view.energy ? 'lit' : 'out'}`}>
                 <span className="candle-smoke" aria-hidden="true" />
                 <span className="candle-flame" aria-hidden="true" />
                 <span className="candle-wick" aria-hidden="true" />
@@ -550,8 +717,8 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             ))}
           </div>
           <span className="vigor-count">
-            <b>{battle.energy}</b>
-            <span>/{battle.maxEnergy}</span>
+            <b>{view.energy}</b>
+            <span>/{view.maxEnergy}</span>
           </span>
           <span className="vigor-word">vigor</span>
         </div>
@@ -561,17 +728,32 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
             the strip it vacated is where the hand now lives. */}
         <aside className="battle-log-rail" aria-label="Combat log">
           <div className="battle-log-title">Chronicle</div>
-          <LogPanel lines={state.log} allyNames={[player.name, ...state.party.map((m) => m.nickname)]} />
+          <LogPanel lines={view.log} allyNames={view.allyNames} />
         </aside>
 
-        {/* Enemy duel portrait, top-center. Boss fights fold the boss bar in here. */}
-        {leadEnemy && (
-          <div className={`bf-portrait duel-top ${boss ? 'duel-boss' : ''}`}>
-            <div className="duel-ring">
-              {hpRing(leadEnemy.hp / leadEnemy.maxHp)}
-              <span className="duel-art">
-                <MonsterImage speciesId={leadEnemy.speciesId} size={78} rarity={leadEnemy.rarity} />
+        {/* Enemy portrait chip, top-center. Boss fights fold the boss bar in
+            here; a duel folds in the rival's face and their face-down hand. */}
+        {portrait && (
+          <div
+            className={`bf-portrait bf-top ${boss ? 'bf-boss' : ''} ${portrait.kind === 'tamer' ? flashing[portrait.uid] ?? '' : ''}`}
+          >
+            <div className="bf-ring">
+              {hpRing(
+                portrait.kind === 'beast'
+                  ? portrait.unit.hp / portrait.unit.maxHp
+                  : portrait.hero.hp / portrait.hero.maxHp
+              )}
+              <span className="bf-art">
+                {portrait.kind === 'beast' ? (
+                  <MonsterImage speciesId={portrait.unit.speciesId} size={78} rarity={portrait.unit.rarity} />
+                ) : (
+                  <HeroImage className={portrait.hero.className} size={78} />
+                )}
               </span>
+              {/* The rival tamer has no row of their own — their numbers and
+                  their impacts land on the chip that carries their face. */}
+              {portrait.kind === 'tamer' && renderPopups(portrait.uid)}
+              {portrait.kind === 'tamer' && renderImpact(portrait.uid)}
             </div>
             {boss ? (
               <div className="boss-bar">
@@ -582,17 +764,39 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
                 </div>
               </div>
-            ) : (
-              <span className="duel-hp">
-                {leadEnemy.hp}/{leadEnemy.maxHp}
+            ) : portrait.kind === 'beast' ? (
+              <span className="bf-hp">
+                {portrait.unit.hp}/{portrait.unit.maxHp}
               </span>
+            ) : (
+              <>
+                <span className="bf-hp" title={`${portrait.name} — the rival tamer`}>
+                  {portrait.hero.hp}/{portrait.hero.maxHp}
+                </span>
+                <span className="bf-foe-name" title={portrait.name}>
+                  {portrait.name}
+                </span>
+                {/* Their hand, face down. The view model carries a COUNT and
+                    nothing else — `viewFor` never hands the UI their cards. */}
+                <span
+                  className="bf-foe-hand"
+                  title={`${portrait.name} holds ${portrait.handCount} card${portrait.handCount === 1 ? '' : 's'}`}
+                >
+                  {Array.from({ length: portrait.handCount }, (_, i) => (
+                    <span key={i} className="bf-foe-card" style={{ ['--i' as string]: i }}>
+                      <CardBack width={22} />
+                    </span>
+                  ))}
+                  {portrait.handCount === 0 && <span className="bf-foe-empty">empty-handed</span>}
+                </span>
+              </>
             )}
           </div>
         )}
 
         <div className="bf-row enemy-row">
-          {battle.enemies.map((enemy) => {
-            const intent = battle.intents[enemy.uid];
+          {view.enemies.map((enemy) => {
+            const intent = view.intents[enemy.uid];
             const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
             // 'STAGGERED' is a word, not a number: it rides the telegraph's
             // second line (like a move name) so it can't stretch the plate's
@@ -602,7 +806,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               : intentView(intent);
             const targetable = needsTarget && enemy.isAlive() && !locked;
             const isTarget = targetable && livingEnemies[targetIdx]?.uid === enemy.uid;
-            const block = battle.enemyBlock[enemy.uid] ?? 0;
+            const block = view.enemyBlock[enemy.uid] ?? 0;
             const weakTo = familyWeakness(enemy.family);
             return (
               <div
@@ -638,7 +842,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                   <MonsterImage speciesId={enemy.speciesId} size={enemy.isBoss ? 250 : 150} rarity={enemy.rarity} boss={enemy.isBoss} />
                   {block > 0 && <span className="bf-badge badge-block">🛡 {block}</span>}
                   <span className="bf-badge badge-lv">Lv{enemy.level}</span>
-                  {!enemy.isBoss && enemy.isAlive() && (
+                  {view.showTameOdds && !enemy.isBoss && enemy.isAlive() && (
                     <span className="bf-badge badge-tame">tame {enemy.tameChancePercent()}%</span>
                   )}
                   {enemy.isAlive() && weakTo && (
@@ -701,21 +905,21 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
 
         <div className="bf-row party-row">
           <div
-            className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${preTargetUid === 'hero' ? 'pre-target' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${player.hp <= player.maxHp * 0.25 ? 'hp-danger' : ''}`}
+            className={`bf-unit combatant-figure hero-fig ${flashing['hero'] ?? ''} ${actingUid === 'hero' ? 'acting' : ''} ${preTargetUid === 'hero' ? 'pre-target' : ''} ${allyAimable && !locked ? 'ally-aimable' : ''} ${hero.hp <= hero.maxHp * 0.25 ? 'hp-danger' : ''}`}
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
             <div className="bf-figure">
-              <HeroImage className={player.className} size={132} />
-              {battle.heroBlock > 0 && <span className="bf-badge badge-block">🛡 {battle.heroBlock}</span>}
-              {(player.statusEffects.length > 0 || player.activeMods.length > 0) && (
+              <HeroImage className={hero.className} size={132} />
+              {view.heroBlock > 0 && <span className="bf-badge badge-block">🛡 {view.heroBlock}</span>}
+              {(hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
                 <span className="bf-badge-stack">
-                  {player.statusEffects.map((st) => (
+                  {hero.statusEffects.map((st) => (
                     <span key={st.name} className="status-tag" title={st.name}>
                       {st.name}
                     </span>
                   ))}
-                  {player.activeMods.map((m, i) => (
+                  {hero.activeMods.map((m, i) => (
                     <span
                       key={i}
                       className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
@@ -731,21 +935,21 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               {renderImpact('hero')}
             </div>
             <div className="bf-plate">
-              <div className="bf-name" title={player.name}>
-                {player.name}
+              <div className="bf-name" title={hero.name}>
+                {hero.name}
               </div>
               <div className="souls-track hp">
-                <div className="souls-fill" style={{ width: `${(player.hp / player.maxHp) * 100}%` }} />
+                <div className="souls-fill" style={{ width: `${(hero.hp / hero.maxHp) * 100}%` }} />
               </div>
               <div className="bf-hp-row">
                 <span>HP</span>
                 <span>
-                  {player.hp}/{player.maxHp}
+                  {hero.hp}/{hero.maxHp}
                 </span>
               </div>
             </div>
           </div>
-          {state.party.map((m: MonsterInstance) => (
+          {view.party.map((m: MonsterInstance) => (
             <div
               key={m.uid}
               className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${preTargetUid === m.uid ? 'pre-target' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
@@ -782,32 +986,32 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           ))}
         </div>
 
-        {/* Player duel portrait, bottom-center, mirroring the enemy's. */}
-        <div className="bf-portrait duel-bottom">
-          <div className="duel-ring">
-            {hpRing(player.hp / player.maxHp)}
-            <span className="duel-art">
-              <HeroImage className={player.className} size={78} />
+        {/* Player portrait chip, bottom-center, mirroring the enemy's. */}
+        <div className="bf-portrait bf-bottom">
+          <div className="bf-ring">
+            {hpRing(hero.hp / hero.maxHp)}
+            <span className="bf-art">
+              <HeroImage className={hero.className} size={78} />
             </span>
           </div>
-          <span className="duel-hp">
-            {player.hp}/{player.maxHp}
+          <span className="bf-hp">
+            {hero.hp}/{hero.maxHp}
           </span>
           {/* v18: the hero's block + statuses + stat mods (STR↑ …) pinned to
               the portrait itself, where the eye already lives. */}
-          {(battle.heroBlock > 0 || player.statusEffects.length > 0 || player.activeMods.length > 0) && (
-            <span className="duel-status-row">
-              {battle.heroBlock > 0 && (
-                <span className="status-tag block-tag" title={`Block — absorbs ${battle.heroBlock} damage`}>
-                  🛡 {battle.heroBlock}
+          {(view.heroBlock > 0 || hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
+            <span className="bf-status-row">
+              {view.heroBlock > 0 && (
+                <span className="status-tag block-tag" title={`Block — absorbs ${view.heroBlock} damage`}>
+                  🛡 {view.heroBlock}
                 </span>
               )}
-              {player.statusEffects.map((st) => (
+              {hero.statusEffects.map((st) => (
                 <span key={st.name} className="status-tag" title={st.name}>
                   {st.name}
                 </span>
               ))}
-              {player.activeMods.map((m, i) => (
+              {hero.activeMods.map((m, i) => (
                 <span
                   key={i}
                   className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
@@ -851,12 +1055,15 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
         </div>
       )}
 
-      {showItems && (
+      {showItems && view.commands.useItem && (
         <div className="battle-items">
-          {[...new Set(player.inventory)].map((name) => {
+          {[...new Set(hero.inventory)].map((name) => {
             const def = CONSUMABLES[name];
             if (!def) return null;
-            const count = player.inventory.filter((n) => n === name).length;
+            const count = hero.inventory.filter((n) => n === name).length;
+            // Not named `useItem*` on purpose — the hooks lint reads any local
+            // starting with "use" as a React hook call.
+            const reachForIt = view.commands.useItem!;
             if (def.effect.type === 'bait') {
               return livingEnemies
                 .filter((e) => !e.isBoss)
@@ -867,7 +1074,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                     disabled={locked}
                     onClick={() => {
                       sfx('uiClick');
-                      dispatch({ type: 'BATTLE_ITEM', name, targetUid: enemy.uid });
+                      reachForIt(name, enemy.uid);
                     }}
                   >
                     <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count} → {enemy.nickname}
@@ -881,26 +1088,26 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
                 disabled={locked}
                 onClick={() => {
                   sfx('uiClick');
-                  dispatch({ type: 'BATTLE_ITEM', name });
+                  reachForIt(name);
                 }}
               >
                 <Icon name={`item_${name.toLowerCase()}`} emoji={def.emoji} size={16} /> {name} ×{count}
               </button>
             );
           })}
-          {player.inventory.length === 0 && <span className="subtitle">Nothing in the pouch.</span>}
+          {hero.inventory.length === 0 && <span className="subtitle">Nothing in the pouch.</span>}
         </div>
       )}
 
       <div className="hand-zone">
         <div className="hand-left">{pileWidget('draw')}</div>
 
-        <div className="hand-fan" key={battle.turn ?? battle.drawPile.length + battle.discardPile.length} style={{ ['--n' as string]: battle.hand.length }}>
-          {battle.hand.map((inst, i) => {
+        <div className="hand-fan" key={view.handKey} style={{ ['--n' as string]: view.hand.length }}>
+          {view.hand.map((inst, i) => {
             const card = getCard(inst.cardId);
             if (!card) return null;
-            const source = inst.sourceMonsterUid ? state.party.find((m) => m.uid === inst.sourceMonsterUid) : undefined;
-            const playable = card.cost <= battle.energy && !locked;
+            const source = inst.sourceMonsterUid ? view.party.find((m) => m.uid === inst.sourceMonsterUid) : undefined;
+            const playable = card.cost <= view.energy && !locked;
             return (
               <div
                 key={inst.uid}
@@ -915,7 +1122,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               >
                 <CardView
                   card={card}
-                  hero={player}
+                  hero={hero}
                   sourceMonster={source}
                   width={200}
                   playable={playable}
@@ -927,7 +1134,7 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
               </div>
             );
           })}
-          {battle.hand.length === 0 && (
+          {view.hand.length === 0 && (
             <div className="subtitle center-text" style={{ alignSelf: 'center' }}>
               No cards in hand.
             </div>
@@ -938,20 +1145,24 @@ export function BattleScreen({ state, dispatch }: { state: GameState; dispatch: 
           <div className="hand-right-col">
             <div className="hand-right-row">
               {/* v18: real labeled buttons instead of bare emoji glyphs. */}
-              <button className="btn small cmd-btn" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
-                Items{player.inventory.length > 0 ? ` · ${player.inventory.length}` : ''}
-              </button>
-              <button
-                className="btn small danger cmd-btn"
-                disabled={locked}
-                onClick={() => {
-                  sfx('uiClick');
-                  dispatch({ type: 'FLEE_BATTLE' });
-                }}
-                title="Attempt to flee"
-              >
-                Flee
-              </button>
+              {view.commands.useItem && (
+                <button className="btn small cmd-btn" onClick={() => setShowItems((s) => !s)} disabled={locked} title="Items (I)">
+                  Items{hero.inventory.length > 0 ? ` · ${hero.inventory.length}` : ''}
+                </button>
+              )}
+              {view.commands.retreat && (
+                <button
+                  className="btn small danger cmd-btn"
+                  disabled={locked}
+                  onClick={() => {
+                    sfx('uiClick');
+                    view.commands.retreat!.run();
+                  }}
+                  title={view.commands.retreat.title}
+                >
+                  {view.commands.retreat.label}
+                </button>
+              )}
             </div>
             <div className="hand-right-piles">
               {pileWidget('discard')}

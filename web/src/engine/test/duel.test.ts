@@ -5,13 +5,18 @@ import { SPECIES, speciesById } from '../data/species';
 import { SPECIES_CARDS, TAME_CARD_ID, getCard } from '../data/cards';
 import { PERSONALITIES } from '../data/personalities';
 import { RIVAL_TAMERS, rivalById, rivalsForLevel, DUEL_PARTY_MAX } from '../data/duelParty';
+import type { FxEvent } from '../types';
 import {
   applyDuelAction,
   chooseDuelAction,
   createDuel,
+  duelAimableUids,
+  duelCardAction,
   duelDigest,
+  DUEL_FOE_HERO_UID,
   effectiveCardCost,
   isLegalDuelAction,
+  localizeDuelFx,
   LocalTransport,
   makeMirrorSide,
   makeRivalSide,
@@ -64,6 +69,8 @@ function setup(seed = 12345, a = playerSide(), b = aiSide()): DuelSetup {
 }
 
 const immediate = (fn: () => void) => fn();
+
+const DUEL_SIDES_UNDER_TEST: DuelSideId[] = ['a', 'b'];
 
 /** Play a whole duel with both seats driven by the duel AI. */
 function runAutoDuel(seed: number, maxActions = 4000): LocalTransport {
@@ -458,6 +465,164 @@ describe('duel determinism (server authority)', () => {
     const first = chooseDuelAction(match, match.turn);
     const again = chooseDuelAction(match, match.turn);
     expect(again).toEqual(first);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v20: the duel is drawn by the single-player battlefield (BattleStage). These
+// cover the seam between the two — the pure half of the adapter, which is the
+// half that can leak information or emit an action the authority will reject.
+// ---------------------------------------------------------------------------
+
+describe('the redaction boundary (v20: the battlefield renders from this view)', () => {
+  it('NEVER lets the opponent hand or pile CONTENTS reach the view model', () => {
+    // Play a while first so all four of their piles hold something.
+    const { transport } = playScriptedDuel(9182736);
+    const match = transport.snapshot();
+
+    for (const side of DUEL_SIDES_UNDER_TEST) {
+      const foeSide = match.sides[otherSide(side)];
+      const secrets = [
+        ...foeSide.battle.hand,
+        ...foeSide.battle.drawPile,
+        ...foeSide.battle.discardPile,
+        ...foeSide.battle.exhaustPile,
+      ].map((c) => c.uid);
+      expect(secrets.length, 'the fixture must actually hold cards to hide').toBeGreaterThan(8);
+
+      const view = viewFor(match, side);
+      // The strong form: not one of their card instances appears ANYWHERE in
+      // the foe projection, at any depth, under any key.
+      const serialised = JSON.stringify(view.foe);
+      for (const uid of secrets) {
+        expect(serialised.includes(uid), `foe view leaked card instance ${uid}`).toBe(false);
+      }
+      // And the shape says so too: counts only, no card arrays.
+      const foeKeys = Object.keys(view.foe);
+      for (const forbidden of ['hand', 'drawPile', 'discardPile', 'exhaustPile']) {
+        expect(foeKeys, `foe view must not carry ${forbidden}`).not.toContain(forbidden);
+      }
+      expect(view.foe.handCount).toBe(foeSide.battle.hand.length);
+      expect(view.foe.drawCount).toBe(foeSide.battle.drawPile.length);
+    }
+    transport.dispose();
+  });
+
+  it('gives YOU your own piles, so the battlefield can inspect Deck/Embers/Ashes', () => {
+    const { transport } = playScriptedDuel(5150);
+    const match = transport.snapshot();
+    const view = viewFor(match, 'a');
+    expect(view.you.drawPile.map((c) => c.uid)).toEqual(match.sides.a.battle.drawPile.map((c) => c.uid));
+    expect(view.you.discardPile.map((c) => c.uid)).toEqual(match.sides.a.battle.discardPile.map((c) => c.uid));
+    expect(view.you.exhaustPile.map((c) => c.uid)).toEqual(match.sides.a.battle.exhaustPile.map((c) => c.uid));
+    // Copies, not the live arrays — the UI cannot reach in and reorder a deck.
+    expect(view.you.drawPile).not.toBe(match.sides.a.battle.drawPile);
+    // Both sides' turn counters are public (the hand fan re-deals on them).
+    expect(view.you.turn).toBe(match.sides.a.battle.turn);
+    expect(view.foe.turn).toBe(match.sides.b.battle.turn);
+    transport.dispose();
+  });
+
+  it('reports which side produced the fx, so the UI can re-address it', () => {
+    const match = createDuel(setup(4321));
+    expect(match.lastFx).toEqual([]);
+    expect(viewFor(match, 'a').fxFrom).toBe(null);
+    const acted = applyDuelAction(match, { kind: 'endTurn', side: match.turn });
+    expect(viewFor(acted, 'a').fxFrom).toBe(match.turn);
+    expect(viewFor(acted, 'b').fxFrom).toBe(match.turn);
+  });
+});
+
+describe('duel fx localization (one battlefield, two uid spaces)', () => {
+  const stream: FxEvent[] = [
+    { fx: 'actor', uid: 'hero', label: 'Cleave', side: 'ally' },
+    { fx: 'actor', uid: 'b1', label: 'Instinct', side: 'ally' },
+    { fx: 'slash', targetUid: 'a0', amount: 7 },
+    { fx: 'heal', targetUid: 'hero', amount: 4 },
+    { fx: 'ko', targetUid: 'a1' },
+    { fx: 'shake' },
+  ];
+
+  it('is the identity when the events came from this client', () => {
+    expect(localizeDuelFx(stream, 'a', 'a')).toBe(stream);
+    expect(localizeDuelFx(stream, null, 'a')).toBe(stream);
+    expect(localizeDuelFx([], 'b', 'a')).toEqual([]);
+  });
+
+  it("re-addresses the opponent's stream: their tamer, and ally/enemy flipped", () => {
+    const local = localizeDuelFx(stream, 'b', 'a');
+    expect(local).not.toBe(stream);
+    expect(local[0]).toEqual({ fx: 'actor', uid: DUEL_FOE_HERO_UID, label: 'Cleave', side: 'enemy' });
+    // A beast keeps its slot uid — those are global — but the side flips.
+    expect(local[1]).toEqual({ fx: 'actor', uid: 'b1', label: 'Instinct', side: 'enemy' });
+    // Damage landing on OUR beast is already addressed correctly.
+    expect(local[2]).toBe(stream[2]);
+    expect(local[3]).toEqual({ fx: 'heal', targetUid: DUEL_FOE_HERO_UID, amount: 4 });
+    expect(local[4]).toBe(stream[4]);
+    expect(local[5]).toBe(stream[5]);
+    // And the original is untouched — a view may be rendered by both seats.
+    expect(stream[0]).toEqual({ fx: 'actor', uid: 'hero', label: 'Cleave', side: 'ally' });
+  });
+
+  it('cannot collide with a beast slot uid', () => {
+    const match = createDuel(setup(77));
+    const uids = [...match.sides.a.party, ...match.sides.b.party].map((m) => m.uid);
+    expect(uids).not.toContain(DUEL_FOE_HERO_UID);
+    expect(uids).not.toContain('hero');
+  });
+});
+
+describe('duel adapter actions (what the battlefield submits)', () => {
+  it('every uid the battlefield can aim at is one the authority accepts', () => {
+    const match = createDuel(setup(31122));
+    const side = match.turn;
+    const view = viewFor(match, side);
+    const affordable = view.you.hand.findIndex(
+      (c) => effectiveCardCost(match.sides[side].hero, match.sides[side].battle, getCard(c.cardId)!) <= view.you.energy,
+    );
+    expect(affordable).toBeGreaterThanOrEqual(0);
+
+    const aimable = duelAimableUids(view);
+    expect(aimable).toContain('hero');
+    expect(aimable).toContain(view.foe.party[0].uid);
+    expect(aimable).toContain(view.you.party[0].uid);
+    for (const uid of aimable) {
+      const action = duelCardAction(side, affordable, uid);
+      expect(isLegalDuelAction(match, action), `rejected an aimable uid: ${uid}`).toBe(true);
+      expect(applyDuelAction(match, action)).not.toBe(match);
+    }
+    // The untargeted form (a self card) is legal too, and a made-up uid is not.
+    expect(isLegalDuelAction(match, duelCardAction(side, affordable))).toBe(true);
+    expect(isLegalDuelAction(match, duelCardAction(side, affordable, 'not-a-uid'))).toBe(false);
+  });
+
+  it('a felled beast leaves the aimable set', () => {
+    const match = createDuel(setup(6161));
+    const doomed = match.sides.b.party[0];
+    doomed.takeDamage(99999);
+    expect(doomed.isAlive()).toBe(false);
+    const view = viewFor(match, 'a');
+    expect(duelAimableUids(view)).not.toContain(doomed.uid);
+    expect(isLegalDuelAction(match, duelCardAction('a', 0, doomed.uid))).toBe(false);
+  });
+
+  it('the transport accepts the exact action the battlefield builds from a view', () => {
+    const transport = new LocalTransport(setup(2718281), { schedule: immediate, aiDelayMs: 0 });
+    const view = transport.currentView();
+    // The pump has already played the opponent's turn out if they won the toss,
+    // so the human seat is on move — otherwise this test proves nothing.
+    expect(view.yourTurn).toBe(true);
+    const before = transport.snapshot().seq;
+    const target = view.foe.party.find((m) => m.isAlive())!.uid;
+    const idx = view.you.hand.findIndex((c) => (getCard(c.cardId)?.cost ?? 99) <= view.you.energy);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    transport.submitAction(duelCardAction(transport.localSide, idx, target));
+    expect(transport.snapshot().seq).toBe(before + 1);
+    // And the fx it produced is addressed to THIS seat, unchanged.
+    const after = transport.currentView();
+    expect(after.fxFrom).toBe(transport.localSide);
+    expect(localizeDuelFx(after.fx, after.fxFrom, after.you.id)).toBe(after.fx);
+    transport.dispose();
   });
 });
 

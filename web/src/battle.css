@@ -94,12 +94,12 @@
 
 /* =========================================================
    v17: MTG-Arena battlefield — enemy row on TOP facing down,
-   party row on the BOTTOM above the hand, duel portraits on
+   party row on the BOTTOM above the hand, portrait chips on
    the center axis, vigor candles down the left edge.
    ========================================================= */
 
 /* v19 THE BATTLEFIELD SIZING SYSTEM.
-   Everything that occupies space on the stage — figures, duel portrait
+   Everything that occupies space on the stage — figures, portrait chip
    chips, nameplates, row gaps — is sized from ONE token, --bf-scale, so
    "zoom the stage out" is a single number instead of a dozen per-element
    px overrides repeated in every media query (which is what v17/v18 had,
@@ -134,7 +134,12 @@
      the row above or below at any height — and the clamp caps it at 0.8,
      Paul's ~20% zoom-out, so a tall monitor spends its extra height on air
      around the fight instead of on ever-bigger monsters. */
-  --bf-scale: clamp(0.24px, calc((100vh - 756px) / 482), 0.8px);
+  /* Fixed height a MODE needs on top of what the band below already budgets.
+     0 for the single-player game — the arithmetic is exactly what it was. Duel
+     mode raises it (rival banner, rival name, their hand of backs) instead of
+     forking the ladder; see the v20 block at the end of this file. */
+  --bf-reserve: 0px;
+  --bf-scale: clamp(0.24px, calc((100vh - 756px - var(--bf-reserve, 0px)) / 482), 0.8px);
   --bf-fig-enemy: calc(150 * var(--bf-scale));
   --bf-fig-boss: calc(250 * var(--bf-scale));
   --bf-fig-hero: calc(132 * var(--bf-scale));
@@ -147,7 +152,7 @@
      hangs 16px above its unit and bobs another 4 */
   --bf-intent-room: 26px;
   /* left inset of the battlefield's CONTENT box — the candle rail lives in
-     it, and (on wide viewports) so do the duel portrait chips */
+     it, and (on wide viewports) so do the portrait chips */
   --bf-inset-left: 96px;
   /* width of the portrait column in that mode; wide enough for a boss bar */
   --bf-chiprail: max(calc(var(--bf-chip) + 28px), 150px);
@@ -171,7 +176,7 @@
    costs a taller top lane — its bar instead of an HP pill — and its figure
    is 250px at scale 1 rather than 150. Both are folded in here; the scale
    ladder at the end of the file repeats the pair for every other mode. */
-.battlefield:has(.duel-boss) {
+.battlefield:has(.bf-boss) {
   --bf-scale: clamp(0.18px, calc((100vh - 780px) / 582), 0.8px);
 }
 
@@ -396,7 +401,7 @@
    v18 grew the ring to 96px the chips simply grew INTO the enemy row above
    and the party row below (Paul's overlap report). They are flex children
    of .battlefield now: the vertical stack is
-       [duel-top] [enemy row] [banner gap] [party row] [duel-bottom]
+       [bf-top] [enemy row] [banner gap] [party row] [bf-bottom]
    and no lane can eat another's space at any viewport height, because the
    rows are the only flexible tracks and the chips are fixed-size. Being
    in-flow also centers them on the battlefield's CONTENT box (between the
@@ -414,16 +419,16 @@
   pointer-events: none;
 }
 
-.duel-top { margin-bottom: 4px; }
-.duel-bottom { margin-top: 4px; }
+.bf-top { margin-bottom: 4px; }
+.bf-bottom { margin-top: 4px; }
 
-.duel-ring {
+.bf-ring {
   position: relative;
   width: var(--bf-chip, 68px);
   height: var(--bf-chip, 68px);
 }
 
-.duel-ring-svg {
+.bf-ring-svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -431,30 +436,30 @@
   transform: rotate(-90deg);
 }
 
-.duel-ring-track {
+.bf-ring-track {
   fill: rgba(17, 13, 10, 0.88);
   stroke: rgba(64, 54, 40, 0.9);
   stroke-width: 5;
 }
 
-.duel-ring-fill {
+.bf-ring-fill {
   fill: none;
   stroke-width: 5;
   stroke-linecap: round;
   transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.duel-top .duel-ring-fill {
+.bf-top .bf-ring-fill {
   stroke: #a8402f;
   filter: drop-shadow(0 0 5px rgba(168, 64, 47, 0.6));
 }
 
-.duel-bottom .duel-ring-fill {
+.bf-bottom .bf-ring-fill {
   stroke: var(--gold, #c8a24a);
   filter: drop-shadow(0 0 5px rgba(200, 162, 74, 0.55));
 }
 
-.duel-art {
+.bf-art {
   position: absolute;
   inset: calc(var(--bf-chip, 68px) * 0.1);
   border-radius: 50%;
@@ -466,8 +471,8 @@
   box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
-.duel-art img,
-.duel-art svg {
+.bf-art img,
+.bf-art svg {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover;
@@ -476,7 +481,7 @@
 /* The HP pill rides ON the ring's lower rim (avatar-plate style) instead of
    stacking below it — it reads as part of the portrait and gives the chip
    lane ~10px less height to claim from the rows. */
-.duel-hp {
+.bf-hp {
   position: relative;
   z-index: 2;
   margin-top: calc(var(--bf-chip, 68px) * -0.13);
@@ -492,8 +497,8 @@
   white-space: nowrap;
 }
 
-/* --- Boss bar, folded into the top duel portrait --- */
-.duel-boss .boss-bar {
+/* --- Boss bar, folded into the top portrait chip --- */
+.bf-boss .boss-bar {
   width: min(430px, 46vw);
   text-align: center;
   padding: 0;
@@ -1713,7 +1718,7 @@
    with no scrolling. Placed after the 860px block so it wins when both apply. --- */
 @media (max-height: 500px) {
   .battlefield {
-    --bf-scale: clamp(0.2px, calc((100vh - 402px) / 482), 0.4px);
+    --bf-scale: clamp(0.2px, calc((100vh - 402px - var(--bf-reserve, 0px)) / 482), 0.4px);
     /* the plate floor drops with the band — on a 500px-tall phone a 128px
        floor would be a third of the row */
     --bf-plate-min: 92px;
@@ -1741,11 +1746,11 @@
   .intent-move {
     font-size: 0.52rem;
   }
-  .duel-hp {
+  .bf-hp {
     font-size: 0.58rem;
     padding: 0 6px;
   }
-  .duel-boss .boss-bar { width: min(280px, 40vw); }
+  .bf-boss .boss-bar { width: min(280px, 40vw); }
   .boss-name {
     font-size: 0.75rem;
     margin-bottom: 1px;
@@ -2179,7 +2184,7 @@
   }
 
   /* boss figures are 250 at scale 1, not 150 — same pair as the ladder */
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.14px, calc((100vh - 402px) / 582), 0.4px);
   }
 }
@@ -2244,7 +2249,7 @@
   z-index: 5;
 }
 
-/* --- (2b) v18 sized the duel chips here, per height band, in raw px — and
+/* --- (2b) v18 sized the portrait chips here, per height band, in raw px — and
    because the chips were absolutely positioned, growing them just pushed
    them into the rows. v19 sizes them from --bf-chip (see the token block at
    the top of the battlefield section) and lays them out IN FLOW, so this
@@ -2252,12 +2257,12 @@
 
 /* The top chip must never hide a centered enemy's intent telegraph:
    keep it below .intent (z 5) — it's pointer-events:none dressing either way. */
-.duel-top {
+.bf-top {
   z-index: 4;
 }
 
 /* --- (3) Hero status/buff badges pinned under the player portrait chip. --- */
-.duel-status-row {
+.bf-status-row {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
@@ -2265,12 +2270,12 @@
   max-width: 200px;
 }
 
-.duel-status-row .status-tag {
+.bf-status-row .status-tag {
   font-size: 0.62rem;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
 }
 
-.duel-status-row .status-tag.block-tag {
+.bf-status-row .status-tag.block-tag {
   background: rgba(22, 28, 38, 0.92);
   color: #b0c4de;
   border: 1px solid #5f7391;
@@ -2356,12 +2361,12 @@
   max-width: min(112px, var(--bf-plate-max, 200px));
 }
 
-.duel-status-row {
+.bf-status-row {
   max-width: min(220px, calc(var(--bf-chip, 96px) * 2.6));
 }
 
 .bf-badge-stack .status-tag,
-.duel-status-row .status-tag {
+.bf-status-row .status-tag {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2399,20 +2404,20 @@
   text-overflow: ellipsis;
 }
 
-/* Boss name inside the top duel chip — already ellipsised, now bounded by
+/* Boss name inside the top portrait chip — already ellipsised, now bounded by
    the bar it titles rather than by the viewport. */
-.duel-boss .boss-bar {
+.bf-boss .boss-bar {
   max-width: 100%;
 }
 
-.duel-boss .boss-name {
+.bf-boss .boss-name {
   max-width: 100%;
 }
 
-/* --- (C) The duel chips are in flow now (see .bf-portrait). Guarantee the
+/* --- (C) The portrait chips are in flow now (see .bf-portrait). Guarantee the
    hero chip's status row can never push the party row up: it is allowed to
    grow to two lines, then it scrolls its own overflow away. --- */
-.duel-status-row {
+.bf-status-row {
   max-height: 42px;
   overflow: hidden;
 }
@@ -2498,11 +2503,11 @@
     z-index: 7;
   }
 
-  .duel-top {
+  .bf-top {
     top: 6px;
   }
 
-  .duel-bottom {
+  .bf-bottom {
     bottom: 6px;
   }
 
@@ -2513,14 +2518,14 @@
 
   /* the hero's status tags wrap inside the column instead of spilling out
      of it and over the party row */
-  .bf-portrait .duel-status-row {
+  .bf-portrait .bf-status-row {
     max-width: 100%;
   }
 
   /* A boss keeps its full-width bar on the centre axis — that drama is the
      point of a boss fight — so its chip stays in the flow and the scale
      ladder below pays for the one lane it costs. */
-  .bf-portrait.duel-boss {
+  .bf-portrait.bf-boss {
     position: relative;
     left: auto;
     top: auto;
@@ -2529,7 +2534,7 @@
     margin-bottom: 4px;
   }
 
-  .battlefield:has(.duel-boss) .enemy-row {
+  .battlefield:has(.bf-boss) .enemy-row {
     padding-left: 0;
   }
 }
@@ -2537,12 +2542,12 @@
 /* --- (E) NARROW AND SHORT: no room for a portrait column beside the rows,
    and no room for two portrait lanes above and below them either — stacked,
    they left the combatants at ~40px, which is not a fight, it's a diagram.
-   The plain duel chips stand down here. Nothing is lost: the lead enemy's HP
+   The plain portrait chips stand down here. Nothing is lost: the lead enemy's HP
    is on its own nameplate, and the hero's HP, block, statuses and stat mods
    are all on the hero unit (plate + badge stack). A BOSS chip stays — it
    carries the boss bar, which has no duplicate anywhere. --- */
 @media (max-width: 1199px) and (max-height: 999px) {
-  .bf-portrait:not(.duel-boss) {
+  .bf-portrait:not(.bf-boss) {
     display: none;
   }
 }
@@ -2568,9 +2573,9 @@
 /* Wide: portrait column beside the rows, no chip lanes at all. */
 @media (min-width: 1200px) and (min-height: 501px) {
   .battlefield {
-    --bf-scale: clamp(0.24px, calc((100vh - 566px) / 482), 0.8px);
+    --bf-scale: clamp(0.24px, calc((100vh - 566px - var(--bf-reserve, 0px)) / 482), 0.8px);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.18px, calc((100vh - 700px) / 582), 0.8px);
   }
 }
@@ -2580,9 +2585,9 @@
    assumes — 52px cheaper. */
 @media (max-width: 1199px) and (min-height: 1000px) {
   .battlefield {
-    --bf-scale: clamp(0.24px, calc((100vh - 740px) / 482), 0.8px);
+    --bf-scale: clamp(0.24px, calc((100vh - 740px - var(--bf-reserve, 0px)) / 482), 0.8px);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.18px, calc((100vh - 780px) / 582), 0.8px);
   }
 }
@@ -2591,9 +2596,9 @@
    (+92) while its hand is smaller again (204, −32). */
 @media (max-width: 900px) and (min-height: 1000px) {
   .battlefield {
-    --bf-scale: clamp(0.24px, calc((100vh - 800px) / 482), 0.6px);
+    --bf-scale: clamp(0.24px, calc((100vh - 800px - var(--bf-reserve, 0px)) / 482), 0.6px);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.18px, calc((100vh - 840px) / 582), 0.6px);
   }
 }
@@ -2601,9 +2606,9 @@
 /* Narrow + short: plain chips hidden (see (E)), boss chip in flow. */
 @media (min-width: 901px) and (max-width: 1199px) and (min-height: 501px) and (max-height: 999px) {
   .battlefield {
-    --bf-scale: clamp(0.24px, calc((100vh - 566px) / 482), 0.8px);
+    --bf-scale: clamp(0.24px, calc((100vh - 566px - var(--bf-reserve, 0px)) / 482), 0.8px);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.18px, calc((100vh - 670px) / 582), 0.8px);
   }
 }
@@ -2612,9 +2617,9 @@
    is the base one, so the fixed overhead is different again. */
 @media (max-width: 900px) and (min-height: 501px) and (max-height: 999px) {
   .battlefield {
-    --bf-scale: clamp(0.22px, calc((100vh - 552px) / 482), 0.56px);
+    --bf-scale: clamp(0.22px, calc((100vh - 552px - var(--bf-reserve, 0px)) / 482), 0.56px);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.16px, calc((100vh - 656px) / 582), 0.56px);
   }
 }
@@ -2627,7 +2632,7 @@
    you can zoom with browser zoom, unlike a squashed battlefield. --- */
 @media (min-width: 901px) and (min-height: 501px) and (max-height: 800px) {
   .battlefield {
-    --bf-scale: clamp(0.22px, calc((100vh - 514px) / 482), 0.6px);
+    --bf-scale: clamp(0.22px, calc((100vh - 514px - var(--bf-reserve, 0px)) / 482), 0.6px);
     --bf-intent-room: 18px;
   }
   /* Even the boss gives up the centre lane at this height — there isn't one
@@ -2635,7 +2640,7 @@
      column's width; the enemy row insets to clear it. The bar is still the
      only place the boss's remaining health is drawn, so it is never hidden,
      only made narrower. */
-  .bf-portrait.duel-boss {
+  .bf-portrait.bf-boss {
     position: absolute;
     left: var(--bf-inset-left);
     top: 6px;
@@ -2643,17 +2648,17 @@
     align-self: auto;
     margin: 0;
   }
-  .duel-boss .boss-bar {
+  .bf-boss .boss-bar {
     width: 100%;
   }
-  .duel-boss .boss-name {
+  .bf-boss .boss-name {
     font-size: 0.72rem;
     letter-spacing: 0.08em;
   }
-  .battlefield:has(.duel-boss) .enemy-row {
+  .battlefield:has(.bf-boss) .enemy-row {
     padding-left: var(--bf-chiprail);
   }
-  .battlefield:has(.duel-boss) {
+  .battlefield:has(.bf-boss) {
     --bf-scale: clamp(0.16px, calc((100vh - 526px) / 582), 0.6px);
   }
   .bf-gap { flex-basis: 30px; }
@@ -2681,5 +2686,215 @@
   .lantern-turn {
     width: 84px !important;
     height: 106px !important;
+  }
+}
+
+/* =========================================================
+   v20 — DUEL MODE. `.bf-duel` is a variant of this same
+   battlefield, never a second one: a duel renders through
+   BattleStage exactly like a wild fight, and everything below
+   is dressing for the two things a duel has that the gates do
+   not — a rival tamer with a face, and a hand you can only
+   count. If you find yourself wanting a rule here that moves a
+   row, a figure or a plate, the answer is the view model, not
+   this block.
+
+   Load order note: battle.css is imported BEFORE v5/v16, so
+   every override here is written to win on specificity alone.
+   ========================================================= */
+
+/* --- (1) The shell. A duel is a battle, so the app frame must behave like
+   one — except App.tsx only knows the word "battle" for screen === 'battle'.
+   `:has()` lets the stage itself declare the mode, with no App change and
+   nothing to clean up on unmount. `.game:has(.battle-stage.bf-duel)` is
+   (0,3,0), which beats v16.css's `.game:not(.battle-mode)` (0,2,0). --- */
+.game:has(.battle-stage.bf-duel) {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    'header'
+    'main';
+  grid-template-rows: auto 1fr;
+  max-width: none;
+}
+
+.game:has(.battle-stage.bf-duel) .game-sidebar,
+.game:has(.battle-stage.bf-duel) .game-log {
+  display: none;
+}
+
+/* v16.css's `.game:not(.battle-mode) .game-main > .panel` (0,4,0) dresses
+   every non-battle screen as a bordered sheet with a 1220px cap and 26/32px
+   padding — which would letterbox and pad the battlefield. Put the stage back
+   to what it is in a real battle: the plain .panel box (App.css) wearing
+   .battle-stage's own gradient. This selector is (0,6,0). */
+.game:has(.battle-stage.bf-duel) .game-main > .panel.battle-stage {
+  width: auto;
+  max-width: none;
+  margin: 0;
+  min-height: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel), inset 0 1px 0 rgba(246, 226, 155, 0.07);
+  background:
+    radial-gradient(ellipse 90% 60% at 70% 30%, rgba(90, 70, 110, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 120% 70% at 50% 110%, rgba(0, 0, 0, 0.7) 0%, transparent 60%),
+    linear-gradient(178deg, #16151b 0%, #100f14 55%, #0b0a0e 100%);
+}
+
+/* --- (2) Round indicator, riding the banner that names the rival. --- */
+.bf-round {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 9px;
+  border: 1px solid rgba(200, 162, 74, 0.34);
+  border-radius: 999px;
+  background: rgba(17, 13, 10, 0.88);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(200, 162, 74, 0.9);
+  white-space: nowrap;
+}
+
+/* --- (3) The rival's chip carries what a wild fight keeps on a nameplate:
+   their name, and their hand as backs you can count and nothing more. Both
+   sit INSIDE .bf-portrait, so they cost the same lane the chip already had
+   and cannot reach into a combatant row. --- */
+.bf-foe-name {
+  max-width: min(100%, 168px);
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  color: #d8cfb8;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bf-foe-hand {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 30px;
+  max-width: 100%;
+}
+
+.bf-foe-card {
+  display: block;
+  line-height: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+/* Overlap them into a small fan, and tilt the ends, so five backs read as a
+   held hand rather than a row of stamps. */
+.bf-foe-card + .bf-foe-card {
+  margin-left: -13px;
+}
+
+.bf-foe-card img {
+  display: block;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.7);
+}
+
+.bf-foe-empty {
+  font-size: 0.62rem;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* --- (4) A duel's chips may never stand down. In the gates the lead enemy's
+   HP is also on its own nameplate, so the short-viewport bands above can hide
+   the chips for free; the rival TAMER has no row and no plate, so hiding the
+   chip would hide the only number that ends the match. (0,3,0) beats both
+   `.bf-portrait` and `.bf-portrait:not(.bf-boss)`. --- */
+.battle-stage.bf-duel .bf-portrait {
+  display: flex;
+}
+
+/* --- (5) THE DUEL'S EXTRA LANES, paid for ONCE.
+
+   A duel adds fixed height the solo ladder never budgeted for: the rival
+   banner + round pill, and (in the modes where the chips sit in flow) the
+   rival's name line and their hand of backs inside the top chip. v19's mistake
+   was per-band pixel copies of a number that lives somewhere else; so instead
+   of a second ladder that has to be re-tuned every time the first one moves,
+   every solo formula now subtracts `--bf-reserve` (0px outside a duel — the
+   arithmetic is unchanged) and a duel just declares how much extra it needs.
+   One number per layout family, and the duel tracks any future retune of the
+   solo ladder for free. Constants measured live, per band. --- */
+.battlefield.bf-duel {
+  /* Chips in flow: banner (~30) + the rival's name line (~16) + their hand of
+     backs (~32). */
+  --bf-reserve: 78px;
+}
+
+/* Where solo HIDES the plain chips (rule (E) / the landscape band) a duel
+   cannot, so the reserve has to buy both chip lanes back on top of the banner.
+   Measured at 1000x900: the fit bottoms out at 170, so 176 leaves a line of
+   slack for a rival whose name wraps. */
+@media (max-width: 999px) and (min-height: 501px) and (max-height: 999px) {
+  .battlefield.bf-duel {
+    --bf-reserve: 176px;
+  }
+}
+
+@media (max-width: 999px) and (max-height: 500px) {
+  .battlefield.bf-duel {
+    --bf-reserve: 128px;
+  }
+}
+
+/* Landscape phone, any width: the backs go (a hand you cannot count is not
+   information) and the banner loses its air. */
+@media (max-height: 500px) {
+  .battle-stage.bf-duel .tamer-banner {
+    padding: 0;
+    font-size: 0.72rem;
+  }
+  .battle-stage.bf-duel .bf-foe-hand {
+    display: none;
+  }
+}
+
+/* --- (6) A duel borrows the WIDE portrait column early, and keeps it.
+   Solo's column starts at 1200px because below that it can simply hide the
+   chips (rule (E)) and read the lead enemy's HP off its nameplate. A duel has
+   no such fallback, and paying for two in-flow chip lanes costs it more than
+   half its figure size (measured: 104px → 45px at 1100x900). Width is the
+   cheaper axis: the column is ~150px, and the rows still have ~610px at
+   1100px wide for at most three beasts a side. So from 1000px up, at EVERY
+   height, the chips flank the fight and the reserve drops back to the banner
+   alone. Last block in the file, so it wins for every band it overlaps. --- */
+@media (min-width: 1000px) {
+  .battle-stage.bf-duel .bf-portrait {
+    position: absolute;
+    left: var(--bf-inset-left);
+    width: var(--bf-chiprail);
+    margin: 0;
+    align-self: auto;
+    z-index: 7;
+  }
+  .battle-stage.bf-duel .bf-top {
+    top: 6px;
+    bottom: auto;
+  }
+  .battle-stage.bf-duel .bf-bottom {
+    bottom: 6px;
+    top: auto;
+  }
+  /* keep every combatant clear of the portrait column */
+  .battlefield.bf-duel .bf-row {
+    padding-left: var(--bf-chiprail);
+  }
+  /* the hero's status tags wrap inside the column instead of spilling out */
+  .battle-stage.bf-duel .bf-portrait .bf-status-row {
+    max-width: 100%;
+  }
+  .battlefield.bf-duel {
+    --bf-reserve: 30px;
   }
 }

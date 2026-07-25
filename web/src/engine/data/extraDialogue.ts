@@ -1,6 +1,19 @@
 /** Extra spoken lines per voiced NPC, sent to TTS and played on interaction.
  * Keyed by npc id. Each line is short (spoken aloud). No slots/placeholders —
- * these are generated to audio verbatim, so keep them self-contained. */
+ * these are generated to audio verbatim, so keep them self-contained.
+ *
+ * v20: `grude` and `chronicler` gained pools. Grude's clips are PENDING — he is
+ * the one NPC with no voice id in public/audio/npc_voices.json, so his lines
+ * play as text until one is added (NpcHost simply finds no clip and stays
+ * silent). See web/art-staging/VOICE_BATCH.md.
+ *
+ * The Chronicler's first three lines below are the exact text of the three
+ * chronicler clips already on disk (chronicler_0..2) — they moved here from
+ * serviceBarks so the archivist speaks aloud most visits instead of one in
+ * three. Do NOT reword them: the audio key is the line text itself, and any
+ * edit silently orphans a paid-for clip.
+ *
+ * Voice contract for every line here: see VOICE_BIBLE in npcs.ts. */
 export const EXTRA_VOICED_LINES: Record<string, string[]> = {
   dovey: [
     "Sit down before you fall down. I've got a chair for that exact look.",
@@ -102,5 +115,40 @@ export const EXTRA_VOICED_LINES: Record<string, string[]> = {
     'The dark hates being looked at first. So I look first.',
     'Some nights I count who came back more than who went out.',
     'Forty-one lamps, and I have an opinion about every single one.',
+  ],
+  grude: [
+    'Put it down where I can see it. I don\'t work on faith.',
+    'Rushed steel is bad steel. I have buried the difference.',
+    'Forge is hot, my hands are old, and the work still gets done. Somehow.',
+    'I fitted plate to boys who never came back for the fitting. You\'ll forgive me taking my time with yours.',
+    'Metal remembers heat the way we remember bad years. Deep down, and for good.',
+    'You want it strong or you want it pretty? I can do one of those properly.',
+    'Every dent on that was a decision somebody made in a hurry.',
+    'I don\'t polish out the scars. Somebody earned those.',
+    'Good tools outlive good men. That\'s the one unfairness I\'ve made peace with.',
+    'Come back in an hour. Or don\'t, and it\'ll be done anyway.',
+    'That anvil is the oldest thing in this town that still works for a living.',
+    'Feel that. Trued. Nothing rattles when it\'s right.',
+    'I talk to it while I work. Long trade, and the metal\'s the only one who stays.',
+    'Take it. Bring it back broken and I won\'t say a word. That\'s what the trade is for.',
+  ],
+  chronicler: [
+    // --- already voiced (chronicler_0..2). Text is the audio key. Do not edit.
+    '[margin note] Subject entered. Noted without comment, for once.',
+    'A story once written down has a way of not staying finished. You\'d know.',
+    'Every deed gets a line, eventually. Some get more than one. Try to earn the second.',
+    // --- new
+    '[margin note] The subject looks at the page as though the page owed it something. Perhaps it does.',
+    'I do not write what happened. I write what will be remembered, which is a narrower thing and a heavier one.',
+    'Three centuries of entries and the hand has not tired. In your position, that is the first thing I would question.',
+    '[margin note] Ink low. Requisition filed. The requisition has been filed for three hundred years.',
+    'Every name in this archive was somebody\'s whole life, compressed to a line and a date. I try to choose the line well.',
+    'You may read the record. You may not correct it. Those are the terms, and they are not mine.',
+    '[margin note] The margins are filling. When the margins fill, a story has outgrown its allotment. It happens rarely.',
+    'I have written far more endings than beginnings. That is a matter of arithmetic, not of pessimism.',
+    'The archive keeps what the town forgets. Nobody has ever thanked anyone for that service.',
+    '[margin note] Entry deferred. The subject is not finished being the subject.',
+    'A record is a kindness to strangers who do not exist yet. Bear them in mind.',
+    'I have no face, no name, and a great deal of patience. Two of the three are professional requirements.',
   ],
 };

@@ -520,6 +520,18 @@ export function applyDuelAction(match: DuelMatch, action: DuelAction): DuelMatch
 // Redaction — the per-player projection a server would broadcast
 // ---------------------------------------------------------------------------
 
+/**
+ * The uid the battlefield uses for the OPPOSING tamer.
+ *
+ * A duel is rendered by the single-player BattleScreen, whose uid space is
+ * `'hero'` (you) plus one slot uid per beast. The rival tamer has no slot —
+ * they live in `battle.enemies` of a board this client never holds — so fx
+ * addressed to `'hero'` by the other side's resolver are re-addressed to this
+ * id before they reach the UI (see `localizeDuelFx`). It cannot collide with a
+ * slot uid, which is always side-letter + index ("a0", "b2").
+ */
+export const DUEL_FOE_HERO_UID = 'foe-hero';
+
 export interface DuelSideView {
   id: DuelSideId;
   name: string;
@@ -530,6 +542,8 @@ export interface DuelSideView {
   drawCount: number;
   discardCount: number;
   exhaustCount: number;
+  /** This side's own turn counter — public, and what re-deals the hand fan. */
+  turn: number;
   /** The tamer's own Ward. */
   block: number;
   /**
@@ -541,6 +555,18 @@ export interface DuelSideView {
   maxEnergy: number;
 }
 
+/**
+ * Your OWN piles. Contents, deliberately: the battlefield lets you inspect
+ * Deck/Embers/Ashes, and it inspects them alphabetically (never in draw order),
+ * exactly as the single-player stage does. Nothing here is hidden from you in
+ * the first place — it is your deck.
+ */
+export interface DuelOwnPiles {
+  drawPile: CardInstance[];
+  discardPile: CardInstance[];
+  exhaustPile: CardInstance[];
+}
+
 export interface DuelView {
   matchId: string;
   seq: number;
@@ -548,12 +574,17 @@ export interface DuelView {
   turn: DuelSideId;
   yourTurn: boolean;
   outcome: DuelOutcome;
-  /** Full information: your own hand and its source beasts. */
-  you: DuelSideView & { hand: CardInstance[] };
+  /** Full information: your own hand, piles, and their source beasts. */
+  you: DuelSideView & { hand: CardInstance[] } & DuelOwnPiles;
   /** Public information only: board, block, pile COUNTS, telegraphed intents. */
   foe: DuelSideView & { intents: Record<string, Intent> };
   log: string[];
   fx: FxEvent[];
+  /**
+   * Which side's resolver produced `fx`. The UI needs it to re-address the
+   * stream into its own uid space — see `localizeDuelFx`.
+   */
+  fxFrom: DuelSideId | null;
 }
 
 /**
@@ -577,6 +608,7 @@ function sideView(s: DuelSide, opponentBattle: BattleState): DuelSideView {
     drawCount: s.battle.drawPile.length,
     discardCount: s.battle.discardPile.length,
     exhaustCount: s.battle.exhaustPile.length,
+    turn: s.battle.turn,
     block: s.battle.heroBlock,
     beastBlock,
     energy: s.battle.energy,
@@ -599,13 +631,72 @@ export function viewFor(match: DuelMatch, side: DuelSideId): DuelView {
     turn: match.turn,
     yourTurn: match.turn === side && match.outcome.kind === 'ongoing',
     outcome: match.outcome,
-    you: { ...sideView(you, foe.battle), hand: [...you.battle.hand] },
+    you: {
+      ...sideView(you, foe.battle),
+      hand: [...you.battle.hand],
+      drawPile: [...you.battle.drawPile],
+      discardPile: [...you.battle.discardPile],
+      exhaustPile: [...you.battle.exhaustPile],
+    },
     // Telegraphs for the foe's beasts live in YOUR battle — they are what your
     // side has been shown, which is exactly what may be revealed.
     foe: { ...sideView(foe, you.battle), intents: { ...you.battle.intents } },
     log: match.log,
     fx: match.lastFx,
+    fxFrom: match.lastActor,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Presentation adapters — the pure half of "a duel renders on the real
+// battlefield". These take a redacted view and nothing else, so they can be
+// tested without a DOM and can never reach past the redaction boundary.
+// ---------------------------------------------------------------------------
+
+/**
+ * Re-address an fx stream into the LOCAL player's uid space.
+ *
+ * The resolver that produced these events was looking at the acting side's
+ * board, where `'hero'` is that side's tamer and `side: 'ally'` is that side's
+ * units. When the opponent acted, both readings are inverted for us: their
+ * tamer becomes `DUEL_FOE_HERO_UID`, their allies become our enemies. Beast
+ * uids are global slot ids and need no translation.
+ *
+ * Returns the SAME array when nothing needs changing — the battlefield keys its
+ * "have I already played this batch?" guard on array identity.
+ */
+export function localizeDuelFx(fx: FxEvent[], from: DuelSideId | null, local: DuelSideId): FxEvent[] {
+  if (fx.length === 0 || from === null || from === local) return fx;
+  return fx.map((e): FxEvent => {
+    if (e.fx === 'shake') return e;
+    if (e.fx === 'actor') {
+      return {
+        ...e,
+        uid: e.uid === 'hero' ? DUEL_FOE_HERO_UID : e.uid,
+        side: e.side === 'ally' ? 'enemy' : 'ally',
+      };
+    }
+    return e.targetUid === 'hero' ? { ...e, targetUid: DUEL_FOE_HERO_UID } : e;
+  });
+}
+
+/**
+ * Every uid the battlefield can put a crosshair on, derived from the redacted
+ * view alone: the foe's living beasts, your own living beasts, and your tamer.
+ * `undefined` (no uid) also aims at your tamer — that is the engine's rule for
+ * a self-targeted card and the reason it is not in this list.
+ */
+export function duelAimableUids(view: DuelView): string[] {
+  return [
+    ...view.foe.party.filter((m) => m.isAlive()).map((m) => m.uid),
+    'hero',
+    ...view.you.party.filter((m) => m.isAlive()).map((m) => m.uid),
+  ];
+}
+
+/** The exact action the battlefield submits when a card is played. */
+export function duelCardAction(side: DuelSideId, handIndex: number, targetUid?: string): DuelAction {
+  return { kind: 'playCard', side, handIndex, targetUid };
 }
 
 // ---------------------------------------------------------------------------

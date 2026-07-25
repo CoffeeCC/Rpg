@@ -1,8 +1,26 @@
 /* ===========================================================================
-   The Duelling Ring — multiplayer shell, duel setup, and the duel board.
-   Scoped entirely under .duel-* so it cannot reach into battle.css or the
-   expedition screens. Tokens only: gold rgba(200,162,74,*), glass
-   rgba(17,13,10,.88), var(--font-display).
+   The Duelling Ring — multiplayer shell, duel setup, verdict.
+
+   v20: THE DUEL BOARD THAT USED TO LIVE HERE IS GONE. A duel is a battle, so
+   it is drawn by the one battlefield (battle.css + BattleStage) exactly like a
+   fight in the gates. Everything that styled a parallel combat UI — .duel-board,
+   .duel-field, .duel-side, .duel-tamer*, .duel-counts, .duel-vigor/.duel-pip,
+   .duel-row, .duel-figure*, .duel-hpbar/.duel-hpfill/.duel-hptext, .duel-tags/
+   .duel-tag, .duel-intent, .duel-block, .duel-hand, .duel-card-slot,
+   .duel-actions, .duel-log* — was deleted with it. What remains dresses the
+   PRE-match (modes, rivals, terms, deck preview) and POST-match (verdict), plus
+   the one in-fight overlay this screen still owns: the yield confirmation.
+
+   NAMESPACE RULE (the v19 regression, stated as law): every selector in this
+   file starts `.duel-`, and NOTHING in battle.css does — battle.css's
+   battlefield namespace is `.bf-*` / `.battle-*` / `.hand-*`. Both sheets are
+   now live on the same DOM during a duel, so an overlapping class name is not a
+   style clash, it is a broken fight. v19 shipped `.duel-chip` in both files and
+   it silently overrode the battle portraits. Run the collision check before
+   touching either file.
+
+   Tokens only: gold rgba(200,162,74,*), glass rgba(17,13,10,.88),
+   var(--font-display).
    =========================================================================== */
 
 .duel-panel {
@@ -334,258 +352,11 @@
   min-width: 168px;
 }
 
-/* --- The board ----------------------------------------------------------- */
-.duel-board {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 232px;
-  gap: 14px;
-  align-items: start;
-}
-@media (max-width: 980px) {
-  .duel-board {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.duel-field {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-.duel-side {
-  border: 1px solid rgba(200, 162, 74, 0.16);
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: linear-gradient(180deg, rgba(22, 17, 12, 0.72), rgba(11, 8, 6, 0.8));
-}
-.duel-side.active {
-  border-color: rgba(200, 162, 74, 0.55);
-  box-shadow: 0 0 18px rgba(200, 162, 74, 0.14), inset 0 1px 0 rgba(246, 226, 155, 0.07);
-}
-
-.duel-tamer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-.duel-tamer-name {
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  color: var(--gold-bright);
-}
-.duel-tamer-title {
-  font-size: 0.74rem;
-  font-style: italic;
-  color: var(--text-dim);
-}
-.duel-counts {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-  font-size: 0.72rem;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.duel-vigor {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.duel-pip {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid rgba(200, 162, 74, 0.45);
-  background: rgba(0, 0, 0, 0.4);
-}
-.duel-pip.lit {
-  background: var(--gold-grad);
-  box-shadow: 0 0 8px rgba(201, 162, 39, 0.5);
-}
-
-.duel-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.duel-figure {
-  position: relative;
-  flex: 0 1 172px;
-  min-width: 148px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  padding: 9px 9px 8px;
-  border: 1px solid rgba(200, 162, 74, 0.16);
-  border-radius: 10px;
-  background: rgba(12, 9, 7, 0.6);
-  color: var(--text);
-  font-family: inherit;
-  text-align: center;
-}
-.duel-figure.down {
-  opacity: 0.35;
-  filter: grayscale(1);
-}
-.duel-figure.aimable {
-  cursor: crosshair;
-  border-color: rgba(179, 74, 64, 0.65);
-  box-shadow: 0 0 14px rgba(179, 74, 64, 0.28);
-}
-.duel-figure.aimable:hover {
-  border-color: #d78b83;
-}
-.duel-figure-name {
-  font-size: 0.82rem;
-  line-height: 1.15;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.duel-figure-sub {
-  font-size: 0.66rem;
-  color: var(--text-faint);
-}
-.duel-hpbar {
-  width: 100%;
-  height: 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(200, 162, 74, 0.18);
-  overflow: hidden;
-}
-.duel-hpfill {
-  height: 100%;
-  background: linear-gradient(90deg, #7d2f2a, #b34a40);
-}
-.duel-hpfill.mine {
-  background: linear-gradient(90deg, #4a6b3d, #6a9c5a);
-}
-.duel-hptext {
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-.duel-tags {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.duel-tag {
-  font-size: 0.6rem;
-  letter-spacing: 0.06em;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(200, 162, 74, 0.28);
-  color: rgba(216, 210, 196, 0.85);
-}
-.duel-tag.bad {
-  border-color: rgba(179, 74, 64, 0.5);
-  color: #d78b83;
-}
-.duel-intent {
-  width: 100%;
-  font-size: 0.68rem;
-  padding: 3px 6px;
-  border-radius: 6px;
-  border: 1px solid rgba(179, 84, 30, 0.45);
-  background: rgba(60, 26, 12, 0.4);
-  color: #e0b090;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.duel-block {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  font-size: 0.68rem;
-  color: #9fc0dd;
-}
-
-/* --- Hand ---------------------------------------------------------------- */
-.duel-hand {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-  padding: 10px 4px 2px;
-  border-top: 1px solid rgba(200, 162, 74, 0.12);
-}
-.duel-card-slot {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  transition: transform 0.12s ease;
-}
-.duel-card-slot:hover:not(:disabled) {
-  transform: translateY(-6px);
-}
-.duel-card-slot:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-.duel-card-slot.selected {
-  transform: translateY(-10px);
-  filter: drop-shadow(0 0 12px rgba(201, 162, 39, 0.55));
-}
-
-.duel-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding-top: 10px;
-}
+/* Why the terms can't be agreed to yet (no beasts entered, too many, ...). */
 .duel-hint {
   font-size: 0.8rem;
   color: rgba(200, 162, 74, 0.8);
   font-style: italic;
-}
-
-/* --- Log rail ------------------------------------------------------------ */
-.duel-log {
-  border: 1px solid rgba(200, 162, 74, 0.16);
-  border-radius: 10px;
-  background: linear-gradient(180deg, rgba(17, 13, 10, 0.9), rgba(10, 7, 6, 0.94));
-  padding: 10px 12px;
-  max-height: 520px;
-  overflow-y: auto;
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-.duel-log::before {
-  content: 'The Ring';
-  display: block;
-  font-family: var(--font-display);
-  font-size: 0.62rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(200, 162, 74, 0.75);
-  margin-bottom: 6px;
-  border-bottom: 1px solid rgba(200, 162, 74, 0.14);
-  padding-bottom: 5px;
-}
-.duel-log-line {
-  color: var(--text-dim);
-  margin-bottom: 2px;
-}
-.duel-log-line.turn {
-  color: var(--gold-bright);
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-  margin: 7px 0 3px;
 }
 
 /* --- Result -------------------------------------------------------------- */
@@ -619,4 +390,40 @@
   font-style: italic;
   color: var(--text-dim);
   line-height: 1.5;
+}
+
+/* --- Yield confirmation --------------------------------------------------
+   The only thing this screen still paints while a fight is on. It is a FIXED
+   sibling of the battlefield, never a child: BattleStage stays the untouched
+   renderer, and "Concede" is just the retreat command the adapter handed it. */
+.duel-yield {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 3, 2, 0.72);
+  backdrop-filter: blur(2px);
+  animation: duelYieldIn 0.18s ease both;
+}
+@keyframes duelYieldIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.duel-yield-box {
+  max-width: 420px;
+  padding: 22px 26px 18px;
+  border: 1px solid rgba(200, 162, 74, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(24, 18, 13, 0.97), rgba(12, 9, 7, 0.98));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(246, 226, 155, 0.07);
+  text-align: center;
+}
+.duel-yield-text {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  letter-spacing: 0.04em;
+  color: #ded3b6;
+  margin: 0 0 14px;
 }
