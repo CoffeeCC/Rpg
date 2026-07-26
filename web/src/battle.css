@@ -3010,69 +3010,195 @@
 }
 
 /* =========================================================================
-   THE PORTRAITS GO TO THE CORNERS — §corners
+   THE LEFT RAIL — §rail
 
-   Paul: "can you just make the Player and Enemy Portraits locked to the top
-   and bottom corner of the window? right now the enemy port is cut off at the
-   top."
+   Paul: "they can merge with the Candle Bar on the left side of the screen but
+   it has to be Stylistic and Smooth. not just a Portrait pasted into the Bar.
+   Make them all one Cohesive Textured Bar."
 
-   Both halves measured on a real 1280x800 fight before touching anything:
+   Supersedes the old §corners block, which absolutely positioned each chip
+   against .battlefield and is deleted. That approach was wrong at the root:
+   three separately-positioned objects can be lined up, but they can never
+   become one object, and "pasted into the bar" is precisely what a stack of
+   independently positioned things looks like.
 
-     .bf-top    box top = 86px, and its clipping ancestor (.panel, which
-                carries `overflow: hidden auto`) starts at 90px. Four pixels
-                of the enemy's chip were being shaved off, exactly as he said.
-     .bf-bottom box = 421..495px in an 800px window — pinned to the bottom of
-                the BATTLEFIELD, which stops above the hand, so it sat in the
-                middle of the screen rather than at any corner.
-
-   The cause of both is the same: `.bf-portrait` was positioned against
-   `.battlefield`, and the battlefield's top edge is ABOVE the panel's content
-   box while its bottom edge is far above the window's. Positioning against a
-   box that is not the one you are trying to sit in the corner of gets you
-   neither corner.
-
-   So they are positioned against the WINDOW now, which is what was asked for
-   and is also the only box whose corners are the corners in question.
-
-   The insets are not zero, and that is deliberate rather than timid: the app
-   chrome owns the top strip (hero name, HP, gold) and the piles own the
-   bottom-left. Sitting flush would put a monster's face over the player's own
-   HP bar. These are the corners of the PLAYABLE window — hard against the
-   stage's edges, nothing clipped, nothing covered.
+   What makes it read as ONE piece rather than three:
+     - a single background and a single border, on the rail — the chips inside
+       draw no box of their own;
+     - one continuous vertical texture (repeating fibres + a lit edge) that
+       runs the full height, uninterrupted, so the eye follows it end to end;
+     - the caps are INSET into the bar (a recessed well with an inner shadow),
+       so the portraits read as mounted in the wood rather than laid on it;
+     - the joins between cap and middle are hairline rules with a gold bloom
+       at the centre, which is how real furniture hides a seam — you draw
+       something deliberate on it instead of trying to make it invisible.
    ========================================================================= */
 
+.battlefield .bf-rail {
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  bottom: 8px;
+  width: var(--bf-chiprail);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  z-index: 7;
+  border-radius: 13px;
+  overflow: hidden;
+  /* The bar itself: a dark oiled timber, lighter down its lit edge. */
+  background:
+    linear-gradient(90deg, rgba(255, 226, 168, 0.07) 0 2px, transparent 2px 100%),
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 236, 190, 0.022) 0 2px,
+      rgba(0, 0, 0, 0.05) 2px 5px,
+      rgba(255, 236, 190, 0.012) 5px 9px
+    ),
+    linear-gradient(96deg, #1a1410 0%, #241c14 38%, #1c1610 72%, #12100c 100%);
+  border: 1px solid rgba(150, 120, 62, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(246, 226, 155, 0.13),
+    inset -6px 0 16px rgba(0, 0, 0, 0.55),
+    0 6px 22px rgba(0, 0, 0, 0.55);
+}
+
+/* Filigree down the lit edge — one unbroken line is the strongest single cue
+   that this is one object. It must never be interrupted by a cap boundary. */
+.battlefield .bf-rail::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    transparent 0,
+    rgba(224, 200, 120, 0.34) 8%,
+    rgba(224, 200, 120, 0.5) 50%,
+    rgba(224, 200, 120, 0.34) 92%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* --- The caps: recessed wells the portraits are mounted in ---------------- */
+.battlefield .bf-rail-cap {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 12px 8px 10px;
+  background: radial-gradient(ellipse 120% 80% at 50% 50%, rgba(0, 0, 0, 0.42) 0%, transparent 72%);
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.5);
+}
+
+/* The seam. A hairline with a gold bloom at its centre — deliberate joinery
+   rather than a gap two panels happen to leave. */
+.battlefield .bf-rail-cap::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0,
+    rgba(224, 200, 120, 0.42) 45%,
+    rgba(255, 236, 190, 0.6) 50%,
+    rgba(224, 200, 120, 0.42) 55%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+.battlefield .bf-rail-top::after { bottom: 0; }
+.battlefield .bf-rail-bottom::after { top: 0; }
+
+/* --- The middle: candles, taking whatever height is left ------------------ */
+.battlefield .bf-rail-mid {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px 0;
+}
+
+/* The candle rail keeps its own internals but surrenders its box — the plate,
+   border and shadow it used to carry are the RAIL's job now, and leaving them
+   on is exactly what would make this look like a portrait pasted onto a bar.
+
+   EVERY positioning property has to be undone here, not just `position`.
+   `.vigor-rail` is `position: absolute; top: 50%; transform: translateY(-50%)`
+   (line 556) with two more `translateY(-50%) scale(...)` variants in the
+   narrow bands. Setting `position: static` alone leaves the TRANSFORM applied,
+   which hauls the candles up half their own height and drops them straight on
+   top of the enemy's portrait — which is exactly what the first cut did.
+   0,3,0 so it beats the media-query variants regardless of file order. */
+.battlefield .bf-rail .vigor-rail {
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  position: static;
+  width: auto;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+/* Portraits sit IN the rail: no box of their own, and in flow rather than
+   absolutely positioned, so the cap's height is theirs and nothing can clip. */
+.battlefield .bf-rail .bf-portrait {
+  position: relative;
+  left: auto;
+  top: auto;
+  bottom: auto;
+  width: 100%;
+  margin: 0;
+  z-index: auto;
+}
+
+/* The ring gets a seat: a soft dark socket so the chip reads as recessed. */
+.battlefield .bf-rail .bf-ring::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(246, 226, 155, 0.09);
+  pointer-events: none;
+}
+
+/* The rows clear the rail, exactly as they cleared the old chip column. */
 @media (min-width: 1200px) {
-  .panel.battle-stage .bf-portrait {
-    position: fixed;
-    left: 22px;
-    width: var(--bf-chiprail);
-    margin: 0;
-    /* Above the stage's own layers, below banners (90) and modals. */
-    z-index: 60;
+  .battlefield .bf-row {
+    padding-left: calc(var(--bf-chiprail) + 18px);
   }
-
-  /* NOTE, measured: `position: fixed` does NOT resolve against the window
-     here. `.panel.battle-stage` carries a transform (the stage zoom/shake),
-     and a transformed ancestor becomes the containing block for fixed
-     descendants. So these offsets are against the stage — which spans
-     14..1266 x 90..786 of a 1280x800 window, i.e. the playable area, and is
-     the right box to corner against anyway. */
-
-  /* Top-left, hard against the stage's corner and clear of the candle rail
-     below it (the candles start at y=185; this ends at 174). */
-  .panel.battle-stage .bf-top {
-    top: 40px;
-    bottom: auto;
+  .battlefield .bf-rail .bf-status-row {
+    max-width: 100%;
   }
+}
 
-  /* The bottom-left corner of this screen is NOT free: the draw pile sits at
-     x 60..150 and the hand fans out from x~280, with End Turn holding the
-     bottom-right. Rather than drop the hero's face on top of a control, the
-     chip goes as low as the battlefield lane allows and stays readable.
-     Going lower means relocating the piles — Paul's call, not a silent one. */
-  .panel.battle-stage .bf-bottom {
-    bottom: auto;
-    top: 372px;
-    left: 22px;
+/* Below 1200px there is no width for a rail beside the fight: it lies down
+   into the old vertical stack rather than eating the battlefield. */
+@media (max-width: 1199px) {
+  .battlefield .bf-rail {
+    position: static;
+    width: auto;
+    flex-direction: row;
+    align-items: center;
+    border-radius: 10px;
   }
+  .battlefield .bf-rail-cap::after {
+    left: auto;
+    right: auto;
+    top: 12%;
+    bottom: 12%;
+    width: 1px;
+    height: auto;
+  }
+  .battlefield .bf-rail-top::after { right: 0; }
+  .battlefield .bf-rail-bottom::after { left: 0; }
 }

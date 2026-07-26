@@ -910,25 +910,152 @@ export function BattleStage({ view }: { view: BattleView | null }) {
            Each combatant is a battlefield unit — figure, corner badges, nameplate,
            HP groove — replacing the old ff-box strip entirely. ===== */}
       <div className={`battlefield ${view.variant === 'duel' ? 'bf-duel' : ''}`}>
-        {/* Vigor: a rail of candles down the LEFT edge. One candle per max vigor;
-            spending a card snuffs one (flame gutters, smoke curls, wax dims). */}
-        <div className="vigor-rail" title={`Vigor — ${view.energy} of ${view.maxEnergy} left to spend on cards`}>
-          <div className="vigor-candles">
-            {Array.from({ length: view.maxEnergy }, (_, i) => (
-              <span key={i} className={`candle ${i < view.energy ? 'lit' : 'out'}`}>
-                <span className="candle-smoke" aria-hidden="true" />
-                <span className="candle-flame" aria-hidden="true" />
-                <span className="candle-wick" aria-hidden="true" />
-                <span className="candle-wax" aria-hidden="true" />
-              </span>
-            ))}
+        {/* ===== THE LEFT RAIL — one object, not three stacked ones =====
+            Paul: "I want the Enemy Portrait in the top left and the player
+            portrait in the bottom left. They can merge with the Candle Bar on
+            the left side of the screen but it has to be Stylistic and Smooth.
+            not just a Portrait pasted into the Bar. Make them all one Cohesive
+            Textured Bar."
+
+            So they are ONE element now. Previously the enemy chip, the candle
+            rail and the hero chip were three independent children of
+            .battlefield — which is why cornering them meant absolutely
+            positioning each against a box that turned out to be the wrong box,
+            and why the enemy's chip was getting four pixels clipped.
+
+            The split is deliberate: the two portraits are fixed-size CAPS at
+            the ends and the candles are the flexible MIDDLE, so the rail is
+            exactly as tall as the battlefield at any viewport and the hero's
+            face sits in the bottom-left corner however many candles the run
+            has. The texture, the frame and the filigree belong to the rail;
+            the chips sit IN it, not on it. See battle.css §rail. */}
+        <aside className="bf-rail" aria-label="Combatants and vigor">
+          <div className="bf-rail-cap bf-rail-top">
+
+          {/* Enemy portrait chip, top-center. Boss fights fold the boss bar in
+              here; a duel folds in the rival's face and their face-down hand. */}
+          {portrait && (
+            <div
+              className={`bf-portrait bf-top ${boss ? 'bf-boss' : ''} ${portrait.kind === 'tamer' ? flashing[portrait.uid] ?? '' : ''}`}
+            >
+              <div className="bf-ring">
+                {hpRing(
+                  portrait.kind === 'beast'
+                    ? portrait.unit.hp / portrait.unit.maxHp
+                    : portrait.hero.hp / portrait.hero.maxHp
+                )}
+                <span className="bf-art">
+                  {portrait.kind === 'beast' ? (
+                    <MonsterImage speciesId={portrait.unit.speciesId} size={78} rarity={portrait.unit.rarity} />
+                  ) : (
+                    <HeroImage className={portrait.hero.className} size={78} />
+                  )}
+                </span>
+                {/* The rival tamer has no row of their own — their numbers and
+                    their impacts land on the chip that carries their face. */}
+                {portrait.kind === 'tamer' && renderPopups(portrait.uid)}
+                {portrait.kind === 'tamer' && renderImpact(portrait.uid)}
+              </div>
+              {boss ? (
+                <div className="boss-bar">
+                  <div className="boss-name" title={boss.displayName()}>
+                    {boss.displayName()}
+                  </div>
+                  <div className="boss-track">
+                    <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
+                  </div>
+                </div>
+              ) : portrait.kind === 'beast' ? (
+                <span className="bf-hp">
+                  {portrait.unit.hp}/{portrait.unit.maxHp}
+                </span>
+              ) : (
+                <>
+                  <span className="bf-hp" title={`${portrait.name} — the rival tamer`}>
+                    {portrait.hero.hp}/{portrait.hero.maxHp}
+                  </span>
+                  <span className="bf-foe-name" title={portrait.name}>
+                    {portrait.name}
+                  </span>
+                  {/* Their hand, face down. The view model carries a COUNT and
+                      nothing else — `viewFor` never hands the UI their cards. */}
+                  <span
+                    className="bf-foe-hand"
+                    title={`${portrait.name} holds ${portrait.handCount} card${portrait.handCount === 1 ? '' : 's'}`}
+                  >
+                    {Array.from({ length: portrait.handCount }, (_, i) => (
+                      <span key={i} className="bf-foe-card" style={{ ['--i' as string]: i }}>
+                        <CardBack width={22} />
+                      </span>
+                    ))}
+                    {portrait.handCount === 0 && <span className="bf-foe-empty">empty-handed</span>}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           </div>
-          <span className="vigor-count">
-            <b>{view.energy}</b>
-            <span>/{view.maxEnergy}</span>
-          </span>
-          <span className="vigor-word">vigor</span>
-        </div>
+          <div className="bf-rail-mid">
+          {/* Vigor: a rail of candles down the LEFT edge. One candle per max vigor;
+              spending a card snuffs one (flame gutters, smoke curls, wax dims). */}
+          <div className="vigor-rail" title={`Vigor — ${view.energy} of ${view.maxEnergy} left to spend on cards`}>
+            <div className="vigor-candles">
+              {Array.from({ length: view.maxEnergy }, (_, i) => (
+                <span key={i} className={`candle ${i < view.energy ? 'lit' : 'out'}`}>
+                  <span className="candle-smoke" aria-hidden="true" />
+                  <span className="candle-flame" aria-hidden="true" />
+                  <span className="candle-wick" aria-hidden="true" />
+                  <span className="candle-wax" aria-hidden="true" />
+                </span>
+              ))}
+            </div>
+            <span className="vigor-count">
+              <b>{view.energy}</b>
+              <span>/{view.maxEnergy}</span>
+            </span>
+            <span className="vigor-word">vigor</span>
+          </div>
+          </div>
+          <div className="bf-rail-cap bf-rail-bottom">
+          <div className="bf-portrait bf-bottom">
+            <div className="bf-ring">
+              {hpRing(hero.hp / hero.maxHp)}
+              <span className="bf-art">
+                <HeroImage className={hero.className} size={78} />
+              </span>
+            </div>
+            <span className="bf-hp">
+              {hero.hp}/{hero.maxHp}
+            </span>
+            {/* v18: the hero's block + statuses + stat mods (STR↑ …) pinned to
+                the portrait itself, where the eye already lives. */}
+            {(view.heroBlock > 0 || hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
+              <span className="bf-status-row">
+                {view.heroBlock > 0 && (
+                  <span className="status-tag block-tag" title={`Block — absorbs ${view.heroBlock} damage`}>
+                    🛡 {view.heroBlock}
+                  </span>
+                )}
+                {hero.statusEffects.map((st) => (
+                  <span key={st.name} className="status-tag" title={st.name}>
+                    {st.name}
+                  </span>
+                ))}
+                {hero.activeMods.map((m, i) => (
+                  <span
+                    key={i}
+                    className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
+                    title={`${m.stat} ${m.amount > 0 ? '+' : ''}${m.amount}`}
+                  >
+                    {m.stat}
+                    {m.amount > 0 ? '↑' : '↓'}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+          </div>
+        </aside>
 
         {/* v18: the combat log rides a RIGHT-side rail, opposite the candles.
             The app shell's bottom .game-log is hidden in battle (battle.css);
@@ -937,69 +1064,6 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           <div className="battle-log-title">Chronicle</div>
           <LogPanel lines={view.log} allyNames={view.allyNames} />
         </aside>
-
-        {/* Enemy portrait chip, top-center. Boss fights fold the boss bar in
-            here; a duel folds in the rival's face and their face-down hand. */}
-        {portrait && (
-          <div
-            className={`bf-portrait bf-top ${boss ? 'bf-boss' : ''} ${portrait.kind === 'tamer' ? flashing[portrait.uid] ?? '' : ''}`}
-          >
-            <div className="bf-ring">
-              {hpRing(
-                portrait.kind === 'beast'
-                  ? portrait.unit.hp / portrait.unit.maxHp
-                  : portrait.hero.hp / portrait.hero.maxHp
-              )}
-              <span className="bf-art">
-                {portrait.kind === 'beast' ? (
-                  <MonsterImage speciesId={portrait.unit.speciesId} size={78} rarity={portrait.unit.rarity} />
-                ) : (
-                  <HeroImage className={portrait.hero.className} size={78} />
-                )}
-              </span>
-              {/* The rival tamer has no row of their own — their numbers and
-                  their impacts land on the chip that carries their face. */}
-              {portrait.kind === 'tamer' && renderPopups(portrait.uid)}
-              {portrait.kind === 'tamer' && renderImpact(portrait.uid)}
-            </div>
-            {boss ? (
-              <div className="boss-bar">
-                <div className="boss-name" title={boss.displayName()}>
-                  {boss.displayName()}
-                </div>
-                <div className="boss-track">
-                  <div className="boss-fill" style={{ width: `${(boss.hp / boss.maxHp) * 100}%` }} />
-                </div>
-              </div>
-            ) : portrait.kind === 'beast' ? (
-              <span className="bf-hp">
-                {portrait.unit.hp}/{portrait.unit.maxHp}
-              </span>
-            ) : (
-              <>
-                <span className="bf-hp" title={`${portrait.name} — the rival tamer`}>
-                  {portrait.hero.hp}/{portrait.hero.maxHp}
-                </span>
-                <span className="bf-foe-name" title={portrait.name}>
-                  {portrait.name}
-                </span>
-                {/* Their hand, face down. The view model carries a COUNT and
-                    nothing else — `viewFor` never hands the UI their cards. */}
-                <span
-                  className="bf-foe-hand"
-                  title={`${portrait.name} holds ${portrait.handCount} card${portrait.handCount === 1 ? '' : 's'}`}
-                >
-                  {Array.from({ length: portrait.handCount }, (_, i) => (
-                    <span key={i} className="bf-foe-card" style={{ ['--i' as string]: i }}>
-                      <CardBack width={22} />
-                    </span>
-                  ))}
-                  {portrait.handCount === 0 && <span className="bf-foe-empty">empty-handed</span>}
-                </span>
-              </>
-            )}
-          </div>
-        )}
 
         <div className="bf-row enemy-row">
           {view.enemies.map((enemy) => {
@@ -1222,43 +1286,6 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         </div>
 
         {/* Player portrait chip, bottom-center, mirroring the enemy's. */}
-        <div className="bf-portrait bf-bottom">
-          <div className="bf-ring">
-            {hpRing(hero.hp / hero.maxHp)}
-            <span className="bf-art">
-              <HeroImage className={hero.className} size={78} />
-            </span>
-          </div>
-          <span className="bf-hp">
-            {hero.hp}/{hero.maxHp}
-          </span>
-          {/* v18: the hero's block + statuses + stat mods (STR↑ …) pinned to
-              the portrait itself, where the eye already lives. */}
-          {(view.heroBlock > 0 || hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
-            <span className="bf-status-row">
-              {view.heroBlock > 0 && (
-                <span className="status-tag block-tag" title={`Block — absorbs ${view.heroBlock} damage`}>
-                  🛡 {view.heroBlock}
-                </span>
-              )}
-              {hero.statusEffects.map((st) => (
-                <span key={st.name} className="status-tag" title={st.name}>
-                  {st.name}
-                </span>
-              ))}
-              {hero.activeMods.map((m, i) => (
-                <span
-                  key={i}
-                  className={`status-tag ${m.amount > 0 ? 'buff' : 'debuff'}`}
-                  title={`${m.stat} ${m.amount > 0 ? '+' : ''}${m.amount}`}
-                >
-                  {m.stat}
-                  {m.amount > 0 ? '↑' : '↓'}
-                </span>
-              ))}
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Always rendered with fixed height so entering aim mode never reflows the stage.
