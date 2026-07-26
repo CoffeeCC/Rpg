@@ -409,19 +409,172 @@ def ao_material(name, distance=0.35, samples=16):
 #             (128,128,255), the flat normal. Correct: for a wall's front face
 #             "out of the texture" IS "toward the player".
 #
-#   BILLBOARD the shader's basis is (1,0,0), (0,-cos,sin), (0,sin,cos) in
-#             BOARD space, which — after the y flip — is exactly Blender's
-#             camera basis at the same tilt. So camera space, unswizzled, is
-#             already right. That agreement is not luck; it is the same tilt
-#             written twice, and it is the reason the billboard path can use
-#             the stock Vector Transform node.
+#   BILLBOARD `lighting.ts` builds the quad's frame explicitly, and it is the
+#             only one of the three that is not a swizzle:
+#
+#                 worldN = vec3(N.x,0,0) + vec3(0,-c,s)*N.y
+#                                        + vec3(0, s,c)*N.z     [board space]
+#
+#             so the three texture axes are, in WORLD space after the y flip,
+#             (1,0,0), (0,cos,sin) and (0,-sin,cos) — camera right, camera up,
+#             and the direction from the surface toward the viewer.
+#
+#             THIS IS *NOT* BLENDER'S CAMERA SPACE, and the earlier note in
+#             this file claiming it was is now known to be wrong, because the
+#             first billboard shape in the project measured it:
+#
+#               Vector Transform WORLD->CAMERA, card baked face-on
+#                   B mean 9.1 / 9.7 / 2.8 / 3.1  on four unrelated shapes
+#
+#             B near ZERO on a card the camera is looking straight at means the
+#             transform reported every normal as pointing AWAY — Cycles' camera
+#             space runs +Z into the screen, the opposite of the convention
+#             `lighting.ts` uses. The tell is the same one gotcha 2 turns on:
+#             the SAME wrong number on four shapes that share no geometry.
+#
+#             It is not merely a sign flip to patch, either. The Y axis has its
+#             own convention in that space and there is no way to check it from
+#             inside Blender. So `billboard_basis()` states all three axes as
+#             world vectors taken from the shader, and the stock Vector
+#             Transform node is not used at all. Slower to write, impossible to
+#             be wrong about quietly.
 NORMAL_SWIZZLE = {
     VIEW_LYING: (("X", 1.0), ("Y", -1.0), ("Z", 1.0)),
     VIEW_UPRIGHT: (("X", 1.0), ("Z", 1.0), ("Y", -1.0)),
 }
 
 
-def normal_material(name, view):
+def billboard_basis(tilt_deg=DEFAULT_TILT_DEG):
+    """
+    (R, G, B) axes for a billboard's normal map, as WORLD vectors.
+
+    Transcribed from `lighting.ts`'s `vUpright > 1.5` branch and then flipped
+    from board space to world (board y = world -Y), which is the only step here
+    that is this file's own rather than the shader's.
+
+    Note what G means for a billboard: CAMERA UP, so a facet tipping toward the
+    TOP of the image reads above 128. That is the same sense as a vertical face
+    and the OPPOSITE of a lying decal, where G is board +y and therefore points
+    down the image. Not a contradiction — `lighting.ts` re-swizzles per quad
+    type — but it is why these three cases cannot share one rule.
+    """
+    t = math.radians(tilt_deg)
+    return ((1.0, 0.0, 0.0),
+            (0.0, math.cos(t), math.sin(t)),
+            (0.0, -math.sin(t), math.cos(t)))
+
+
+def relief_normal(nt, relief, space=None):
+    """
+    Surface texture too fine to be geometry, as a genuinely perturbed normal.
+
+    THIS IS NOT A SHORTCUT, it is the only available construction, and the file
+    already contains the proof. A linen tooth at 2.6px pitch cut as V-grooves
+    would be four hundred Booleans sharing one face; gotcha 8's table says what
+    that produces at SIX — an AO pass full of detail over a normal map that is
+    flat everywhere. So the tooth goes in the shader, and every feature big
+    enough to survive stays as geometry.
+
+    A Bump node perturbs the TRUE geometric normal by the gradient of a height
+    field, which is the reason it is the right node rather than an analytic
+    normal: `card_stock` has chamfers, drafted sockets and V-cut mouths whose
+    normals must be preserved and merely roughened. Replace the normal instead
+    of perturbing it and every one of those goes flat.
+
+    THE HEIGHT FIELD IS A SUM OF TRIANGLE WAVES, because a triangle wave IS a
+    V-groove: constant slope, one flank up and one flank down. It is the same
+    profile `vee()` cuts, at a scale where cutting is not possible.
+
+    COORDINATES COME FROM ONE OBJECT, NOT FROM EACH. `ShaderNodeTexCoord.object`
+    pins every part of a shape to a single space, so a bead built at the card's
+    corner and a slab built at its centre share one phase. Leave it unset and
+    each object's grating restarts at its own origin — and the phase seams land
+    exactly on the gilt, which is where they are most visible.
+    """
+    coord = nt.nodes.new("ShaderNodeTexCoord")
+    if space is not None:
+        coord.object = space
+
+    def radius():
+        """Distance from the shape's own origin, in the card's plane."""
+        flat = nt.nodes.new("ShaderNodeVectorMath")
+        flat.operation = "MULTIPLY"
+        flat.inputs[1].default_value = (1.0, 1.0, 0.0)
+        nt.links.new(coord.outputs["Object"], flat.inputs[0])
+        ln = nt.nodes.new("ShaderNodeVectorMath")
+        ln.operation = "LENGTH"
+        nt.links.new(flat.outputs["Vector"], ln.inputs[0])
+        return ln.outputs["Value"]
+
+    total = None
+    for direction, pitch, amp, gate in relief:
+        if direction is None:  # radial: concentric rings
+            u = radius()
+        elif direction == "theta":  # angular: spokes
+            sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+            nt.links.new(coord.outputs["Object"], sep.inputs["Vector"])
+            at = nt.nodes.new("ShaderNodeMath")
+            at.operation = "ARCTAN2"
+            nt.links.new(sep.outputs["Y"], at.inputs[0])
+            nt.links.new(sep.outputs["X"], at.inputs[1])
+            u = at.outputs["Value"]
+        else:  # straight grooves cut across `direction`
+            dot = nt.nodes.new("ShaderNodeVectorMath")
+            dot.operation = "DOT_PRODUCT"
+            dot.inputs[1].default_value = direction
+            nt.links.new(coord.outputs["Object"], dot.inputs[0])
+            u = dot.outputs["Value"]
+        # PINGPONG is the triangle wave: it ramps 0..1..0 with period twice its
+        # scale, so a scale of pitch/2 gives a groove every `pitch`.
+        div = nt.nodes.new("ShaderNodeMath")
+        div.operation = "DIVIDE"
+        div.inputs[1].default_value = pitch / 2.0
+        nt.links.new(u, div.inputs[0])
+        pp = nt.nodes.new("ShaderNodeMath")
+        pp.operation = "PINGPONG"
+        pp.inputs[1].default_value = 1.0
+        nt.links.new(div.outputs["Value"], pp.inputs[0])
+        # Centred on zero, so summing two sets does not lift the surface.
+        sc = nt.nodes.new("ShaderNodeMath")
+        sc.operation = "MULTIPLY_ADD"
+        sc.inputs[1].default_value = amp
+        sc.inputs[2].default_value = -0.5 * amp
+        nt.links.new(pp.outputs["Value"], sc.inputs[0])
+        term = sc.outputs["Value"]
+        if gate is not None:
+            # SMOOTHSTEP, not a hard cut. A step in amplitude is a step in the
+            # normal, and the eye finds a discontinuous ring far faster than it
+            # finds the aliasing the gate was there to remove.
+            ramp = nt.nodes.new("ShaderNodeMapRange")
+            ramp.interpolation_type = "SMOOTHSTEP"
+            ramp.inputs["From Min"].default_value = gate[0]
+            ramp.inputs["From Max"].default_value = gate[1]
+            nt.links.new(radius(), ramp.inputs["Value"])
+            gated = nt.nodes.new("ShaderNodeMath")
+            gated.operation = "MULTIPLY"
+            nt.links.new(term, gated.inputs[0])
+            nt.links.new(ramp.outputs["Result"], gated.inputs[1])
+            term = gated.outputs["Value"]
+        if total is None:
+            total = term
+        else:
+            add = nt.nodes.new("ShaderNodeMath")
+            add.operation = "ADD"
+            nt.links.new(total, add.inputs[0])
+            nt.links.new(term, add.inputs[1])
+            total = add.outputs["Value"]
+
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 1.0
+    # The height is already in Blender units, so Distance is a pass-through. Set
+    # it to anything else and the flank angle stops being the one FOIL_SLOPE
+    # says it is, which is the number the pitch test was run against.
+    bump.inputs["Distance"].default_value = 1.0
+    nt.links.new(total, bump.inputs["Height"])
+    return bump.outputs["Normal"]
+
+
+def normal_material(name, view, relief=None, space=None):
     """
     Surface normal as colour, in the space the engine's shader will read it.
 
@@ -441,6 +594,9 @@ def normal_material(name, view):
     out = nt.nodes.new("ShaderNodeOutputMaterial")
     emit = nt.nodes.new("ShaderNodeEmission")
     geo = nt.nodes.new("ShaderNodeNewGeometry")
+    # A relief spec replaces the raw geometric normal with a bumped one. It is
+    # still a real world-space normal, so everything downstream is unchanged.
+    source = relief_normal(nt, relief, space) if relief else geo.outputs["Normal"]
 
     mul = nt.nodes.new("ShaderNodeVectorMath")
     mul.operation = "MULTIPLY_ADD"
@@ -448,18 +604,25 @@ def normal_material(name, view):
     mul.inputs[2].default_value = (0.5, 0.5, 0.5)
 
     if view == VIEW_BILLBOARD:
-        xform = nt.nodes.new("ShaderNodeVectorTransform")
-        # NORMAL, not VECTOR: a normal transforms by the inverse transpose,
-        # and with the non-uniform scaling these shapes use the two disagree.
-        xform.vector_type = "NORMAL"
-        xform.convert_from = "WORLD"
-        xform.convert_to = "CAMERA"
-        nt.links.new(geo.outputs["Normal"], xform.inputs["Vector"])
-        nt.links.new(xform.outputs["Vector"], mul.inputs[0])
+        # Three dot products against `billboard_basis()`, not a Vector
+        # Transform. See the NORMAL_SWIZZLE note: Cycles' camera space runs +Z
+        # into the screen, so the stock node returned B = 9 where a card facing
+        # the camera has to read 255. Dotting the world normal against axes
+        # transcribed from the shader has no convention to get wrong, and it
+        # sidesteps gotcha 4's inverse-transpose problem too, because the
+        # Geometry node's Normal is already correct under any object scale.
+        com = nt.nodes.new("ShaderNodeCombineXYZ")
+        for channel, axis in zip("XYZ", billboard_basis()):
+            dot = nt.nodes.new("ShaderNodeVectorMath")
+            dot.operation = "DOT_PRODUCT"
+            dot.inputs[1].default_value = axis
+            nt.links.new(source, dot.inputs[0])
+            nt.links.new(dot.outputs["Value"], com.inputs[channel])
+        nt.links.new(com.outputs["Vector"], mul.inputs[0])
     else:
         sep = nt.nodes.new("ShaderNodeSeparateXYZ")
         com = nt.nodes.new("ShaderNodeCombineXYZ")
-        nt.links.new(geo.outputs["Normal"], sep.inputs["Vector"])
+        nt.links.new(source, sep.inputs["Vector"])
         for channel, (axis, sign) in zip("XYZ", NORMAL_SWIZZLE[view]):
             src = sep.outputs[axis]
             if sign < 0:
@@ -619,10 +782,16 @@ def bake_object(name, spec, out_dir, px):
     colour = spec["colour"]
 
     assign_albedo(objs, name, colour)
-    set_pass_encoding(True)
+    # `mask` says the albedo pass is DATA, not colour — `card_foil`'s only
+    # content is where the foil is. sRGB leaves white and black alone and lifts
+    # every ANTIALIASED EDGE texel from 128 to 188, which on a mask made of thin
+    # gilt lines fattens every line by half a pixel. Gotcha 2, pointed the other
+    # way round.
+    set_pass_encoding(not spec.get("mask", False))
     render_to(os.path.join(out_dir, f"{name}.png"), PASS_SAMPLES["albedo"])
 
-    assign(objs, normal_material(f"{name}_normal", view))
+    assign(objs, normal_material(f"{name}_normal", view, relief=spec.get("bump"),
+                                 space=objs[0] if objs else None))
     set_pass_encoding(False)
     render_to(os.path.join(out_dir, f"{name}_normal.png"), PASS_SAMPLES["normal"])
 
@@ -2928,9 +3097,899 @@ def build_board_corner(size=0.56, arm=0.17, sx=-1, sy=1, chamfer=0.014):
     return objs
 
 
-def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None, part=None):
-    """One row of the table below. Everything a bake needs and nothing else."""
-    return {
+# =========================================================================
+# THE PHYSICAL CARD (§15's argument, applied to the thing in your hand)
+# =========================================================================
+#
+# Paul: *"can we model the Actual Cards to they can bounce light?"*, then
+# *"Physical card, Physical Borders, Needs to have some shiny aspects like the
+# borders and the backs"*, then *"would it be possible to add Real holographic
+# artwork"*, then *"maybe even just on specific parts of the art so excentuate
+# them"*.
+#
+# FOUR PARTS, NOT ONE, AND THE RENDERER FORCES IT rather than taste choosing
+# it. `Material.roughness` is per-MATERIAL, not per-pixel, so a single quad
+# carrying matte stock AND a gilt border can only ever be one or the other.
+# §19.1 already pays that price to make the console's brass catch the light; a
+# card pays it twice, because it also needs a foil channel that is neither.
+#
+#     card_stock    the matte board: chamfered edge, linen tooth, a sunken art
+#                   window, a debossed name panel and rules field, and a socket
+#                   for the cost medallion. High roughness.
+#     card_border   the gilt: frame moulding, corner braces, window bezel,
+#                   panel beads, the cost medallion itself. Low roughness.
+#     card_back     what a deck and a discard pile show for the whole game, so
+#                   it earns real detail. Low roughness.
+#     card_foil     the holographic layer, which is TWO channels in one bake —
+#                   see below; it is the part with an argument in it.
+#
+# ALL FOUR SHARE ONE FRAME, which is `socket()`'s trick for the console's
+# button plates promoted to a rule. The engine draws four quads at one rect, so
+# they cannot drift apart, and moving a panel moves it in every layer at once.
+#
+# THE DIMENSIONS ARE MEASURED, NOT INVENTED, which is the whole reason the
+# constants below are written as `U(33)` instead of as `0.25`. `battle.css`
+# sizes a hand card at five breakpoints — 84x118, 132x185, 156x218, 164x230,
+# 172x241 — and `backdrops.tsx CardBack` states the ratio outright:
+# `height = round(width * 1.4)`. So the card is 1.0 x 1.4, the reference width
+# is the 132 that two of those five breakpoints use, and every panel position
+# here is that breakpoint's CSS box divided by 132. Invent the layout instead
+# and the baked window does not sit where the DOM art sits.
+#
+# NO MARGIN, unlike a plinth. The table's rule is that free-standing shapes take
+# MARGIN so Cycles' filter has somewhere to put the antialiased silhouette; a
+# card is the other case. Its silhouette IS the frame — the straight edges
+# coincide with it exactly and the rounded corners are interior — so a margin
+# would only mean the engine has to draw the quad 4% larger than the card.
+#
+# BILLBOARD, and gotcha 3 is why that matters. A card faces the camera, so the
+# render IS the camera's view of it: the geometry is built flat in XY where the
+# panel arithmetic is legible, and `face_camera()` then stands the whole scene
+# up into the plane the game's own tilt looks straight at. Bake it LYING
+# instead and `buildVertexData` squashes by cos(tilt) a texture that was
+# already squashed by cos(tilt) — and the green channel comes to mean the
+# opposite of what `lighting.ts` reads out of it.
+#
+# -------------------------------------------------------------------------
+# FOIL IS A RARITY SIGNAL, SO THERE IS A MASK PER TIER
+# -------------------------------------------------------------------------
+#
+# Paul, on seeing the first version, which had one universal mask:
+# *"that card agent isnt doing EVERY card in holographic shiny foil is it? we
+# need to distinguish between rarer cards and common cards using that
+# technique"*.
+#
+# He is right and the one-mask version was wrong on its own terms. A deck where
+# everything shines says nothing; the shine only means anything against a
+# baseline that does not have it. So a COMMON CARD GETS NO FOIL AT ALL — not a
+# little, none — and the ladder climbs from there:
+#
+#     starter    nothing. The most ordinary card in the game.
+#     common     nothing. This is the baseline the rest are read against.
+#     uncommon   the cost medallion and the rarity pip. The smallest accent
+#                that exists: two objects, both under 24px, so it registers
+#                when the lantern sweeps past and not before.
+#     rare       the border frame along its full run, plus the above.
+#     star       the frame, the title panel and the corner flourishes.
+#
+# TWO THINGS ARE FOILED AT NO TIER, and they are omissions on purpose:
+#
+#   the art window bezel — because the per-card art foil composites INSIDE that
+#     window, and a permanently foiled ring one pixel outside it would be a
+#     second, brighter shine competing with the one that is supposed to be
+#     drawing the eye to the creature.
+#   the rules panel bead — a card's biggest block of DOM text sits in it.
+#
+# THE SHAPE NAMES ARE THE ENGINE'S RARITY STRINGS, so a renderer can look up
+# `card_foil_${card.rarity}` with no mapping table and no branch — which is also
+# why `starter` and `common` are emitted as all-black masks rather than as
+# missing files. A missing file is a special case somebody has to remember.
+#
+# ONE EXCEPTION, FLAGGED RATHER THAN QUIETLY RESOLVED: `types.ts` says
+# `CardRarity = 'starter' | 'common' | 'uncommon' | 'rare'`. There is no 'star'.
+# `card_foil_star` is baked because the tier was asked for by name and the
+# geometry costs nothing, but nothing can select it until that union gains a
+# member. It is a mask waiting for a rarity, not a rarity waiting for a mask.
+#
+# -------------------------------------------------------------------------
+# THE FOIL IS A MASK AND A GRATING, AND THEY ARE DIFFERENT KINDS OF THING
+# -------------------------------------------------------------------------
+#
+# Real holo is view-angle-dependent iridescence: the hue sweeps as the card or
+# the light moves. That is shader work. What a bake can hand a shader is the
+# two things it multiplies, and each `card_foil_*` carries one in each pass.
+#
+#   THE MASK is the ALBEDO pass — white where the card is foil, black where it
+#   is plain stock. It is DATA, so it renders under the Raw view transform like
+#   the normal and the AO, which is gotcha 2 pointed the other way. sRGB does
+#   not change pure white or pure black; it changes every ANTIALIASED EDGE
+#   TEXEL, lifting a half-covered one from 128 to 188. On a mask made almost
+#   entirely of thin gilt lines that is not a rounding error — it fattens every
+#   line in the mask by roughly half a pixel. Hence `spec["mask"]`.
+#
+#   THE MASK IS FURNITURE ONLY, and the art window's interior is deliberately
+#   BLACK. Which part of a particular creature is foiled is a per-card decision
+#   that has to register with that painting pixel for pixel, so it is derived in
+#   `tools/art/pipeline.mjs`, where the paintings actually are. Anything baked
+#   into that rectangle here would be a second, fixed mask fighting the real
+#   one — and it would win, because it is on top.
+#
+#   THE GRATING is the NORMAL pass, and it runs across the WHOLE face rather
+#   than only under the mask — on EVERY tier, common and starter included. The
+#   groove pattern is a property of the card STOCK, not of the foil, so it costs
+#   nothing beside a black mask and it means a card promoted to a foil tier
+#   already has the grooves that break the holo into bands.
+#
+#   The five normal passes are therefore the SAME IMAGE, and it was worth
+#   checking rather than asserting — the first draft of this comment claimed
+#   byte-identical and the hashes disagreed. Measured against `common`:
+#
+#       starter    max 0    mean 0.0000
+#       uncommon   max 1    mean 0.0001
+#       rare       max 7    mean 0.0013
+#       star       max 7    mean 0.0015
+#
+#   Identical everywhere except a handful of texels on the outlines of the mask
+#   pieces themselves, where the 0.0004 z offset lets the pixel filter resolve
+#   either surface and Cycles' jitter sequence differs because the scene has a
+#   different number of objects in it. Immaterial, but "byte-identical" would
+#   have been a claim this file could not have backed up.
+#
+# WHY THE MASK CARRIES NO RELIEF AT ALL. Every piece of `card_foil` is a FLAT
+# POLYGON — not a thin slab, not a bevelled one. A slab would put its own walls
+# and chamfers into the normal pass, and that pass has exactly one job here: be
+# a clean, uninterrupted grating. Give the mask geometry a bevel and the normal
+# comes back carrying a faint ghost of the frame, which the shader reads as
+# diffraction that changes direction at the edge of the gilt.
+#
+# THE PITCH IS THE ONE NUMBER THAT HAD TO BE MEASURED. A grating is what makes
+# holo break into moving BANDS instead of glowing as one flat sheet, and the
+# band spacing IS the groove pitch. Two failure modes bracket it, and the
+# bracket was rendered rather than reasoned about:
+#
+#     node tools/art/blender/cards.mjs --pitch web/art-staging/materials/pitch
+#
+# bakes the foil at each candidate, box-filters it to a 132px-wide card, and
+# reports how much of the grating's amplitude survived the trip:
+#
+#     pitch   rms 731px   rms 132px   kept   what it looks like
+#     1.5 px    21.96        9.51      43%   gone. Well under Nyquist.
+#     2.0 px    22.70       14.19      63%   the bands come out HORIZONTAL —
+#                                            a beat against the pixel grid,
+#                                            not the 21-degree grating at all
+#     3.0 px    23.41       18.38      78%   right direction, faint beat left
+#     4.0 px    23.77       20.17      85%   <- FOIL_PITCH_PX
+#     6.0 px    24.11       21.82      90%   countable lines: corduroy
+#     8.0 px    24.28       22.60      93%   stripes
+#
+# 4px is the finest pitch whose bands still run the way the grooves do. That is
+# the criterion, and it is not the same as "keeps the most amplitude" — 8px
+# keeps more and is plainly wrong. The two numbers bound the answer and the eye
+# picks inside them; the visual is `_pitch.png`, written by the same command.
+#
+# What this argues against is the obvious instinct, which is to go as fine as a
+# real hologram. A real grating is ~1000 lines/mm — four orders of magnitude
+# below one screen pixel. Bake that and every texel gets an independent hue,
+# which is not iridescence, it is noise; and because the shader sweeps it as the
+# card moves, it is noise that CRAWLS.
+#
+# 4px is also therefore a FLOOR FOR THE WHOLE PROJECT, not a fact about foil.
+# Nothing baked here can be finer than that and survive being drawn at the size
+# it is drawn at, which is why `LINEN_PITCH` had to be moved UP to sit above it.
+#
+# The grooves run at 21 degrees off the card's horizontal, deliberately not at
+# 0, 45 or 90: an axis-aligned grating beats against the pixel grid and a
+# 45-degree one beats against its diagonal.
+
+# --- measured off battle.css and backdrops.tsx ---------------------------
+# `.hand-fan .playing-card` is 132x185 at two of its five breakpoints; that is
+# the reference. Everything below is a CSS pixel at that size.
+CARD_REF_PX = 132.0
+CARD_W = 1.0
+CARD_H = 1.4  # backdrops.tsx CardBack: height = round(width * 1.4)
+
+
+def U(px):
+    """A CSS pixel at the reference card width, in board units."""
+    return px / CARD_REF_PX
+
+
+CARD_H_PX = CARD_H * CARD_REF_PX  # 184.8; the CSS says 185, which is 1.4015
+CARD_BOX = (0.0, 0.0, CARD_REF_PX, CARD_H_PX)
+
+# `.playing-card { border-radius: 8px }`.
+CARD_R_PX = 8.0
+# The gilt band. `.playing-card`'s CSS border is 3px, which is what a DOM
+# element can afford; a moulding needs two beads and the channel between them,
+# and at 132px wide three features do not fit into three pixels.
+FRAME_PX = 7.0
+
+# The panels, as CSS boxes (left, top, width, height) at the 132px reference:
+#   .card-name       margin 8px 14px 0 30px, +3px card border, +2px pad, +1px
+#   .card-art-window margin 6px 14px 0, height 43% of the 179px content box
+#   .card-type-line  margin 6px 14px 0
+#   .card-text-plate margin 6px 14px 8px, flex:1
+NAME_BOX = (33.0, 11.0, 82.0, 19.4)
+ART_BOX = (17.0, 36.4, 98.0, 77.0)
+TYPE_BOX = (17.0, 119.4, 98.0, 14.6)
+RULES_BOX = (17.0, 140.0, 98.0, 34.0)
+# `.card-cost` sits at (4, 4) so the gem overlaps the card's own border. A
+# medallion needs board underneath it to be set INTO, so it comes in one pixel:
+# at (5, 5) the socket's nearest corner is 3.8px from the card's edge, which is
+# a web of stock rather than a breach of the silhouette.
+COST_BOX = (5.0, 5.0, 22.0, 24.0)
+# Corner braces, as the top-left pair; the other three corners are mirrors.
+BRACE_BARS = ((1.25, 1.25, 20.0, 4.5), (1.25, 1.25, 4.5, 20.0))
+# THE RARITY PIP, and its position is the only free choice on the whole card —
+# so it was made by elimination rather than by taste. It has to be gilt (it is a
+# foil target), it has to read at 132px, and it cannot sit under DOM text. That
+# rules out the type line and the rules field outright. What is left is the strip
+# between the name plate's right edge at x=115 and the frame's inner edge at
+# x=125: exactly ten pixels, which is why the pip is ten pixels. A diamond, not
+# another rounded rectangle, because at this size the SILHOUETTE is all the
+# information there is and every other object on the card is a rounded rect.
+RARITY_PIP_BOX = (115.0, 12.0, 10.0, 10.0)
+
+# Depths. A card is 0.3mm of board, and modelling that literally would give the
+# chamfer a quarter of a pixel to live in. The thickness is therefore
+# exaggerated, which costs nothing: a billboard is seen face-on, so its
+# thickness is invisible except through the chamfer it carries.
+CARD_T = U(4.0)
+CARD_CHAMFER = U(1.6)
+ART_DEPTH = U(1.6)
+ART_MOUTH = U(3.0)  # `.card-art-window { border: 3px groove }`, as a real V
+PANEL_DEPTH = U(1.0)
+PANEL_MOUTH = U(2.0)
+COST_DEPTH_PX = 1.4
+GILT_T = U(1.8)  # how proud the gilt stands off the board
+GILT_CHAMFER = U(0.7)
+
+# `.playing-card`'s own gradient top stop, #191720, and `--gold` #c9a227 from
+# index.css — sRGB converted to linear, because `flat_material` emits linear and
+# the albedo pass re-encodes on the way out.
+CARD_STOCK = (0.0097, 0.0086, 0.0145)
+CARD_INK = (0.030, 0.024, 0.055)  # the back's field: ink, not the front's board
+GILT = (0.584, 0.361, 0.020)
+
+# --- the two surface textures, as normal-map relief ----------------------
+# Neither can be geometry. A linen tooth at 2.6px pitch cut as V-grooves is four
+# hundred Booleans on one face, and gotcha 8's table says exactly what that
+# produces: an AO pass full of detail and a normal map that is flat everywhere.
+#
+# `slope` is the tangent of the flank angle, which is what actually decides how
+# far the normal tips. The amplitude follows from it and the pitch, because a
+# triangle wave of period p and peak-to-peak height a has |dh/du| = 2a/p — so
+# the shape below is stated in the units it is judged in.
+FOIL_PITCH_PX = 4.0
+FOIL_PITCH = U(FOIL_PITCH_PX)
+FOIL_SLOPE = 0.213  # tan(12 degrees)
+FOIL_ANGLE_DEG = 21.0
+# Linen finish is a woven emboss, so it is a CROSS hatch — the exact opposite of
+# `grain()`, on purpose. Grain says "plank" precisely by running one way; board
+# says "board" by running both.
+#
+# COARSER THAN THE FOIL, and the first version had it the other way round at
+# 2.6px. The brief for the foil is that its grating be the finest relief in the
+# project, and 4px is the measured floor for ANY relief at true size — so a
+# 2.6px linen was not "finer detail", it was the same aliasing the pitch sweep
+# rejected, on a channel nobody was going to check. 4.4px keeps the foil the
+# finest thing on the card by a margin that is real rather than nominal.
+LINEN_PITCH = U(4.4)
+LINEN_SLOPE = 0.06  # tan(3.4 degrees) — a tooth, not a corrugation
+# The back's engine-turning: concentric rings crossed by spokes, which is what a
+# rose engine actually cuts.
+#
+# AN ANGULAR WAVE HAS NO SINGLE PITCH, which is the trap in it. Its spacing is
+# an ARC, so it is 2*pi*r/spokes and it shrinks to nothing at the centre: at 56
+# spokes everything inside r = 36px was below the 4px floor, and the middle
+# third of the back came back as a disc of noise that a moving light would make
+# crawl. 32 spokes puts the floor at r = 20px, and `build_card_back`'s boss is
+# sized to cover exactly that — the geometry hides the only part that cannot be
+# sampled. The two numbers are therefore a pair; change one and check the other.
+GUILLOCHE_PITCH = U(4.6)
+GUILLOCHE_SLOPE = 0.16
+GUILLOCHE_SPOKES = 32
+GUILLOCHE_FLOOR_PX = GUILLOCHE_SPOKES * 4.0 / (2.0 * math.pi)  # 20.4
+
+
+def wave(direction, pitch, slope, gate=None):
+    """
+    One set of parallel V-grooves as a relief spec.
+
+    `direction` is the axis the grooves are cut ACROSS, so the grooves run
+    perpendicular to it. `None` means radial and `"theta"` means angular; those
+    two together are what makes a guilloche a guilloche rather than a bullseye.
+
+    `gate` is (inner, outer) radii, and it exists for one reason: AN ANGULAR
+    WAVE HAS NO SINGLE PITCH. Its spacing is an arc — 2*pi*r/spokes — so however
+    well it is sampled at the rim it is below Nyquist near the centre, always,
+    at every spoke count. Hiding that under a raised boss was tried and does not
+    work: the boss's own chamfer is a pixel wide at true size, so it reads as
+    nothing and the vortex shows straight through it. Fading the term out below
+    a radius removes it instead of covering it, and what is left inside is the
+    radial wave, whose pitch is the same everywhere by construction.
+    """
+    return (direction, pitch, slope * pitch / 2.0, gate)
+
+
+LINEN = (wave((1.0, 0.0, 0.0), LINEN_PITCH, LINEN_SLOPE),
+         wave((0.0, 1.0, 0.0), LINEN_PITCH, LINEN_SLOPE))
+FOIL_GRATING = (wave((math.cos(math.radians(FOIL_ANGLE_DEG)),
+                      math.sin(math.radians(FOIL_ANGLE_DEG)), 0.0),
+                     FOIL_PITCH, FOIL_SLOPE),)
+GUILLOCHE = (
+    wave(None, GUILLOCHE_PITCH, GUILLOCHE_SLOPE),
+    # A THIRD of the radial slope, not half again as much. The first version had
+    # the spokes dominant and the back came out a hypnotic sunburst rather than
+    # an engine-turned panel: on a real rose engine the rosette MODULATES the
+    # rings, it does not replace them. Gated off inside the radius where its arc
+    # spacing falls under the 4px floor, and faded in over the next half again
+    # so the boundary is not itself a visible ring.
+    wave("theta", 2.0 * math.pi / GUILLOCHE_SPOKES, GUILLOCHE_SLOPE * 0.34,
+         gate=(U(GUILLOCHE_FLOOR_PX), U(GUILLOCHE_FLOOR_PX * 1.6))),
+)
+
+
+# -------------------------------------------------------------------------
+# Outlines. A card is rounded rectangles all the way down, and none of them can
+# be a bevelled cube.
+# -------------------------------------------------------------------------
+
+
+def rounded_rect(w, h, r, segments=6, centre=(0.0, 0.0)):
+    """
+    Counter-clockwise outline of a rounded rectangle in the XY plane.
+
+    NOT a bevelled box, and the difference is not cosmetic. An 8px radius on a
+    card 4px thick has the Bevel modifier's clamp eat it against the thickness,
+    and what comes out is a rounded EDGE rather than a rounded CORNER. Building
+    the outline makes the corner exact and leaves the modifier the one job it is
+    good at, which is the chamfer.
+
+    The arc CENTRES sit at (+-(w/2 - r), +-(h/2 - r)), which is what makes an
+    inset copy line up point-for-point with this one: shrink w, h and r by the
+    same amount and every arc centre stays where it was. That is why `poly_band`
+    can bridge two outlines without matching anything up by hand.
+    """
+    cx, cy = centre
+    r = max(1e-5, min(r, w / 2.0, h / 2.0))
+    ax, ay = w / 2.0 - r, h / 2.0 - r
+    pts = []
+    for kx, ky, a0 in ((1, -1, -90.0), (1, 1, 0.0), (-1, 1, 90.0), (-1, -1, 180.0)):
+        ccx, ccy = cx + kx * ax, cy + ky * ay
+        for s in range(segments + 1):
+            a = math.radians(a0 + 90.0 * s / segments)
+            pts.append((ccx + r * math.cos(a), ccy + r * math.sin(a)))
+    # DEDUPLICATE, and this is not defensive tidying — it is a real bug with a
+    # measurement attached. When `r` reaches half the width the shape is a
+    # CIRCLE, the straight runs vanish, and consecutive arcs then share their
+    # endpoints exactly: one duplicate vertex at each of 0, 90, 180 and 270
+    # degrees, and therefore a ZERO-LENGTH EDGE there. Bevel's clamp limits a
+    # chamfer by its neighbours (gotcha 6's mechanism), and a neighbour of
+    # length zero clamps it to zero — so the card back's boss came out with its
+    # chamfer collapsed at exactly the four cardinal points and intact between
+    # them. Measured on the boss's top edge, peak |dev| in the normal map:
+    #
+    #     at the apex (the duplicate)         43   <- probe landed here
+    #     five pixels round the arc          100
+    #
+    # A defect that hides at three points out of four and shows at the fourth is
+    # precisely the "looks detailed, lights wrongly" failure this file keeps
+    # paying for. Culling by distance rather than by case also covers the
+    # stadium shapes, where only two of the four collapse.
+    out = []
+    for p in pts:
+        if not out or math.dist(p, out[-1]) > r * 1e-6:
+            out.append(p)
+    if len(out) > 1 and math.dist(out[0], out[-1]) <= r * 1e-6:
+        out.pop()
+    return out
+
+
+def css_centre(css_box):
+    """(left, top, w, h) in reference CSS pixels -> the card-local XY centre."""
+    left, top, w, h = css_box
+    return (U(left + w / 2.0) - CARD_W / 2.0, CARD_H / 2.0 - U(top + h / 2.0))
+
+
+def css_rect(css_box, r=3.0, inset=0.0, segments=6):
+    """A CSS box as a rounded outline, shrunk by `inset` CSS pixels all round."""
+    left, top, w, h = css_box
+    return rounded_rect(U(w - 2.0 * inset), U(h - 2.0 * inset), U(r - inset),
+                        segments, css_centre(css_box))
+
+
+def css_poly(pts_px):
+    """
+    An explicit CSS-space polygon -> card-local XY. Y IS DOWN IN CSS and up in
+    Blender, which is the same flip `css_centre` performs and the same one the
+    board's axes note makes for board y. Get it wrong and the cost medallion is
+    mirrored top to bottom — and a keystone upside down still looks like a
+    keystone, which is what makes it worth stating.
+    """
+    return [(U(x) - CARD_W / 2.0, CARD_H / 2.0 - U(y)) for x, y in pts_px]
+
+
+def mirror_box(css_box, flip_x, flip_y):
+    """A CSS box reflected into another quadrant of the card."""
+    left, top, w, h = css_box
+    if flip_x:
+        left = CARD_REF_PX - left - w
+    if flip_y:
+        top = CARD_H_PX - top - h
+    return (left, top, w, h)
+
+
+def brace_boxes():
+    """The eight bars of the four corner braces. Two bars, never an L-shaped
+    n-gon: a concave face is the one case `recalc_face_normals` can get wrong,
+    and a brace with an inverted normal reads as a hole in the gilt."""
+    return [mirror_box(bar, fx, fy)
+            for fx in (False, True) for fy in (False, True) for bar in BRACE_BARS]
+
+
+def shield(css_box, inset=0.0):
+    """
+    `.card-cost`'s outline: `clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%,
+    0 62%)`. A keystone, taken from the CSS rather than drawn to taste, so the
+    baked medallion and the DOM badge are the same object.
+
+    `inset` shrinks it about the box centre, in CSS pixels. Exact for the four
+    axis-aligned edges and approximate for the two raking ones, which at this
+    size is an error of a hundredth of a pixel — and it is what lets the socket
+    be the medallion plus a clearance instead of a second hand-drawn outline.
+    """
+    return _unit_poly(css_box, ((0.0, 0.0), (1.0, 0.0), (1.0, 0.62), (0.5, 1.0), (0.0, 0.62)),
+                      inset)
+
+
+def diamond(css_box, inset=0.0):
+    """The rarity pip. See RARITY_PIP_BOX for why it is not a rounded rect."""
+    return _unit_poly(css_box, ((0.5, 0.0), (1.0, 0.5), (0.5, 1.0), (0.0, 0.5)), inset)
+
+
+def _unit_poly(css_box, unit, inset):
+    """A polygon given in 0..1 box coordinates, placed and shrunk about the box
+    centre. Shared so the medallion and the pip cannot drift apart in how they
+    handle `inset` — the socket for each is the outline plus a clearance."""
+    left, top, w, h = css_box
+    cx, cy = left + w / 2.0, top + h / 2.0
+    fx, fy = (w - 2.0 * inset) / w, (h - 2.0 * inset) / h
+    return css_poly([(cx + (left + u * w - cx) * fx, cy + (top + v * h - cy) * fy)
+                     for u, v in unit])
+
+
+def _mesh_from(name, verts, faces, recalc=True):
+    """
+    Build a mesh vertex by vertex, because a card's outlines are not primitives.
+
+    `recalc` IS OFF FOR OPEN GEOMETRY and that is not a detail.
+    `recalc_face_normals` orients faces outward from a closed volume; handed a
+    single flat polygon there is no outward, so it picks one — and a mask piece
+    that picks -Z renders its BACK face at the camera, which Cycles then flips
+    against the ray. The mask's normal pass would come back with the grating
+    inverted inside the gilt and upright everywhere else. The open shapes here
+    are wound counter-clockwise by construction, so they need no help.
+    """
+    import bmesh  # type: ignore  # Blender's bundled bmesh
+
+    bm = bmesh.new()
+    bv = [bm.verts.new(v) for v in verts]
+    for f in faces:
+        try:
+            bm.faces.new([bv[i] for i in f])
+        except ValueError:
+            pass  # a duplicate face, which a degenerate outline can produce
+    bm.faces.ensure_lookup_table()
+    if recalc:
+        bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    return obj
+
+
+def poly_prism(profile, depth, z0, name="prism", top_profile=None):
+    """
+    A closed outline extruded along Z. `top_profile` makes it DRAFTED, which is
+    `build_trap_hole`'s argument applied to a cutter: a vertical wall is exactly
+    edge-on to a face-on camera and contributes zero pixels, so a pocket cut
+    with a straight-sided cutter exists in the AO pass and nowhere else.
+    """
+    n = len(profile)
+    top = top_profile if top_profile is not None else profile
+    verts = [(x, y, z0) for x, y in profile] + [(x, y, z0 + depth) for x, y in top]
+    faces = [tuple(range(n - 1, -1, -1)), tuple(range(n, 2 * n))]
+    faces += [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+    return _mesh_from(name, verts, faces)
+
+
+def poly_band(outer, inner, depth, z0, name="band"):
+    """
+    A closed band — the frame moulding, a window bezel, a panel bead.
+
+    BUILT, NOT BOOLEANED OUT OF A PLATE, and that is gotcha 6 taken seriously
+    rather than worked around. A ring cut from a slab is a Boolean, and a
+    Boolean's leftover slivers clamp away the chamfer of every edge sharing that
+    face — including edges nowhere near the cut. A ring that was never anything
+    else has clean topology, so `bevelled()` on it does exactly what it says and
+    the moulding gets a real bead on both of its edges.
+    """
+    n = len(outer)
+    verts = ([(x, y, z0) for x, y in outer] + [(x, y, z0 + depth) for x, y in outer]
+             + [(x, y, z0) for x, y in inner] + [(x, y, z0 + depth) for x, y in inner])
+    ob, ot, ib, it = 0, n, 2 * n, 3 * n
+    faces = []
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((ob + i, ob + j, ot + j, ot + i))
+        faces.append((ib + j, ib + i, it + i, it + j))
+        faces.append((ot + i, ot + j, it + j, it + i))
+        faces.append((ob + j, ob + i, ib + i, ib + j))
+    return _mesh_from(name, verts, faces)
+
+
+def poly_face(profile, z, name="face"):
+    """
+    A single flat polygon — the mask's unit of construction, and nothing else's.
+
+    ZERO RELIEF IS THE POINT. `card_foil` renders a mask in its albedo and a
+    grating in its normal, and the grating has to be uninterrupted; a mask piece
+    with any thickness at all puts its own walls into the normal pass, and the
+    shader reads those as diffraction that changes direction at the gilt.
+    """
+    return _mesh_from(name, [(x, y, z) for x, y in profile],
+                      [tuple(range(len(profile)))], recalc=False)
+
+
+def poly_band_face(outer, inner, z, name="band_face"):
+    """A flat annulus. `poly_face` for the pieces of the mask that are rings."""
+    n = len(outer)
+    verts = [(x, y, z) for x, y in outer] + [(x, y, z) for x, y in inner]
+    faces = [(i, (i + 1) % n, n + (i + 1) % n, n + i) for i in range(n)]
+    return _mesh_from(name, verts, faces, recalc=False)
+
+
+def face_camera(objs):
+    """
+    Stand the whole scene up into the plane the game's camera looks straight at.
+
+    A card BILLBOARDS, so gotcha 3's third case applies: the render IS the
+    camera's own view of it. The panels are laid out flat in XY, where the CSS
+    arithmetic is legible and every helper above already works, and this rotates
+    the result into the tilt plane afterwards.
+
+    EVERY MESH IN THE SCENE, not just the ones the builder returned. A Boolean
+    transforms its cutter by `target.matrix_world.inverted() @
+    cutter.matrix_world`, so the two have to move together — rotate only the
+    visible parts and every pocket is cut at 55 degrees through the card, which
+    the AO pass would render beautifully.
+
+    AND `matrix_world` IS STALE UNTIL THE VIEW LAYER IS UPDATED, which cost a
+    bake. Setting `obj.rotation_euler` marks an object dirty; it does not
+    recompute the matrix, and Blender only does that on the next depsgraph
+    evaluation — which in a headless script is whenever it feels like it.
+    Reading the matrix first therefore returns the IDENTITY, and `rot @ identity`
+    quietly throws the rotation away. The symptom was four lugs meant to sit at
+    45, 135, 225 and 315 degrees all stacked on top of each other at 0, which
+    renders as ONE lug and looks like a builder that only ran once.
+    """
+    bpy.context.view_layer.update()
+    rot = mathutils.Matrix.Rotation(math.radians(DEFAULT_TILT_DEG), 4, "X")
+    for obj in bpy.context.scene.objects:
+        if obj.type == "MESH":
+            obj.matrix_world = rot @ obj.matrix_world
+    return objs
+
+
+# -------------------------------------------------------------------------
+# The four parts
+# -------------------------------------------------------------------------
+
+
+def build_card_stock():
+    """
+    The board itself: matte, chamfered, carrying everything the gilt sits in.
+
+    THE ORDER IS THE ONE GOTCHA 6 SPELLS OUT, and this shape is the worst case
+    the file has seen for it — eleven Booleans share the front face, where four
+    was enough to delete `build_button_plate`'s border and six to flatten
+    `build_tray` entirely. So:
+
+      1. `bevelled()` on the clean rounded slab. The perimeter chamfer is the
+         card's most visible feature and it survives only if it is applied
+         before anything at all is cut.
+      2. the pockets, as Booleans.
+      3. every mouth chamfer CUT AS GEOMETRY — `route_ring` for the rectangles,
+         a drafted cutter for the keystone. A modifier can be clamped away; a
+         45-degree V cut into the mesh cannot.
+
+    There is no `lipped()` call anywhere below, and that is a decision rather
+    than an omission: gotcha 8's table says that at this Boolean count it would
+    contribute nothing while looking like it contributed something.
+
+    THE PANEL INTERIORS ARE EMPTY AND STAY EMPTY — `build_button_plate`'s rule.
+    The name, the type line, the rules text and the art are DOM or painted art;
+    anything baked inside those rectangles is content the app cannot change,
+    translate, resize or read aloud.
+    """
+    slab = poly_prism(rounded_rect(CARD_W, CARD_H, U(CARD_R_PX), segments=8),
+                      CARD_T, -CARD_T / 2.0, name="card_stock")
+    bevelled(slab, CARD_CHAMFER)
+    top = CARD_T / 2.0
+
+    def pocket(css_box, depth, mouth, label):
+        _, _, w, h = css_box
+        cx, cy = css_centre(css_box)
+        cut(slab, box(U(w), U(h), 0.4, (cx, cy, top - depth + 0.2)), f"{label}Pocket")
+        # Centred exactly on the pocket's perimeter, so its inner half is
+        # already carved away and what is left is a 45-degree chamfer running
+        # round the mouth — which is what a router leaves anyway. `build_tray`.
+        route_ring(slab, U(w), U(h), mouth, (cx, cy, top), name=f"{label}Mouth")
+
+    pocket(ART_BOX, ART_DEPTH, ART_MOUTH, "Art")
+    pocket(NAME_BOX, PANEL_DEPTH, PANEL_MOUTH, "Name")
+    pocket(RULES_BOX, PANEL_DEPTH, PANEL_MOUTH, "Rules")
+
+    # The cost socket. DRAFTED rather than V-ringed, because `route_ring` only
+    # knows how to run round a rectangle and this is a keystone. The cutter is
+    # the medallion's outline plus a clearance at the bottom and the same
+    # outline one depth larger at the top, so the wall it leaves is a 45-degree
+    # chamfer by construction — `build_candle_socket`'s bore, at card scale.
+    clear_px, over_px = 0.6, 1.0
+    cut(slab,
+        poly_prism(shield(COST_BOX, inset=-clear_px), U(COST_DEPTH_PX + over_px),
+                   top - U(COST_DEPTH_PX), name="cost_cutter",
+                   top_profile=shield(COST_BOX, inset=-(clear_px + COST_DEPTH_PX + over_px))),
+        "CostSocket")
+    return face_camera([slab])
+
+
+def build_card_border():
+    """
+    The gilt: everything on a card that is meant to catch a moving light.
+
+    ITS OWN TEXTURE, which is the hard constraint rather than a preference —
+    `Material.roughness` is per material, so gilt and board cannot share a quad.
+    §19.1 makes the same argument for the console's brass; this is that argument
+    at card scale, where the two materials interleave far more finely.
+
+    NOT ONE BOOLEAN IN THE WHOLE SHAPE. Every piece is a band or a prism that
+    was built as that shape, so every `bevelled()` here survives intact. Gotcha
+    6 and gotcha 8 are both about chamfers dying after a cut; the way to win
+    that fight is to not have the cut.
+
+    THE FRAME IS A MOULDING, NOT A LINE — two beads with a sunken channel
+    between them. That is also the only way this shape gets any AO at all:
+    gotcha 7 says there is no such thing as an invisible occluder, so a bead
+    cannot borrow contact darkening from the board it will be drawn on top of,
+    because that board is a different texture and simply is not here. It has to
+    occlude itself, and a channel between two beads is what does that.
+    """
+    objs = []
+    for i, (a, b) in enumerate(((0.0, 2.5), (4.5, FRAME_PX))):
+        bead = poly_band(css_rect(CARD_BOX, r=CARD_R_PX, inset=a, segments=8),
+                         css_rect(CARD_BOX, r=CARD_R_PX, inset=b, segments=8),
+                         GILT_T, CARD_T / 2.0, name=f"frame_bead{i}")
+        bevelled(bead, GILT_CHAMFER)
+        objs.append(bead)
+    channel = poly_band(css_rect(CARD_BOX, r=CARD_R_PX, inset=2.5, segments=8),
+                        css_rect(CARD_BOX, r=CARD_R_PX, inset=4.5, segments=8),
+                        GILT_T * 0.4, CARD_T / 2.0, name="frame_channel")
+    bevelled(channel, GILT_CHAMFER * 0.5)
+    objs.append(channel)
+
+    for i, bar in enumerate(brace_boxes()):
+        brace = poly_prism(css_rect(bar, r=1.4, segments=3), GILT_T * 1.35, CARD_T / 2.0,
+                           name=f"brace{i}")
+        bevelled(brace, GILT_CHAMFER)
+        objs.append(brace)
+
+    # The window bezel. `.card-art-window`'s CSS border is `3px groove`, i.e.
+    # inset; as a physical part it is RAISED, because a gilt bezel sitting below
+    # the board cannot catch a light the board is shading it from.
+    bezel = poly_band(css_rect(ART_BOX, r=3.0, inset=-3.0), css_rect(ART_BOX, r=3.0),
+                      GILT_T, CARD_T / 2.0 - ART_DEPTH * 0.15, name="art_bezel")
+    bevelled(bezel, GILT_CHAMFER)
+    objs.append(bezel)
+
+    # Panel beads. Thin, and HOLLOW: `.card-name`, `.card-type-line` and
+    # `.card-text-plate` all carry DOM text, so the bead runs round the field
+    # and nothing at all crosses it.
+    for css_box, name in ((NAME_BOX, "name_bead"), (TYPE_BOX, "type_bead"),
+                          (RULES_BOX, "rules_bead")):
+        bead = poly_band(css_rect(css_box, r=3.0, inset=-1.6), css_rect(css_box, r=3.0),
+                         GILT_T * 0.8, CARD_T / 2.0 - PANEL_DEPTH * 0.2, name=name)
+        bevelled(bead, GILT_CHAMFER * 0.7)
+        objs.append(bead)
+
+    # The cost medallion, seated in `build_card_stock`'s socket. Plate and
+    # socket from one outline and one clearance, which is `build_button_plate`
+    # and `build_button_recess` again: change COST_BOX and both move together.
+    #
+    # It stands PROUDER THAN THE CORNER BRACE it overlaps, which is the whole
+    # reason the height is stated as a multiple of GILT_T rather than as a
+    # number. A medallion pinned over the corner of a frame is a real object; a
+    # medallion with a brace poking through it is a modelling error.
+    coin = poly_prism(shield(COST_BOX), U(COST_DEPTH_PX) + GILT_T * 2.2,
+                      CARD_T / 2.0 - U(COST_DEPTH_PX), name="cost_medallion")
+    bevelled(coin, GILT_CHAMFER)
+    objs.append(coin)
+    rim = poly_band(shield(COST_BOX, inset=2.2), shield(COST_BOX, inset=4.0),
+                    GILT_T * 0.7, CARD_T / 2.0 + GILT_T * 2.2, name="cost_rim")
+    bevelled(rim, GILT_CHAMFER * 0.6)
+    objs.append(rim)
+
+    # The rarity pip. It exists because foil is a rarity signal (see the header)
+    # and `uncommon` needs something to foil that is not the frame — a tier whose
+    # only mark was the cost medallion would be indistinguishable from a common
+    # card whose cost happened to catch the light.
+    pip = poly_prism(diamond(RARITY_PIP_BOX), GILT_T * 1.5, CARD_T / 2.0, name="rarity_pip")
+    bevelled(pip, GILT_CHAMFER)
+    objs.append(pip)
+    return face_camera(objs)
+
+
+def build_card_back():
+    """
+    What a deck and a discard pile show for the entire game, which is the whole
+    argument for detailing it: the FACE of a card is on screen while it is in
+    your hand, and the back is on screen always.
+
+    Shiny in one piece, unlike the front. A card back has no matte region to
+    keep separate, so the per-material roughness constraint costs it nothing and
+    it can be a single part with a gilt albedo on the raised pieces.
+
+    THE ENGINE-TURNING IS RELIEF, NOT GEOMETRY. A guilloche is concentric rings
+    crossed by spokes; cut as V-grooves that is several hundred Booleans on one
+    face, and gotcha 8 says the result is a convincing AO pass over a flat
+    normal map. It goes in the normal shader instead — see GUILLOCHE — and what
+    stays as geometry is only what has to OCCLUDE: the border moulding, the
+    medallion ring, and the boss at the centre.
+    """
+    slab = poly_prism(rounded_rect(CARD_W, CARD_H, U(CARD_R_PX), segments=8),
+                      CARD_T, -CARD_T / 2.0, name="card_back")
+    bevelled(slab, CARD_CHAMFER)
+    objs = [slab]
+    top = CARD_T / 2.0
+    gilt = []
+
+    for i, (a, b) in enumerate(((1.5, 4.0), (6.0, 8.0))):
+        bead = poly_band(css_rect(CARD_BOX, r=CARD_R_PX, inset=a, segments=8),
+                         css_rect(CARD_BOX, r=CARD_R_PX, inset=b, segments=8),
+                         GILT_T, top, name=f"back_bead{i}")
+        bevelled(bead, GILT_CHAMFER)
+        gilt.append(bead)
+
+    # The centre: a boss and a ring rather than a picture. The back has to read
+    # at 132px across, and at that size a motif with interior detail turns to
+    # noise while a strong concentric silhouette still reads as a device.
+    #
+    # THE BOSS IS SIZED BY THE GUILLOCHE, NOT BY TASTE. An angular wave's
+    # spacing is an arc, so it collapses toward the centre; `GUILLOCHE_FLOOR_PX`
+    # is the radius inside which 32 spokes fall below the 4px floor, and the
+    # boss covers it. That is why this number is computed rather than typed: at
+    # 56 spokes the floor was r = 36px and the middle third of the back was a
+    # disc of aliased noise that a moving light would set crawling.
+    boss_px = 2.0 * GUILLOCHE_FLOOR_PX  # 40.8 across
+    ring_in, ring_out = boss_px + 12.0, boss_px + 22.0
+    ring_band = poly_band(rounded_rect(U(ring_out), U(ring_out), U(ring_out / 2.0), segments=12),
+                          rounded_rect(U(ring_in), U(ring_in), U(ring_in / 2.0), segments=12),
+                          GILT_T * 1.4, top, name="back_ring")
+    # CHAMFERS TWICE THE FRONT'S, because these have to compete with a guilloche
+    # rather than with a flat field. A 0.7px chamfer is what the gilt on the
+    # FACE wants — nothing else there is finer than a pixel. Here the same
+    # chamfer sat under a rosette and simply was not found: the centre read as
+    # aliased noise straight through a boss that was supposed to be covering it.
+    bevelled(ring_band, GILT_CHAMFER * 2.0)
+    gilt.append(ring_band)
+    boss = poly_prism(rounded_rect(U(boss_px), U(boss_px), U(boss_px / 2.0), segments=12),
+                      GILT_T * 2.2, top, name="back_boss")
+    bevelled(boss, GILT_CHAMFER * 2.6)
+    gilt.append(boss)
+    # Four lugs bridging the ring outward, which is what stops the centre
+    # reading as a button. Built along +X at the radius and then TURNED, not
+    # placed at the angle and then turned again — that doubles the angle, and
+    # four spokes at 90, 270, 450 and 630 degrees is two spokes.
+    for i in range(4):
+        a = math.radians(45.0 + 90.0 * i)
+        lug = poly_prism(rounded_rect(U(18.0), U(4.5), U(2.2), segments=3,
+                                      centre=(U(ring_out / 2.0), 0.0)),
+                         GILT_T, top, name=f"back_lug{i}")
+        lug.rotation_euler = (0.0, 0.0, a)
+        bevelled(lug, GILT_CHAMFER * 0.8)
+        gilt.append(lug)
+
+    for obj in gilt:
+        obj["albedo"] = GILT
+    return face_camera(objs + gilt)
+
+
+# Which gilt each rarity foils. CUMULATIVE ON PURPOSE — a ladder whose rungs do
+# not contain each other is not a ladder, it is four unrelated treatments, and
+# a player cannot read "more" off it at a glance.
+#
+# `bezel` and `rules` appear in no tier. See the header: the art window's bezel
+# is left plain so it does not compete with the per-card art foil that lands
+# inside it, and the rules bead surrounds the card's largest block of DOM text.
+FOIL_TIERS = {
+    "starter": (),
+    "common": (),
+    "uncommon": ("cost", "pip"),
+    "rare": ("frame", "cost", "pip"),
+    "star": ("frame", "braces", "name", "cost", "pip"),
+}
+
+
+def build_card_foil(tier):
+    """
+    THE HOLOGRAPHIC LAYER for one rarity, which is two different things sharing
+    one bake.
+
+    ALBEDO IS THE MASK: white where this rarity's card is foil, black where it
+    is plain stock, and the shader keys the entire effect off it. FLAT POLYGONS
+    ONLY — see `poly_face`. Nothing here has thickness, a bevel, or an AO story.
+
+    NORMAL IS THE GRATING, and it covers the WHOLE card on EVERY tier —
+    including the two whose mask is entirely black. The grooves belong to the
+    card STOCK rather than to the foil, so they cost nothing next to a black
+    mask, and a card promoted to a foil tier already has them.
+
+    THE ART WINDOW IS BLACK AT EVERY TIER. Which part of a given creature is
+    foiled has to line up with that creature's painting pixel for pixel, so it
+    is derived per painting in `tools/art/pipeline.mjs`. A fixed mask baked into
+    that rectangle would not merely be useless — it would fight the real one and
+    win, because it is on top.
+
+    EVERY WHITE PIECE IS THE FOOTPRINT OF A PIECE OF `build_card_border`, from
+    the same constants and the same helper calls, so a mask cannot drift out of
+    register with the thing it is masking. There is no second table of outlines.
+    """
+    parts = FOIL_TIERS[tier]
+    plate = poly_face(rounded_rect(CARD_W, CARD_H, U(CARD_R_PX), segments=8), 0.0,
+                      name="foil_plate")
+    plate["albedo"] = (0.0, 0.0, 0.0)
+    objs = [plate]
+    z = 0.0004  # far enough to win the depth test, near enough to stay coplanar
+
+    def white(obj):
+        obj["albedo"] = (1.0, 1.0, 1.0)
+        objs.append(obj)
+        return obj
+
+    if "frame" in parts:
+        white(poly_band_face(css_rect(CARD_BOX, r=CARD_R_PX, segments=8),
+                             css_rect(CARD_BOX, r=CARD_R_PX, inset=FRAME_PX, segments=8),
+                             z, name="foil_frame"))
+    if "braces" in parts:
+        for i, bar in enumerate(brace_boxes()):
+            white(poly_face(css_rect(bar, r=1.4, segments=3), z, name=f"foil_brace{i}"))
+    if "name" in parts:
+        white(poly_band_face(css_rect(NAME_BOX, r=3.0, inset=-1.6), css_rect(NAME_BOX, r=3.0),
+                             z, name="foil_name"))
+    if "cost" in parts:
+        white(poly_face(shield(COST_BOX), z, name="foil_cost"))
+    if "pip" in parts:
+        white(poly_face(diamond(RARITY_PIP_BOX), z, name="foil_pip"))
+    return face_camera(objs)
+
+
+def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None, part=None, **extra):
+    """
+    One row of the table below. Everything a bake needs and nothing else.
+
+    MERGED FROM TWO PARALLEL PASSES, and both halves are load-bearing.
+    `part` names a split assembly's half -- section 19.1's rule that brass is
+    never baked into the timber it sits on, because the renderer's specular is
+    per-material and a mixed quad can only be shiny or matte. `**extra` carries
+    flags only some shapes set: `bump` (surface texture too fine to be geometry)
+    and `mask` (the albedo pass is DATA, so it renders Raw -- the foil masks).
+    Kwargs rather than positional defaults because most shapes set neither and
+    should not have to say so.
+    """
+    spec = {
         "build": build,
         "width": width,
         "height": height,
@@ -2940,6 +3999,8 @@ def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=N
         "centre": centre,
         "part": part,
     }
+    spec.update(extra)
+    return spec
 
 
 def split(name, build, ao=0.30, wood=WOOD_FRAME, brass_ao=None, **kw):
@@ -2967,6 +4028,8 @@ def split(name, build, ao=0.30, wood=WOOD_FRAME, brass_ao=None, **kw):
         f"{name}_brass": shape(build, ao=brass_ao if brass_ao is not None else ao * 0.55,
                                colour=BRASS, part="brass", **kw),
     }
+    spec.update(extra)
+    return spec
 
 
 # -------------------------------------------------------------------------
@@ -3157,6 +4220,47 @@ SHAPES = {
     # Same footprint, opposite objects — one has a floor, one goes through.
     **split("pile_tray", build_pile_tray, width=0.96, height=1.22, ao=0.13),
     **split("exhaust_grate", build_exhaust_grate, width=0.96, height=1.22, ao=0.13),
+
+    # --- the physical card (see THE PHYSICAL CARD, above) -----------------
+    # Four layers at ONE frame, so the engine draws four quads at one rect and
+    # they cannot drift. No margin: a card's silhouette IS its frame.
+    #
+    # BILLBOARD, all four. A card turns to face the camera, so the render is the
+    # camera's view of it — gotcha 3's third case, and the first shapes in this
+    # file to use it. `face_camera()` in each builder is what makes it true.
+    #
+    # The AO distances are an order of magnitude below the rest of the table
+    # because the relief is: a card's deepest feature is 1.6px of art window,
+    # where a wall block's is most of a tile. Leave AO at 0.30 here and every
+    # surface reads as occluded by every other one.
+    "card_stock": shape(
+        build_card_stock, width=CARD_W, height=CARD_H, view=VIEW_BILLBOARD,
+        ao=0.05, colour=CARD_STOCK, bump=LINEN,
+    ),
+    "card_border": shape(
+        build_card_border, width=CARD_W, height=CARD_H, view=VIEW_BILLBOARD,
+        ao=0.04, colour=GILT,
+    ),
+    "card_back": shape(
+        build_card_back, width=CARD_W, height=CARD_H, view=VIEW_BILLBOARD,
+        ao=0.05, colour=CARD_INK, bump=GUILLOCHE,
+    ),
+    # ONE MASK PER RARITY, named after the engine's own `CardRarity` strings so
+    # the lookup is `card_foil_${card.rarity}` with no mapping table. `starter`
+    # and `common` are emitted as ALL-BLACK masks rather than omitted, because a
+    # missing file is a special case somebody has to remember; a black mask is
+    # the same code path returning nothing.
+    #
+    # Albedo is data (`mask=True`); the normal is the grating and is identical
+    # across all five by construction; the AO is a flat plate and unused.
+    **{
+        f"card_foil_{tier}": shape(
+            (lambda t: lambda: build_card_foil(t))(tier),
+            width=CARD_W, height=CARD_H, view=VIEW_BILLBOARD,
+            ao=0.02, colour=(0.0, 0.0, 0.0), bump=FOIL_GRATING, mask=True,
+        )
+        for tier in FOIL_TIERS
+    },
 
     "brass_strap": shape(build_brass_strap, width=0.90, height=0.26, ao=0.08, colour=BRASS),
     # The far-left corner. The other three are a row each — never a UV flip.
