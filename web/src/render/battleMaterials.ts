@@ -41,12 +41,43 @@ import {
   woodField,
 } from '../lantern/scene/board';
 import { flamePixels } from '../lantern/scene/emitters';
-import { MAT_ARENA, MAT_BACKDROP, MAT_BLANK, MAT_CANDLE } from './battleScene';
+import {
+  MAT_ARENA,
+  MAT_BACKDROP,
+  MAT_BLANK,
+  MAT_CANDLE,
+  MAT_CORNER_BRASS,
+  MAT_RAIL_STRIP,
+  MAT_SOCKET,
+} from './battleScene';
+
+/**
+ * Where `tools/art/blender/bake.py` publishes to (`tools/art/blender/publish.mjs`
+ * copies staging's `<name>.png` / `<name>_normal.png` here, mirroring
+ * `render/materials.ts`'s `BAKED_ROOT` convention for the bevel/tile bakes).
+ *
+ * NOT reused from `materials.ts` on purpose: `bakedRef` there parses the
+ * EDT-bevel naming (`<set>/<source>_albedo.png`) off a source art URL, and the
+ * Blender board bakes are a different pipeline with a different convention —
+ * `<name>.png` is itself the albedo, there is no source art to derive a URL
+ * from, and AO is never published at all (see the header of `publish.mjs`).
+ */
+export const BAKED_BOARD_ROOT = 'art/materials/board';
 
 export interface BattleMaterialLibrary {
   materials: Map<string, Material>;
   /** Queue a colour texture for `id` from `url`. Idempotent; a repeat is free. */
   request(id: string, url: string, extra?: Partial<Material>): void;
+  /**
+   * Queue a Blender-baked board furniture shape (§19.1) by its bake name —
+   * `candle_socket`, `board_corner_brass`, `candle_rail_strip`, and so on.
+   * Fetches BOTH `${name}.png` (colour) and `${name}_normal.png` (relief) from
+   * `BAKED_BOARD_ROOT` and applies the two upload rules stated at the top of
+   * this file: colour is `SRGB8_ALPHA8`, the normal is `RGBA8` and never sRGB.
+   * `repeat: true` wraps both textures instead of clamping, for a shape
+   * authored to tile (the candle rail strip's registered height axis).
+   */
+  requestFurniture(id: string, name: string, extra?: Partial<Material> & { repeat?: boolean }): void;
   /** Drop a texture so a new fight can put a different image behind the same id. */
   forget(id: string): void;
   dispose(): void;
@@ -223,29 +254,87 @@ export function createBattleMaterialLibrary(
     normalStrength: 1,
   });
 
+  /**
+   * Load one image into a texture, applying the two upload rules.
+   *
+   * `srgb` decides `SRGB8_ALPHA8` (colour) versus `RGBA8` (a normal map or any
+   * other numeric field) — getting this backwards on a normal map bends every
+   * vector toward +z, per this file's header. `repeat` is CLAMP_TO_EDGE unless
+   * a shape is authored to tile (the candle rail's registered height axis).
+   */
+  function loadTexture(
+    url: string,
+    srgb: boolean,
+    repeat: boolean,
+    done: (tex: WebGLTexture | null) => void,
+  ): void {
+    const img = new Image();
+    img.onload = () => {
+      if (disposed) return done(null);
+      const tex = gl.createTexture();
+      if (!tex) return done(null);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      done(tex);
+    };
+    // A missing asset is not an error worth shouting about.
+    img.onerror = () => done(null);
+    img.src = url;
+  }
+
   function request(id: string, url: string, extra: Partial<Material> = {}): void {
     if (disposed || materials.has(id) || pending.has(id)) return;
     pending.add(id);
-    const img = new Image();
-    img.onload = () => {
+    loadTexture(url, true, false, (tex) => {
       pending.delete(id);
-      if (disposed) return;
-      const tex = gl.createTexture();
       if (!tex) return;
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.generateMipmap(gl.TEXTURE_2D);
       own(id, tex);
       materials.set(id, { id, albedo: tex, ...extra });
+    });
+  }
+
+  /**
+   * The furniture path: two fetches (colour + normal) rather than one, so it
+   * cannot reuse `request`'s single-texture draft. Publishes the moment the
+   * ALBEDO lands — same rule as `render/materials.ts`'s draft pattern — so a
+   * socket or a strip is drawn (flat-shaded) the instant its colour arrives
+   * rather than waiting on both fetches, and the normal fills in whenever it
+   * finishes, in whichever order the two requests land.
+   */
+  function requestFurniture(
+    id: string,
+    name: string,
+    extra: Partial<Material> & { repeat?: boolean } = {},
+  ): void {
+    if (disposed || materials.has(id) || pending.has(id)) return;
+    pending.add(id);
+    const { repeat = false, ...matExtra } = extra;
+    const draft: { albedo: WebGLTexture | null; normal: WebGLTexture | null } = {
+      albedo: null,
+      normal: null,
     };
-    // A missing asset is not an error worth shouting about.
-    img.onerror = () => pending.delete(id);
-    img.src = url;
+    const publish = () => {
+      if (disposed || !draft.albedo) return;
+      materials.set(id, { id, albedo: draft.albedo, normal: draft.normal ?? undefined, ...matExtra });
+    };
+    loadTexture(`${BAKED_BOARD_ROOT}/${name}.png`, true, repeat, (tex) => {
+      pending.delete(id);
+      if (!tex) return;
+      draft.albedo = own(id, tex);
+      publish();
+    });
+    loadTexture(`${BAKED_BOARD_ROOT}/${name}_normal.png`, false, repeat, (tex) => {
+      if (!tex) return;
+      draft.normal = own(id, tex);
+      publish();
+    });
   }
 
   /**
@@ -267,6 +356,7 @@ export function createBattleMaterialLibrary(
   return {
     materials,
     request,
+    requestFurniture,
     forget,
     dispose() {
       if (disposed) return;
@@ -294,4 +384,19 @@ export function requestFigureArt(
   art: readonly { textureId: string; url: string }[],
 ): void {
   for (const a of art) lib.request(a.textureId, a.url);
+}
+
+/**
+ * The Blender-baked board furniture (§19.1) that has a fixed position on the
+ * arena's own frame — no DOM measuring, unlike the portrait bezels, lantern
+ * cradle, log well and pile trays, which need a `.bf-*` rect to sit behind and
+ * are not requested here (ENGINE_PLAN §21.7).
+ *
+ * Idempotent and safe to call every frame's mount effect: `requestFurniture`
+ * no-ops once the id is loaded or already in flight, same as `request`.
+ */
+export function requestBoardFurniture(lib: BattleMaterialLibrary): void {
+  lib.requestFurniture(MAT_SOCKET, 'candle_socket');
+  lib.requestFurniture(MAT_RAIL_STRIP, 'candle_rail_strip', { repeat: true });
+  lib.requestFurniture(MAT_CORNER_BRASS, 'board_corner_brass');
 }

@@ -13,6 +13,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { publishBoard } from './publish.mjs';
+
 const FALLBACK_ROOTS = [
   'C:/Program Files/Blender Foundation',
   'C:/Program Files (x86)/Blender Foundation',
@@ -60,4 +62,10 @@ const script = path.join('tools', 'art', 'blender', 'bake.py');
 const args = ['--background', '--python', script, '--', ...process.argv.slice(2)];
 console.log(`[art:board] ${blender}`);
 const run = spawnSync(blender, args, { stdio: 'inherit' });
+if (run.status === 0) {
+  // Staging is gitignored and unreachable from a build; publish the two maps
+  // the renderer samples into web/public/ so `npm run art:board` alone is
+  // enough to make new furniture visible in-game.
+  publishBoard();
+}
 process.exit(run.status ?? 1);

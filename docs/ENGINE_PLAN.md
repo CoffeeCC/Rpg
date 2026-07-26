@@ -2379,3 +2379,148 @@ as a floor, that the pieces stand on it rather than sit on it, that the candles
 read as the thing lighting the room, that spending vigor visibly puts the room
 out, and that the aim line still arcs from a card in the hand onto the monster
 it is pointed at.
+
+---
+
+## 21.7 The furniture reaches the game — some of it (2026-07-26)
+
+§21.5 left "the battlefield's frame, rim and table are off screen" and never
+addressed the ten shapes `fa677e4` baked for the console (§19.1). Neither gap
+is fully closed. What moved:
+
+**The publish step, which did not exist at all.** `tools/art/blender/bake.py`
+writes to gitignored `web/art-staging/materials/board/`, and nothing copied
+those PNGs anywhere `vite build` could see — `render/materials.ts`'s header
+already named this exact failure mode for the bevel bakes and it was equally
+true here. `tools/art/blender/publish.mjs` now copies every shape's `<name>.png`
+and `<name>_normal.png` into `web/public/art/materials/board/`, skipping
+`_ao.png` (an input to the normal bake, never sampled — same rule
+`bake.mjs`'s `PUBLISHED_MAPS` already applies to the other sets) and the
+`_sheet.png` contact sheet `art:sheet` leaves behind. Wired into `run.mjs` so
+`npm run art:board` publishes automatically, and also runnable standalone
+(`npm run art:board:publish`) to republish an existing staging tree without
+paying for another Cycles render — which is how this session's assets reached
+`public/` at all, since re-baking wasn't necessary. Verified live: 80 files,
+45.0 MB, and `battleMaterials.test.ts` checks the real files on disk for all
+twelve currently-named shapes, not merely the source text's claim of a path.
+
+**`battleMaterials.ts` learned a second request path.** `request()` (one
+fetch, always sRGB) already served the arena floor, the backdrop and painted
+figures, but nothing in it could load a Blender board shape, which needs a
+COLOUR fetch and a NORMAL fetch obeying opposite sRGB rules. `requestFurniture`
+does both, publishing the material the instant the albedo lands (same
+draft-until-albedo rule `render/materials.ts` uses) so a socket draws flat the
+frame before its relief arrives rather than not drawing at all.
+
+**Candle sockets and the rail strip are wired and lit.** `MAT_SOCKET` existed
+in `battleScene.ts` since `fa677e4` — `pushRail` already drew a socket sprite
+under every candle position, gated on `has(MAT_SOCKET)` — but nothing ever
+supplied that material, so it never had. `requestBoardFurniture` (called once
+per fight, in `LanternBattlefield`'s mount effect) now asks for
+`candle_socket` and `candle_rail_strip`. The rail strip is new geometry, not
+just a new request: one flat quad per band, spanning the exact run the candles
+stand on (`RAIL_NEAR`/`RAIL_FAR`, factored out of `candlePositions` so the two
+can never drift apart), UV-repeated rather than stretched — `candle_rail_strip`
+is registered on its height axis specifically so this works (bake.py: "the
+rail TILES ALONG ITS HEIGHT"), which needed `requestFurniture`'s `repeat`
+option and, one level down, teaching the network-image loader in
+`battleMaterials.ts` to wrap REPEAT instead of the hardcoded CLAMP_TO_EDGE
+every other loaded texture in this file used.
+
+**The corner brass is wired at ONE corner, and which corner took a correction
+caught only by looking at the actual pixels.** `board_corner_brass.png`,
+rendered and read directly rather than assumed: it is an L hugging the
+texture's TOP and LEFT edges. This engine's own rule for what that means —
+stated in `piece.ts baseDiscNormalPixels` and restated in `bake.py`'s header —
+is "texture +v (down the image) is board +y, toward the camera," so the top
+edge is the FAR edge. The first pass anchored the corner at the NEAR-left
+frame corner (the same band the candle rail sits on, but the party's end of
+it) on the assumption that "the far-left corner" in `bake.py`'s own comment was
+about Blender's authoring convention rather than the finished asset's
+orientation. Both readings are plausible from the source alone; only one
+survives looking at the PNG. Moved to the far-left corner
+(`cornerBrassCentre`), and the wrong placement is exactly the class of mistake
+this file already warns about for a UV flip — plausible, silent, and only
+caught by rendering the actual asset. The other three corners are still not
+placed: mirroring the one bake onto them would need either three more
+oriented bakes or a verified tangent-space-X flip on the normal, and guessing
+at either is how the near/far mistake happened once already this session.
+
+**Brass straps and the five DOM-anchored fittings are open, and the DOM
+anchors themselves are now confirmed rather than guessed at.** Grepped
+`BattleScreen.tsx` rather than assumed:
+
+| fitting | anchor | status |
+|---|---|---|
+| portrait bezels | `.bf-portrait.bf-top`, `.bf-portrait.bf-bottom` | anchor exists, unmeasured |
+| discard tray | `.pile-widget.pile-discard` | anchor exists, unmeasured |
+| exhaust grate | `.pile-widget.pile-exhaust` | anchor exists, unmeasured |
+| lantern cradle | `.lantern-turn` (`components/LanternTurn.tsx`) | anchor exists, unmeasured — also used by `FloorScreen`, so the cradle may belong to both screens, not just the arena |
+| log well | `.battle-log-rail` / `.battle-log-title` ("Chronicle") | anchor exists, unmeasured |
+
+None of these five are ambiguous the way the task brief worried they might
+be — every one has a single, unshared DOM element to measure. What is missing
+is the plumbing itself: none of `LanternBattlefield.tsx`'s effects measure
+these rects, `arenaCamera`'s `FieldAnchors` carries only the two feet lines,
+and `battleScene.ts` has no unproject-and-place function for a furniture rect
+the way `placeFigure` does for a combatant. That is a real, scoped follow-up
+— five `getBoundingClientRect` reads, five unprojections, five sprites — not
+attempted here because doing it properly (plus the two-sizes/silhouette
+distinction §19.1 asks for on the pile pair) is its own pass, and the near/far
+corner mistake above is the argument for not rushing five more placements in
+the same session. `brass_strap` is open for a different reason: §19.1 says it
+straps the CONSOLE's seams, and the console body (`console_body`,
+`button_plate`, `tray`, `bezel` — all baked, none wired) is not built on
+either render path yet. There is no seam in the current arena geometry for a
+strap to honestly sit across.
+
+**Verified by measurement:** `battleMaterials.test.ts` checks the real
+published files on disk (would have failed — and was made to fail, by moving
+the directory aside and back — against the pre-publish tree) for all twelve
+named shapes, colour and normal, confirms no `_ao.png` ever publishes, and
+checks the two upload rules at their actual call sites rather than once
+generically. `battleScene.test.ts` gained three tests: that the rail strip and
+corner brass draw NOTHING when their materials are absent (proving the
+`has()` gates actually gate, which is the exact bug this session closed — the
+gates existed and gated nothing), that the rail strip's centre, size and
+repeat-count UV match `RAIL_NEAR`/`RAIL_FAR` to 1e-10, and that exactly one
+corner brass sprite exists at `cornerBrassCentre`'s far-left point. The
+disk-existence checks in `battleMaterials.test.ts` are gated on the published
+directory actually existing (`describe.skipIf`) rather than asserted
+unconditionally — the reason is stated in that file's header: `web/public/` is
+gitignored and rebuilt by a Blender bake, so an unconditional assertion would
+fail a fresh clone or CI for a reason unrelated to the code. 1259 tests total
+(was 1244), `tsc -b` clean.
+
+**Verified by eye:** the three published albedo maps and their normal maps,
+viewed directly (not merely fetched) — `candle_socket` (a brass cup with a
+dark bore, its normal a clean radial bevel with no sRGB wash visible in the
+flat 128/128 field), `candle_rail_strip` (two brass edges framing a wood
+channel, its normal seamless top-to-bottom, confirming the tile-safety
+`bake.py` claims), and `board_corner_brass` (the L bracket whose orientation
+drove the near/far correction above). **A live composited battlefield frame
+was NOT obtained.** The dev server ran and the app was driven through
+character creation into a real Hollow Gate floor with `?r=lantern` active
+(`LANTERN · PLAY · O FRAMING` HUD text confirmed the renderer path was live),
+and one genuine floor-scene frame was captured — the hero on his plinth, lit,
+via the project's own headless render hook (`window.__lantern.frame()`,
+built for exactly this) rather than the browser's screen compositor, which
+would not composite in this session (`document.visibilityState` stayed
+`"hidden"` throughout; clicks, key presses and even `End Turn` produced no
+state change; `computer:screenshot` timed out on every attempt). That
+environment limit, not a shortcut, is why the battle scene specifically —
+which needed walking into a fight, and every click was a no-op — was not
+captured live. The pieces that could be checked without it (the published
+assets, the geometry solve, the gate-then-render logic) were.
+
+### What is NOT ported (added to §21.5's list)
+
+- **Board corner brass at the other three corners**, and **brass straps
+  anywhere** — see the table and reasoning above.
+- **The five DOM-anchored console fittings** (portrait bezels, lantern
+  cradle, log well, discard tray, exhaust grate) — anchors confirmed, no
+  measure-and-place code written yet.
+- **The console body itself** (`console_body`, the button plate/recess pairs,
+  `tray`, `bezel`) is baked and published but has no consumer on either render
+  path — §19's player console as a whole is still unbuilt, only its candle
+  rail and one frame corner are.

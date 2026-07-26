@@ -41,6 +41,7 @@ import {
   createBattleMaterialLibrary,
   requestArenaFloor,
   requestBackdrop,
+  requestBoardFurniture,
   requestFigureArt,
   type BattleMaterialLibrary,
 } from './battleMaterials';
@@ -162,6 +163,10 @@ export function LanternBattlefield({
       border: ARENA_BORDER,
     });
     libRef.current = lib;
+    // The frame-fixed furniture (§19.1): sockets, the rail strip, the
+    // near-left corner. Requested once per fight — nothing here changes
+    // between frames, unlike the backdrop or the figures' painted art.
+    requestBoardFurniture(lib);
 
     let raf = 0;
     let disposed = false;

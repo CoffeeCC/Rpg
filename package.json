@@ -8,6 +8,7 @@
     "art:bake": "node tools/art/bake.mjs",
     "art:check": "node tools/art/check.mjs",
     "art:board": "node tools/art/blender/run.mjs",
+    "art:board:publish": "node tools/art/blender/publish.mjs",
     "art:sheet": "node tools/art/blender/sheet.mjs"
   },
   "keywords": [],

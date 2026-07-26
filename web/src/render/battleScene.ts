@@ -381,21 +381,72 @@ export function candleFrameRightX(width: number): number {
  * is still live off the same elements, and the numeric readout beside them is
  * still DOM text.
  */
+/**
+ * The rail's own extent along the frame band, in board y.
+ *
+ * Named rather than re-derived at each call site because §19.1's rail strip
+ * (`candle_rail_strip`) has to span the SAME run the candles stand along —
+ * furniture and fixture share one measurement, or a re-tune of one silently
+ * un-aligns it from the other.
+ */
+export const RAIL_NEAR = PARTY_RANK + 0.55;
+export const RAIL_FAR = ENEMY_RANK - 0.75;
+
 export function candlePositions(rail: CandleRail): Vec2[] {
   const n = Math.max(0, Math.floor(rail.total));
   if (n === 0) return [];
-  const near = PARTY_RANK + 0.55;
-  const far = ENEMY_RANK - 0.75;
-  if (n === 1) return [{ x: rail.x, y: (near + far) / 2 }];
-  const step = (near - far) / (n - 1);
+  if (n === 1) return [{ x: rail.x, y: (RAIL_NEAR + RAIL_FAR) / 2 }];
+  const step = (RAIL_NEAR - RAIL_FAR) / (n - 1);
   const out: Vec2[] = [];
-  for (let i = 0; i < n; i++) out.push({ x: rail.x, y: near - step * i });
+  for (let i = 0; i < n; i++) out.push({ x: rail.x, y: RAIL_NEAR - step * i });
   return out;
 }
 
 /** How tall a candle stands, in tiles. Wax plus a finger of flame. */
 export const CANDLE_HEIGHT = 0.62;
 export const CANDLE_WIDTH = 0.2;
+
+/**
+ * The candle rail strip (§19.1) — the timber the sockets are cut into.
+ *
+ * `WIDTH` matches `candle_rail_strip`'s own baked width in `bake.py`'s SHAPES
+ * table (0.56 tiles, margin included) so the quad draws at the pixel size the
+ * bake was framed at rather than an arbitrary stretch. `REPEAT_UNIT` is the
+ * bake's height (2.0 tiles) — bake.py: "the rail TILES ALONG ITS HEIGHT — board
+ * y — so the height is exact and the width carries the margin," which is what
+ * licenses tiling it with a REPEAT-wrapped UV instead of stretching one texture
+ * over the whole run.
+ */
+export const RAIL_STRIP_WIDTH = 0.56;
+export const RAIL_STRIP_REPEAT_UNIT = 2.0;
+
+/** Board fixture ids that are not yet requested by anything — see ENGINE_PLAN §21.7. */
+export const MAT_RAIL_STRIP = 'railStrip';
+export const MAT_CORNER_BRASS = 'cornerBrass';
+
+/**
+ * Centre of the far-left frame corner, where `board_corner_brass` sits.
+ *
+ * FAR, not near — checked against the actual bake rather than assumed. Looked
+ * at `board_corner_brass.png` directly: the L hugs the texture's TOP edge and
+ * LEFT edge. `piece.ts baseDiscNormalPixels`'s rule (restated in
+ * `bake.py`'s header) is "texture +v (down the image) is board +y, toward
+ * the camera" — so texture row 0 is the FAR edge (small board y), and the
+ * L's two solid arms are the far edge and the left edge. That is the far-left
+ * corner, matching `bake.py`'s own comment on the shape ("the far-left
+ * corner"). An earlier pass here anchored it at the NEAR-left corner instead
+ * — plausible-looking and wrong, the same class of mistake the header warns
+ * a UV flip causes, just from misreading which corner rather than mirroring
+ * one — and was only caught by rendering the PNG and looking at which way
+ * the L opens.
+ *
+ * ONE corner only — see the note at its call site in `buildBattleScene` for
+ * why the other three are not mirrored onto it.
+ */
+export function cornerBrassCentre(extent: { width: number; height: number; border: number }): Vec2 {
+  return { x: -extent.border / 2, y: -extent.border / 2 };
+}
+export const CORNER_BRASS_SIZE = 0.6;
 
 // -------------------------------------------------------------------------
 // THE BUILD
@@ -559,6 +610,32 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
     });
   }
 
+  // --- the far-left corner brass (§19.1) ----------------------------------
+  //
+  // ONE corner, not four. `board_corner_brass` (`tools/art/blender/bake.py`)
+  // is baked for a single orientation — its own comment: "the far-left
+  // corner. The other three are a row each — never a UV flip." A convex
+  // chamfered corner's ALBEDO can be mirrored onto the other three corners by
+  // flipping U, and would look fine; its NORMAL MAP cannot, because flipping
+  // the UV samples the mirrored image without flipping the tangent-space X
+  // the pixels encode, so the bevel would relight as if the corner curved the
+  // wrong way the moment the lantern swung past it — exactly the "plausible
+  // and lights wrong" failure `bake.py`'s header warns about elsewhere. Doing
+  // this correctly needs either three more oriented bakes or a verified
+  // red-channel flip, and neither exists yet, so the other three corners are
+  // left bare rather than guessed at. See ENGINE_PLAN §21.7.
+  if (has(MAT_CORNER_BRASS)) {
+    const c = cornerBrassCentre(extent);
+    sprites.push({
+      position: { x: c.x, y: c.y, z: 0 },
+      size: { x: CORNER_BRASS_SIZE, y: CORNER_BRASS_SIZE },
+      pivot: { x: 0.5, y: 0.5 },
+      uv: FULL_UV,
+      textureId: MAT_CORNER_BRASS,
+      layer: LAYER_BOARD,
+    });
+  }
+
   // --- the pieces --------------------------------------------------------
   for (const f of o.figures) {
     const p = placeFigure(f, cam);
@@ -600,6 +677,20 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
   // flames pulsing together reads as one animation stretched across the board
   // rather than as eight separate candles.
   const pushRail = (railX: number, vigor: { lit: number; total: number } | null, sockets: number, seed: number) => {
+    // The timber the sockets are cut into — always drawn, whether or not this
+    // side has any vigor, because it is joinery on the frame rather than a
+    // readout of state. See `RAIL_STRIP_WIDTH`'s comment for the tiling.
+    if (has(MAT_RAIL_STRIP)) {
+      const length = RAIL_NEAR - RAIL_FAR;
+      sprites.push({
+        position: { x: railX, y: (RAIL_NEAR + RAIL_FAR) / 2, z: 0 },
+        size: { x: RAIL_STRIP_WIDTH, y: length },
+        pivot: { x: 0.5, y: 0.5 },
+        uv: { u0: 0, v0: 0, u1: 1, v1: length / RAIL_STRIP_REPEAT_UNIT },
+        textureId: MAT_RAIL_STRIP,
+        layer: LAYER_BOARD,
+      });
+    }
     const socketSpots = candlePositions({ x: railX, total: sockets, lit: 0 });
     for (const spot of socketSpots) {
       if (!has(MAT_SOCKET)) break;

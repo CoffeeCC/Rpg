@@ -27,20 +27,29 @@ import type { Material } from '../../lantern/scene/scene';
 import {
   ARENA_DEPTH,
   CANDLE_FRAME_X,
+  CORNER_BRASS_SIZE,
   ENEMY_RANK,
   MAT_ARENA,
   MAT_BACKDROP,
   MAT_BLANK,
   MAT_CANDLE,
+  MAT_CORNER_BRASS,
+  MAT_RAIL_STRIP,
   MAT_SOCKET,
   MAX_ARENA_ZOOM,
   MIN_ARENA_ZOOM,
   PARTY_RANK,
+  RAIL_FAR,
+  RAIL_NEAR,
+  RAIL_STRIP_REPEAT_UNIT,
+  RAIL_STRIP_WIDTH,
   arenaCamera,
   arenaExtent,
   arenaWidth,
   buildBattleScene,
+  candleFrameRightX,
   candlePositions,
+  cornerBrassCentre,
   heroTextureId,
   lanternForVigor,
   monsterTextureId,
@@ -306,6 +315,88 @@ describe('the candle rail is §8 item 9, as geometry', () => {
         vigor: { lit: 2, total: 3 },
       }).sprites.filter((s) => s.textureId === MAT_CANDLE).map((s) => s.position.x);
     expect(build(wide)).toEqual(build(narrow));
+  });
+
+  it('draws no rail strip or corner brass when the bakes have not loaded', () => {
+    // §21.7's scaffolding (`has(MAT_RAIL_STRIP)`/`has(MAT_CORNER_BRASS)`) must
+    // actually gate the sprite, not just exist unused — this is the test that
+    // would have failed the whole session up to this commit, since neither id
+    // was ever requested. `allMaterials()` deliberately omits both.
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials(),
+      figures: [] as FigureBox[],
+      vigor: { lit: 2, total: 3 },
+    });
+    expect(scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP)).toHaveLength(0);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_CORNER_BRASS)).toHaveLength(0);
+  });
+
+  it('lays the rail strip along the exact span the candles stand on, both bands', () => {
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials([MAT_RAIL_STRIP]),
+      figures: [] as FigureBox[],
+      vigor: { lit: 1, total: 3 },
+      enemyVigor: { lit: 0, total: 3 },
+    });
+    const strips = scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP);
+    // One per band, drawn whether or not that side has any candles burning —
+    // it is the timber, not a readout.
+    expect(strips.length).toBe(2);
+    const length = RAIL_NEAR - RAIL_FAR;
+    const midY = (RAIL_NEAR + RAIL_FAR) / 2;
+    const left = strips.find((s) => s.position.x < 0)!;
+    const right = strips.find((s) => s.position.x > ext.width)!;
+    expect(left).toBeDefined();
+    expect(right).toBeDefined();
+    // Centred on the same run the candles occupy, to the float.
+    expect(left.position.y).toBeCloseTo(midY, 10);
+    expect(left.position.x).toBeCloseTo(CANDLE_FRAME_X, 10);
+    expect(right.position.x).toBeCloseTo(candleFrameRightX(ext.width), 10);
+    expect(left.size.y).toBeCloseTo(length, 10);
+    expect(left.size.x).toBeCloseTo(RAIL_STRIP_WIDTH, 10);
+    // Tiled, not stretched: v1 is the run measured in repeat-units, not 1.
+    expect(left.uv.v1).toBeCloseTo(length / RAIL_STRIP_REPEAT_UNIT, 10);
+    expect(left.uv.v1).not.toBeCloseTo(1, 2);
+    expect(left.uv.u0).toBe(0);
+    expect(left.uv.u1).toBe(1);
+  });
+
+  it('seats exactly one corner brass, at the far-left corner and nowhere else', () => {
+    // FAR, not near: `board_corner_brass.png` renders as an L hugging the
+    // texture's TOP and LEFT edges, and this engine's own rule (`piece.ts
+    // baseDiscNormalPixels`, restated in `bake.py`'s header) is "texture +v
+    // down the image is board +y, toward the camera" — so the top edge is the
+    // FAR edge. Placing it at the near corner instead was tried, looked wrong
+    // once the actual PNG was rendered, and was caught only by looking.
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials([MAT_CORNER_BRASS]),
+      figures: [] as FigureBox[],
+      vigor: { lit: 2, total: 3 },
+    });
+    const corners = scene.sprites.filter((s) => s.textureId === MAT_CORNER_BRASS);
+    // Exactly one — the other three are deliberately not mirrored (see the
+    // comment at the call site: flipping the UV would corrupt the normal map).
+    expect(corners.length).toBe(1);
+    const expected = cornerBrassCentre(ext);
+    expect(corners[0].position.x).toBeCloseTo(expected.x, 10);
+    expect(corners[0].position.y).toBeCloseTo(expected.y, 10);
+    expect(corners[0].size.x).toBeCloseTo(CORNER_BRASS_SIZE, 10);
+    expect(corners[0].size.y).toBeCloseTo(CORNER_BRASS_SIZE, 10);
+    // On the LEFT frame band (same side as the candle rail) and past the FAR
+    // edge of the play area — i.e. genuinely in the corner, not merely
+    // somewhere on the left band, and not the near corner either.
+    expect(expected.x).toBeLessThan(0);
+    expect(expected.y).toBeLessThan(0);
   });
 });
 
