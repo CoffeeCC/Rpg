@@ -693,6 +693,60 @@ def rod(p0, p1, radius, verts=32):
     return cylinder(radius, length, mid, verts=verts, rot=rot)
 
 
+def vee(target, length, width, centre, run="x", name="Vee"):
+    """
+    ONE straight V-groove, cut rather than bevelled. The primitive gotcha 8 is
+    about: a modifier can be clamped away, a hole in the mesh cannot.
+
+    The cutter is a square section rotated 45 degrees about its own run, so the
+    diamond always lies in the plane PERPENDICULAR to `run` and the groove
+    comes out `width` wide at the surface and `width / 2` deep. Which surface
+    it cuts is decided by where `centre` sits, not by an argument — put it on
+    the top face and the groove goes down, put it on a front face and the
+    groove goes in.
+    """
+    s = width / math.sqrt(2.0)
+    q = math.radians(45.0)
+    if run == "x":
+        cutter = box(length, s, s, centre, (q, 0.0, 0.0))
+    elif run == "y":
+        cutter = box(s, length, s, centre, (0.0, q, 0.0))
+    else:
+        cutter = box(s, s, length, centre, (0.0, 0.0, q))
+    return cut(target, cutter, name)
+
+
+def grain(target, offsets, run, length, level, name="Grain"):
+    """
+    Parallel V-grooves all running ONE WAY — what makes a flat albedo read as
+    timber instead of as painted board.
+
+    Paul asked for "nice wood", and wood in this pipeline cannot be a colour:
+    the albedo is deliberately flat and Grok paints the surface later, so the
+    only channel that can carry "this is a plank" is the NORMAL, and the only
+    thing that distinguishes a plank from a slab there is that its detail is
+    ANISOTROPIC. Grooves along one axis put variation in one channel and leave
+    the other flat, which is measurable — see the grain check in the notes.
+
+    `offsets` is an explicit table of (position across the run, groove width),
+    not a random scatter, for `build_wall_top`'s reason: identical spacing
+    reads as machining and true randomness cannot be reviewed or reproduced.
+    Varying the widths is what stops it looking like a comb.
+    """
+    for i, (off, w) in enumerate(offsets):
+        centre = (off, 0.0, level) if run == "y" else (0.0, off, level)
+        vee(target, length, w, centre, run=run, name=f"{name}{i}")
+    return target
+
+
+# Six grooves, no two the same width, none evenly spaced. Positions are ACROSS
+# the run, so on a rail running along board y these are x offsets.
+OAK_GRAIN = (
+    (-0.168, 0.011), (-0.104, 0.008), (-0.041, 0.013),
+    (0.028, 0.009), (0.096, 0.012), (0.158, 0.008),
+)
+
+
 def route_ring(target, rw, rd, gw, centre, plane="xy", name="Ring"):
     """
     A routed groove running round a rectangle, cut as a V. See gotcha 8.
@@ -1452,6 +1506,402 @@ def build_bezel(outer=(1.30, 0.60), opening=(1.02, 0.32), thick=0.05, chamfer=0.
     return objs
 
 
+# -------------------------------------------------------------------------
+# THE PLAYER BOARD (§19.1)
+# -------------------------------------------------------------------------
+#
+# Paul, having watched a lit fight: *"I would really like the (Player board im
+# going to call) to be modeled with some nice wood and brass accents. A
+# Dedicated place for the Vigor Candles Player and Enemy Portraits, The Discard
+# Pile, The Exhaust pile... Something for the End Turn lantern to fit in to,
+# and the Combat/Chronicle Log. It should all feel like a physical part of the
+# game being played. not just a menu. then i think the Vigor candles wont look
+# so weird. Like the candles should sit in sockets made for them."*
+#
+# §19.1 reads the last sentences as a DIAGNOSIS rather than a decoration
+# request, and it is right. `9f3cfa0` moved the vigor candles onto the board's
+# left frame band and they still looked wrong, because a candle resting on a
+# bare strip of timber is a candle somebody left there. A socket is what makes
+# an object belong — the same argument §15 makes for a piece and its plinth.
+# So every item here is a FITTING, not a position.
+#
+# WOOD CANNOT BE A COLOUR HERE. The albedo is flat by construction and Grok
+# paints the surface later, so the only channel that can say "plank" is the
+# normal, and the only thing that says it there is that the detail runs ONE
+# WAY. That is what `grain()` is for, and it is checkable: grooves along y put
+# their variation in R and leave G alone.
+#
+# SEPARATE PARTS, SEPARATE TEXTURES, AND THAT IS NOW A REQUIREMENT rather than
+# a preference. §19.1 defers wear but says to model for it: wax pooling in and
+# around the candle sockets, brass polished where a thumb rests, a card-shaped
+# scuff in the discard tray, scorch around the exhaust. Wear lands where a
+# thing has been USED, so it has to be authored per fitting; merged into one
+# shell for the whole board it could not be re-textured independently, and the
+# wax pass would become a single enormous atlas nobody wants to paint.
+#
+# The concrete consequence today is in `build_candle_socket`: the drip pan is a
+# real dished BASIN with a raised rim, not a flat seat, so there is somewhere
+# for the wax to go when that pass happens.
+#
+# The candle numbers are `battleScene.ts`'s, not invented: CANDLE_WIDTH = 0.2,
+# and the rail stands at CANDLE_FRAME_X = -ARENA_BORDER / 2 on a frame band 1.2
+# tiles wide, with candles spread along ~4.3 tiles of board Y.
+
+
+def build_candle_socket(pan=0.235, bore=0.10, chamfer=0.008):
+    """
+    A brass cup with a drip pan and a collar, sized so a 0.2-tile candle drops
+    in. THE PRIORITY PART — §19.1's whole diagnosis rests on it.
+
+    THE PAN IS A BASIN, NOT A DISC, and that is the §19.1 wear note made
+    concrete: the top is dished between the collar and a raised outer rim, so
+    when the wax pass lands there is a place for wax to pool instead of a flat
+    surface it would have to be painted onto. It costs one boolean now.
+
+    It also happens to be what makes the socket READ. A flat pan seen from
+    above is a brass disc; a dished one shows the far inside of its own wall,
+    which is the same argument `build_trap_hole` makes about a shaft that has
+    to narrow to be visible at all. Every wall here is therefore drafted rather
+    than vertical — the bore included, which tapers 0.100 to 0.109 over its
+    depth.
+
+    Baked LYING (gotcha 3): it stands on the board like a plinth and the engine
+    squashes it by cos(tilt) at draw time.
+    """
+    body = cylinder(pan, 0.044, (0.0, 0.0, 0.022))
+    bevelled(body, chamfer)
+    # The basin. Steep enough that the pan's top opening is 0.206 while the
+    # floor is 0.150 — most of the visible annulus is sloped wall, which is the
+    # part a light can catch.
+    cut(body, frustum(0.150, 0.230, 0.040, (0.0, 0.0, 0.036)), "Basin")
+    lipped(body, chamfer * 0.5)
+
+    collar = frustum(0.148, 0.138, 0.098, (0.0, 0.0, 0.065))
+    bevelled(collar, chamfer)
+    cut(collar, frustum(bore, bore + 0.020, 0.14, (0.0, 0.0, 0.120)), "Bore")
+    lipped(collar, chamfer * 0.5)
+
+    bead = ring(0.132, 0.012, (0.0, 0.0, 0.111))
+    # Spent wax and soot in the bottom of the bore. With a candle in the socket
+    # it is hidden; with the socket empty it is what stops the bore reading as
+    # a bright brass dimple.
+    spent = cylinder(0.096, 0.012, (0.0, 0.0, 0.056), verts=32)
+    spent["albedo"] = CHARCOAL
+    return [body, collar, bead, spent]
+
+
+def build_candle_rail(width=0.52, run=2.6, thick=0.09, chamfer=0.016):
+    """
+    The timber rail the sockets are set into, tiling along BOARD Y.
+
+    THE RUN AXIS IS Y AND THAT IS NOT ARBITRARY. The rail stands on the left
+    frame band at `CANDLE_FRAME_X` with the candles spread along board y, so
+    the strip repeats vertically in the image. Baking it running along X and
+    asking the engine to turn it would TRANSPOSE the normal map — R and G swap
+    meaning — which is the "plausible and lights wrongly" failure this file
+    keeps paying for. Bake the orientation of use.
+
+    So the y edges carry no feature at all and the geometry overruns them:
+    `build_face`'s `joint = 0` case, because a rail is one continuous length of
+    timber however many candles share it. The x edges ARE real edges and their
+    chamfers sit inside the frame.
+
+    The sockets are NOT cut into this. They are their own sprite dropped at
+    each candle position, because the positions are computed from the vigor
+    count at runtime and a rail with holes pre-cut at fixed intervals could
+    only ever match one of them.
+    """
+    plank = box(width, run, thick, (0.0, 0.0, thick / 2.0))
+    bevelled(plank, chamfer)
+    grain(plank, OAK_GRAIN, "y", run * 1.2, thick)
+
+    objs = [plank]
+    for sx in (-1, 1):
+        edge = box(0.06, run, 0.022, (sx * (width / 2.0 - 0.03), 0.0, thick + 0.011))
+        edge["albedo"] = BRASS
+        bevelled(edge, 0.006)
+        objs.append(edge)
+    return objs
+
+
+def build_portrait_bezel(frame_w, chamfer=0.014):
+    """
+    A brass surround for a painted face. ROUND, and the bore is exactly TWO
+    THIRDS of the frame width in both sizes.
+
+    That ratio is the deliverable as much as the geometry is: the art the
+    engine puts behind this is the bezel's own quad scaled by 2/3 about the
+    same centre, at either size, with no table to look up. Same trick as
+    `build_bezel`'s 3/4 by 1/2, and the reason both sizes use one number is
+    that a hero frame and an enemy frame that disagreed would need two.
+
+    The opening is COUNTERSUNK — the cutter is wider at the top — so the inner
+    edge presents a sloped face to the light rather than a vertical wall that
+    is edge-on from above and therefore invisible.
+
+    EVERY DIMENSION IS A FRACTION OF `frame_w`, which is what actually makes
+    the two sizes one design rather than two. The first version mixed fractions
+    with absolute offsets, and the consequence was not cosmetic: the bead and
+    the bosses collided at one size and cleared at the other, so "move the
+    bosses out a little" fixed the hero frame and broke the enemy one.
+    """
+    f = frame_w
+    outer, bore, t = f * 0.94, f * (2.0 / 3.0), f * 0.052
+    chamfer = f * 0.015
+    body = cylinder(outer / 2.0, t, (0.0, 0.0, t / 2.0))
+    bevelled(body, chamfer)
+    # THE CUTTER HAS TO SPAN THE WHOLE BODY, and the first version did not — it
+    # started at the body's mid-height, left a floor, and baked a solid brass
+    # disc that would have hidden the face it exists to frame. It rendered
+    # perfectly and the normal map even showed a convincing ring.
+    #
+    # What caught it was COVER: 69% of the frame, which is the area of the full
+    # disc, where an annulus with a 2/3 bore is 34%. Worth remembering that the
+    # cheapest check for "is there a hole" is how much of the frame is opaque.
+    #
+    # Spanning -0.05..0.10 with the taper set so the radius is exactly bore/2
+    # at the BOTTOM face and bore/2 + 0.03 at the top: the limiting aperture
+    # seen from above is therefore exactly `bore`, and the flare above it is
+    # the countersink.
+    cut(body, frustum(bore / 2.0 - f * 0.03, bore / 2.0 + f * 0.06, t * 3.0, (0.0, 0.0, t / 2.0)),
+        "Bore")
+    # A concentric cove bead, cut with a torus rather than stepped with a
+    # second cylinder. It is what turns a flat washer into a moulding, and
+    # cutting it means it survives whatever else lands on this face — the same
+    # argument as the V-grooves, with a round bit instead of a chamfer bit.
+    cut(body, ring(bore / 2.0 + f * 0.030, f * 0.014, (0.0, 0.0, t)), "Bead")
+    lipped(body, f * 0.008)
+
+    objs = [body]
+    # Four bosses on the cardinals. They give the ring an orientation, which a
+    # plain annulus does not have — and a frame with no top reads as a washer.
+    for i in range(4):
+        a = math.radians(90.0 * i)
+        r = f * 0.420
+        boss = cylinder(f * 0.030, t * 0.36, (r * math.cos(a), r * math.sin(a), t + t * 0.14),
+                        verts=20)
+        bevelled(boss, f * 0.005)
+        objs.append(boss)
+    return objs
+
+
+def build_lantern_cradle(base=0.42, chamfer=0.016):
+    """
+    A housing the End Turn lantern sits down into.
+
+    THE HARD PART IS THAT IT HAS TO WORK UNLIT. A cradle read only by the glow
+    of the thing in it is a cradle that disappears the moment the lantern is
+    dark, and the End Turn control is dark for most of a turn. So the form is
+    carried by geometry that does not depend on the lantern at all: a timber
+    base, a brass collar ring round the well, and two upright posts that break
+    the silhouette whether or not anything is sitting between them.
+
+    THE EARS ARE THE IDENTITY, and the first version got this wrong in a way
+    only looking caught. It had two small round posts flanking a shallow dish,
+    and in plan that reads as a dish with two nubs — a saucer, not a housing.
+    Two things fixed it, both about the plan view specifically:
+
+      THE SILHOUETTE MUST NOT BE A CIRCLE. Brass ears now run PAST the base
+      disc, so the outline itself says "something clamps in here" before any
+      shading is applied. A round object among round objects has no identity.
+
+      THE WELL HAD TO GET DEEPER. At 0.06 into a 0.29 radius the AO fell off
+      so gently it read as a DOME rather than a hole — convex and concave look
+      the same when the gradient is soft enough. At 0.09 it has the hard dark
+      ring `candle_socket` gets, which is what actually says "down into".
+
+    Making the posts taller would have done nothing: this is a lying decal, so
+    height is the one dimension the texture cannot show.
+    """
+    body = cylinder(base, 0.12, (0.0, 0.0, 0.06))
+    bevelled(body, chamfer)
+    cut(body, frustum(0.25, 0.33, 0.16, (0.0, 0.0, 0.11)), "Well")
+    lipped(body, 0.008)
+
+    collar = ring(0.295, 0.018, (0.0, 0.0, 0.118))
+    collar["albedo"] = BRASS
+    objs = [body, collar]
+    for sx in (-1, 1):
+        ear = box(0.15, 0.22, 0.045, (sx * 0.40, 0.0, 0.100))
+        ear["albedo"] = BRASS
+        bevelled(ear, 0.010)
+        bolt = cylinder(0.032, 0.020, (sx * 0.40, 0.0, 0.128), verts=20)
+        bolt["albedo"] = BRASS
+        bevelled(bolt, 0.005)
+        objs += [ear, bolt]
+    return objs
+
+
+def build_log_well(w=2.40, d=1.30, well=(2.00, 1.05), depth=0.055, chamfer=0.022):
+    """
+    The recessed panel the Chronicle text sits in. §1.2 keeps the TEXT in the
+    DOM, so this is the well and never a texture with words in it.
+
+    THE INTERIOR IS EMPTY AND STAYS EMPTY — the same rule as `build_button_plate`,
+    and here it is load-bearing rather than tidy: the well is 2.00 x 1.05, which
+    is exactly 0.80 by 0.75 of the frame, so the DOM box that carries the log is
+    the panel's own rect scaled by those two numbers. Anything modelled inside
+    it would end up behind running text.
+
+    The grain runs the LONG way, as a board that size would be cut, and it is
+    on the surround only.
+    """
+    body = box(w, d, 0.10, (0.0, 0.0, -0.05))
+    bevelled(body, chamfer)
+    cut(body, box(well[0], well[1], 0.14, (0.0, 0.0, 0.07 - depth)), "Well")
+    route_ring(body, well[0], well[1], 0.032, (0.0, 0.0, 0.0), name="Mouth")
+    grain(body, ((-0.62, 0.010), (0.58, 0.012), (1.02, 0.009)), "x", w * 1.2, 0.0)
+    lipped(body, 0.010)
+
+    objs = [body]
+    header = box(w, 0.07, 0.020, (0.0, d / 2.0 - 0.055, 0.010))
+    header["albedo"] = BRASS
+    bevelled(header, 0.006)
+    objs.append(header)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bolt = cylinder(0.026, 0.016, (sx * (w / 2.0 - 0.055), sy * (d / 2.0 - 0.048), 0.008),
+                            verts=16)
+            bolt["albedo"] = BRASS
+            bevelled(bolt, 0.005)
+            objs.append(bolt)
+    return objs
+
+
+# The discard tray and the exhaust share a FOOTPRINT so they read as a pair,
+# and share nothing else so they read as opposites. §19.1: exhaust "must read
+# as somewhere cards do NOT return from... Distinguished by SILHOUETTE, not by
+# a label."
+CARD_SLOT = (0.64, 0.90)
+PILE_BODY = (0.86, 1.12)
+
+
+def build_pile_tray(chamfer=0.018):
+    """
+    The discard pile: a shallow timber tray with a card-shaped recess.
+
+    Card-shaped literally — 0.64 by 0.90 is a 0.71 aspect, which is a playing
+    card. A square recess would read as a coaster.
+
+    The recess has a FLOOR. That is the entire difference from `exhaust_grate`,
+    and it is deliberately the kind of difference you can see in a silhouette
+    at a glance: cards you can get back sit on something.
+    """
+    body = box(PILE_BODY[0], PILE_BODY[1], 0.09, (0.0, 0.0, -0.045))
+    bevelled(body, chamfer)
+    cut(body, box(CARD_SLOT[0], CARD_SLOT[1], 0.12, (0.0, 0.0, 0.06 - 0.05)), "Slot")
+    route_ring(body, CARD_SLOT[0], CARD_SLOT[1], 0.028, (0.0, 0.0, 0.0), name="Mouth")
+    grain(body, ((-0.37, 0.009), (0.36, 0.011)), "y", PILE_BODY[1] * 1.2, 0.0)
+    lipped(body, 0.009)
+
+    objs = [body]
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bolt = cylinder(0.024, 0.014, (sx * 0.385, sy * 0.505, 0.007), verts=16)
+            bolt["albedo"] = BRASS
+            bevelled(bolt, 0.004)
+            objs.append(bolt)
+    return objs
+
+
+def build_exhaust_grate(bars=3, chamfer=0.018):
+    """
+    Exhausted cards: the same footprint as the discard tray, and the opposite
+    object.
+
+    IT GOES ALL THE WAY THROUGH. The middle of this texture is transparent, so
+    what shows is whatever is under the console — the same device
+    `build_trap_hole` uses, and for the same reason: a painted black hole is a
+    lid, an actual hole is a hole. That alone separates it from `pile_tray` in
+    silhouette, before the bars.
+
+    Then blackened iron bars across it, and a scorched sleeve lining the mouth.
+    Cards do not come back from behind bars, and the soot says the exhaust is
+    where things are burnt rather than merely stored.
+    """
+    w, d = PILE_BODY
+    sw, sd = CARD_SLOT
+    body = box(w, d, 0.09, (0.0, 0.0, -0.045))
+    bevelled(body, chamfer)
+    cut(body, box(sw, sd, 0.30, (0.0, 0.0, 0.0)), "Through")
+    route_ring(body, sw, sd, 0.028, (0.0, 0.0, 0.0), name="Mouth")
+    grain(body, ((-0.37, 0.009), (0.36, 0.011)), "y", d * 1.2, 0.0)
+    lipped(body, 0.009)
+    objs = [body]
+
+    # The scorched sleeve: four thin uprights lining the opening, dropped below
+    # the surface so they read as the inside of the slot rather than as a frame
+    # drawn on top of it.
+    for sx, sy, bw, bd in ((0, 1, sw, 0.022), (0, -1, sw, 0.022),
+                           (1, 0, 0.022, sd), (-1, 0, 0.022, sd)):
+        sleeve = box(bw, bd, 0.05, (sx * (sw / 2.0 - 0.011), sy * (sd / 2.0 - 0.011), -0.021))
+        sleeve["albedo"] = CHARCOAL
+        objs.append(sleeve)
+
+    for i in range(bars):
+        t = (i + 0.5) / bars - 0.5
+        bar = box(sw + 0.04, 0.045, 0.032, (0.0, t * sd, -0.012))
+        bar["albedo"] = CHARCOAL
+        bevelled(bar, 0.007)
+        objs.append(bar)
+    return objs
+
+
+def build_brass_strap(length=0.86, wide=0.20, chamfer=0.010):
+    """
+    A brass band across a timber seam, with a bolt at each end.
+
+    RUNS ALONG X, and a strap for a seam running the other way is a second
+    table row rather than the same texture turned. Flipping or transposing a
+    sprite flips the sign of a normal channel with it, and nothing in the image
+    looks wrong when that happens — the lighting simply comes from the wrong
+    side. `build_board_corner` carries the same warning for the same reason.
+    """
+    band = box(length, wide, 0.030, (0.0, 0.0, 0.015))
+    bevelled(band, chamfer)
+    # Two beads along the length. They stop a strap reading as a strip of tape,
+    # and they are cut as V so they survive whatever else lands on this face.
+    for off in (-0.055, 0.055):
+        vee(band, length * 1.2, 0.020, (0.0, off, 0.030), run="x", name=f"Bead{off}")
+    objs = [band]
+    for sx in (-1, 1):
+        bolt = cylinder(0.028, 0.018, (sx * (length / 2.0 - 0.06), 0.0, 0.036), verts=20)
+        bevelled(bolt, 0.005)
+        objs.append(bolt)
+    return objs
+
+
+def build_board_corner(size=0.56, arm=0.17, sx=-1, sy=1, chamfer=0.014):
+    """
+    An L-shaped brass cap over a corner of the board.
+
+    `sx`/`sy` pick WHICH corner, and the other three are one table row each —
+    NOT a UV flip of this one. Mirroring a sprite negates the x component of
+    every normal it carries, so a flipped corner cap lights from the wrong side
+    while looking perfectly correct in a still. Baking four is cheap; debugging
+    that is not.
+
+    Defaults to `sx = -1, sy = +1`: world -X and +Y, which a plan render puts
+    at the TOP-LEFT of the image and the board's FAR-LEFT corner.
+    """
+    plate = box(size, size, 0.045, (0.0, 0.0, 0.0225))
+    bevelled(plate, chamfer)
+    # Remove the inner quadrant, leaving two arms of width `arm`.
+    keep = size / 2.0 - arm
+    cut(plate, box(size, size, 0.12, (-sx * (size / 2.0 - keep), -sy * (size / 2.0 - keep), 0.0225)),
+        "Inner")
+    lipped(plate, 0.010)
+
+    objs = [plate]
+    # A bolt in the corner itself and one at each arm end, which is where a cap
+    # would actually be fixed.
+    for bx, by in ((sx * 0.20, sy * 0.20), (sx * 0.20, -sy * 0.19), (-sx * 0.19, sy * 0.20)):
+        bolt = cylinder(0.030, 0.018, (bx, by, 0.052), verts=20)
+        bevelled(bolt, 0.005)
+        objs.append(bolt)
+    return objs
+
+
 def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None):
     """One row of the table below. Everything a bake needs and nothing else."""
     return {
@@ -1608,6 +2058,44 @@ SHAPES = {
     ),
     "tray": shape(build_tray, width=1.86, height=0.96, ao=0.16, colour=WOOD_FRAME),
     "bezel": shape(build_bezel, width=1.36, height=0.64, ao=0.10, colour=BRASS),
+
+    # --- the player board's fittings (§19.1) ------------------------------
+    # Every one of these is its own texture on purpose: §19.1 defers wear but
+    # requires it be authorable per fitting later — wax in the sockets, scuff
+    # in the discard tray, scorch at the exhaust — which a merged shell could
+    # not carry.
+    #
+    # The socket is the priority: §19.1's diagnosis is that the candles look
+    # wrong because nothing holds them. FREE-STANDING, so it takes MARGIN.
+    "candle_socket": shape(build_candle_socket, width=0.50, height=0.50, ao=0.11, colour=BRASS),
+    # The rail TILES ALONG ITS HEIGHT — board y — so the height is exact and the
+    # width carries the margin. See the builder for why it is not baked
+    # running along x and turned.
+    "candle_rail_strip": shape(
+        build_candle_rail, width=0.56, height=2.0, ao=0.14, colour=WOOD_FRAME,
+    ),
+
+    # Bore is 2/3 of the frame in both sizes, so the art behind either is the
+    # bezel's own quad scaled by 2/3.
+    "portrait_bezel": shape(
+        lambda: build_portrait_bezel(0.96), width=0.96, height=0.96, ao=0.14, colour=BRASS,
+    ),
+    "portrait_bezel_small": shape(
+        lambda: build_portrait_bezel(0.66), width=0.66, height=0.66, ao=0.10, colour=BRASS,
+    ),
+
+    # Wider than tall: the brass ears run past the base disc on the x axis,
+    # which is the whole point of them.
+    "lantern_cradle": shape(build_lantern_cradle, width=1.00, height=0.90, ao=0.16, colour=WOOD_FRAME),
+    "log_well": shape(build_log_well, width=2.50, height=1.40, ao=0.18, colour=WOOD_FRAME),
+
+    # Same footprint, opposite objects — one has a floor, one goes through.
+    "pile_tray": shape(build_pile_tray, width=0.96, height=1.22, ao=0.13, colour=WOOD_FRAME),
+    "exhaust_grate": shape(build_exhaust_grate, width=0.96, height=1.22, ao=0.13, colour=WOOD_FRAME),
+
+    "brass_strap": shape(build_brass_strap, width=0.90, height=0.26, ao=0.08, colour=BRASS),
+    # The far-left corner. The other three are a row each — never a UV flip.
+    "board_corner_brass": shape(build_board_corner, width=0.60, height=0.60, ao=0.12, colour=BRASS),
 }
 
 
