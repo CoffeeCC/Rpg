@@ -932,3 +932,67 @@ single 8-light budget cannot show what the direction is asking for.
 All of these are `indirectOnly` candidates in the `Light` type — they should
 not cast sharp shadows, both because it is physically right for a dim source
 and because it keeps them off the expensive vector path.
+
+---
+
+## 13. Camera framing: the whole board, with a lean (2026-07-26)
+
+Decided rather than proposed, under the standing authority in the header. Paul
+confirmed the direction in §12 ("I think you nailed the idea") and this was the
+one question left open by it.
+
+**The camera shows the WHOLE BOARD as an object.** The rim and the table are
+visible essentially every frame. It is not locked rigid — it drifts slightly
+toward the hero and can ease in a little, the way a person leans over a table
+to look at their own piece — but the board never scrolls out from under the
+player.
+
+### Why, over following the hero
+
+Following the hero was inherited from `FloorScreen`, where the DOM map
+`scrollTo`s the player's cell into view. It was never chosen; it was just what
+the old screen did.
+
+The board-game model argues against it, and §12's idea argues hardest:
+
+- **Fog of war stops being a convention and becomes a physical fact.** The
+  board is entirely, materially present. You cannot see the far corners
+  because it is DARK there, not because a system is withholding them. That is
+  only true if the far corners are actually on screen and actually unlit.
+- **Unexplored space becomes something you are sitting in front of**, rather
+  than something off-screen. That is the difference between a board and a
+  level.
+- **The rim and the table earn their keep.** §11 added them precisely to make
+  the board read as an object; a camera that never shows the edge means that
+  work is invisible most of the time.
+- It is also the cheap case for everything downstream: culling is trivial, and
+  a fixed frame is the regime the radiance-cascade research (§9.3) calls the
+  happy one, since it is what lets Path of Exile 2 use screenspace cascades.
+
+### What it costs, and this is a real constraint on the GAME
+
+**Floors now have to fit a board.** A dungeon floor can no longer be arbitrarily
+large and scrolled through; it has to be a shape a person could look at on a
+table. That is a game-design constraint, not a rendering one, and it lands on
+`engine/systems/floors.ts` — both the hand-authored `FloorDef` grids and the
+generated wild floors.
+
+**Flagged, not decided.** Options, roughly in order of how much they preserve:
+
+1. **Size floors to the board.** Simplest, and arguably better design — a
+   hand-sized dungeon per floor, more floors. The current floors are already
+   around 20x14, which fits.
+2. **Board-sized regions.** A large floor is several boards; crossing an edge
+   is a deliberate transition, like turning over a map tile in a real game.
+3. **Let the board be bigger than the frame after all**, and accept the
+   metaphor weakening at large sizes.
+
+Nothing in the renderer forecloses any of these; the camera takes a centre and
+a zoom either way. This needs Paul's call before the map is ported.
+
+### Legibility check, since the Deck is the floor
+
+At 1280x800 with a 22x14 board and 55 degrees of tilt, tiles land near 50px
+wide and a hero piece stands roughly 70px tall on screen. Readable. A board
+much larger than that starts to make pieces too small to identify at a glance,
+which is the practical limit on option 1 above.
