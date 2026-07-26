@@ -1165,3 +1165,58 @@ animating z and rotation. The infrastructure exists.
 **The real risk is pacing, not implementation.** A one-second tumble is
 delightful once and tedious on the fortieth trap tile. Keep it to 0.6–0.9s and
 scale it with the existing animation-speed setting.
+
+---
+
+## 15. What a piece IS (2026-07-26)
+
+> Paul: *"most game pieces irl are just plastic pieces with some art glued to
+> it. is that how our game will function? or do I misunderstand? grok is just
+> making the sticker for the piece right? Will the pieces have shape to them?"*
+
+He understood it correctly. As built, a piece is an `upright` quad with a base
+disc and a contact shadow — **a cardboard standee in a plastic clip.** Art
+glued to a base. That is worth being explicit about rather than letting the
+board-game language imply sculpted miniatures.
+
+### The decision: a painted standee with CARVED RELIEF
+
+Rejected, and why:
+
+- **Sculpted miniatures.** Real form and real silhouette from any angle, at the
+  cost of modelling, rigging and texturing 92 monsters — the pipeline §1.3
+  already declined. It would also cost the painterly style, which is the thing
+  the art actually has going for it.
+- **Plain flat standee.** Honest and cheap, but it lights like a card. A
+  lantern sweeping past changes its brightness and never its shape.
+
+**The middle is what the art pipeline already supports, and it took Paul's
+question to notice.** The EDT beveling built for character normal maps derives
+a height field from the SILHOUETTE, bulging the shape toward its centre. That
+is physically a **bas-relief** — a carved wooden figure, or pressed painted
+tin. It was built as "the automatic method that cannot invert volumes"; its
+other meaning is "the tool that turns a flat sprite into a carved one".
+
+So under a moving lantern the piece does not light like a card: the cheekbone
+catches, the shoulder falls away, the edge rolls off. A thin dark sliver for
+the side edge gives it thickness. The result is honestly 2D and looks like a
+2D thing made well, rather than 3D pretending badly.
+
+### It splits cleanly with the Blender decision, the way a real game is made
+
+| part | source | why |
+|---|---|---|
+| the plinth / base | Blender | hard-surface, identical across every piece, wants real bevels and baked AO |
+| the figure in it | Grok + EDT relief | painted, characterful, 92 of them, style is the point |
+
+That is exactly how a physical board game is manufactured: one moulded base for
+every piece, a printed figure slotted into it.
+
+### The limits, stated
+
+- **A piece can never face away from the camera.** Standees billboard. Standard
+  and fine, but it is a hard limit if the board is ever rotatable.
+- **A piece has no volume for occlusion.** A hero behind a tall wall block is
+  hidden by it rather than peeking over.
+- **One true sculpted mini later is reasonable** — a boss, or the hero — as a
+  luxury. It must not become the default for 92 monsters.
