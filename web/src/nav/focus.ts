@@ -118,11 +118,29 @@ export function isInRoots(roots: readonly HTMLElement[], el: Node | null): boole
 // Scrolling
 // ---------------------------------------------------------------------------
 
-function isScrollable(el: HTMLElement): boolean {
+export function isScrollable(el: HTMLElement): boolean {
   const style = getComputedStyle(el);
   const canY = /(auto|scroll|overlay)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1;
   const canX = /(auto|scroll|overlay)/.test(style.overflowX) && el.scrollWidth > el.clientWidth + 1;
   return canY || canX;
+}
+
+/**
+ * The container that BULK SCROLLING should move — the triggers and the right
+ * stick — for a given focus position.
+ *
+ * Deliberately different from `scrollParent`: a focused element that is itself
+ * a scroll box scrolls ITSELF. That is how a screen makes a long region of
+ * prose readable on a pad — the Chronicle's page is 3700px of text in a 400px
+ * window with nothing focusable inside it, so it is one focus stop, and
+ * landing on it has to be the thing that lets you read on.
+ *
+ * `revealElement` deliberately does NOT use this. "Scroll a thing into view"
+ * must always walk outward; asking an element to reveal itself inside itself
+ * is a no-op that would then never reach the ancestors that needed moving.
+ */
+export function bulkScrollTarget(el: HTMLElement): HTMLElement | null {
+  return isScrollable(el) ? el : scrollParent(el, null);
 }
 
 /** Nearest scrollable ancestor, stopping at (and including) `limit`. */

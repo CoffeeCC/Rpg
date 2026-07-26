@@ -80,7 +80,19 @@ export function ChronicleText({
       );
     } else {
       nodes.push(
-        <button key={`${idx}-${p.id}`} className={`chron-ref chron-ref-${p.kind} chron-ref-link`} onClick={() => onRef({ kind: p.kind, id: p.id })}>
+        // `data-nav-skip` demotes these out of the CONTROLLER's ring. A full
+        // timeline turns into a hundred-odd inline buttons, and a D-pad walk
+        // through flowing prose that stops on every proper noun is not a
+        // navigation model — it is a punishment. They keep their tabIndex, so
+        // Tab, screen readers and the mouse still reach every one, and nothing
+        // is unreachable either way: every entity these link to also has its
+        // own row under the Figures / Beasts / Relics tabs.
+        <button
+          key={`${idx}-${p.id}`}
+          className={`chron-ref chron-ref-${p.kind} chron-ref-link`}
+          data-nav-skip=""
+          onClick={() => onRef({ kind: p.kind, id: p.id })}
+        >
           {m[0]}
         </button>,
       );

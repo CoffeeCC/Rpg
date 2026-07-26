@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { CardDef } from '../engine/types';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
@@ -8,6 +8,7 @@ import { CardView } from './CardView';
 import { CardDetailOverlay } from './CardDetailOverlay';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import { focusFirstIn, useNavScope, useRefocusOn } from '../nav';
 import { play as sfx } from '../platform/sfx';
 import '../sheets.css';
 
@@ -82,11 +83,19 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
     (rarityFilter === 'all' || e.card.rarity === rarityFilter) &&
     cardMatchesQuery(e.card, query);
 
+  const entryKey = (e: DeckEntry) => `${e.card.id}-${e.sourceMonster?.uid ?? 'x'}`;
+
   const cell = (entry: DeckEntry) => (
     <button
       type="button"
-      key={`${entry.card.id}-${entry.sourceMonster?.uid ?? 'x'}`}
+      key={entryKey(entry)}
       className="deck-cell"
+      // The grid, not the toolbar, is where the cursor belongs: the toolbar is
+      // three rows of chips with three different meanings, and the cards are
+      // what the player came to look at. LB/RB reach the filters from here.
+      data-nav-initial={entryKey(entry) === firstShownKey ? '' : undefined}
+      data-nav-key={`deck-${entryKey(entry)}`}
+      aria-label={`${entry.card.name}${entry.count > 1 ? `, ${entry.count} copies` : ''}`}
       onClick={() => {
         sfx('uiClick');
         setInspect(entry);
@@ -128,8 +137,47 @@ export function DeckScreen({ state, backScreen, dispatch }: { state: GameState; 
   const persistentMatchCount = persistentEntries.filter(matches).length;
   const flatMatchCount = flatView.filter(matches).length;
 
+  // The first card the grid will actually draw, in render order — `cell` reads
+  // this to mark where the cursor opens. Declared here rather than beside
+  // `cell` because it depends on the sort mode, which is resolved above.
+  const firstShownKey = (sortMode === 'source' ? allEntries : flatView).filter(matches).map(entryKey)[0];
+
+  const root = useRef<HTMLDivElement>(null);
+  /** Step the type filter, so a shoulder button cuts the grid down without a trip to the toolbar. */
+  const cycleType = (delta: 1 | -1): boolean => {
+    const order: ('all' | CardDef['type'])[] = ['all', ...CARD_TYPES];
+    const at = order.indexOf(typeFilter);
+    setTypeFilter(order[(at + delta + order.length) % order.length]);
+    return true;
+  };
+  useNavScope(root, {
+    id: 'deck',
+    onButton: (button) => (button === 'prevTab' ? cycleType(-1) : button === 'nextTab' ? cycleType(1) : false),
+    onCancel: () => {
+      // Three things B can mean here, in the order a player means them.
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && active.type === 'text') {
+        // Out of the search box first — arrows type in there, so it is the one
+        // place the cursor can feel stuck. Hand it back to the grid, not to
+        // <body>, or the ring vanishes with no way to get it back.
+        if (!focusFirstIn(root.current?.querySelector<HTMLElement>('.deck-grid-lg'))) active.blur();
+        return true;
+      }
+      if (query || typeFilter !== 'all' || rarityFilter !== 'all') {
+        setQuery('');
+        setTypeFilter('all');
+        setRarityFilter('all');
+        return true;
+      }
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+  // Every one of these rebuilds the grid under the cursor.
+  useRefocusOn([query, typeFilter, rarityFilter, sortMode, reverse]);
+
   return (
-    <div className="panel deck-screen">
+    <div className="panel deck-screen" ref={root}>
       <h1 className="title title-with-icon">
         <Icon name="deck" size={26} emoji="" /> Your Deck <span className="deck-total">{totalCards} cards</span>
       </h1>

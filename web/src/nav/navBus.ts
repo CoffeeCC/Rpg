@@ -28,6 +28,7 @@ import {
 } from './input';
 import { pickInDirection, type NavRect } from './geometry';
 import {
+  bulkScrollTarget,
   focusElement,
   focusKeyOf,
   initialFocusTarget,
@@ -339,7 +340,7 @@ function dispatchButton(button: NavButton, source: NavSource): boolean {
 function pageScroll(scope: NavScope, sign: 1 | -1): boolean {
   const target = activeIn(scope) ?? scope.roots[0];
   if (!target) return false;
-  const container = scrollParent(target, null) ?? scope.roots[0];
+  const container = bulkScrollTarget(target) ?? scope.roots[0];
   if (!container) return false;
   container.scrollBy({ top: sign * container.clientHeight * 0.8, behavior: 'smooth' });
   return true;
@@ -447,7 +448,7 @@ function poll(now: number): void {
       setInputMode('pad');
       const scope = topScope();
       const anchor = scope ? (activeIn(scope) ?? scope.roots[0]) : null;
-      const container = anchor ? scrollParent(anchor, null) : null;
+      const container = anchor ? bulkScrollTarget(anchor) : null;
       container?.scrollBy({ left: scroll.dx, top: scroll.dy });
     }
     return;

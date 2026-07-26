@@ -539,10 +539,22 @@ const CONVERTED: NavScreenSpec[] = [
   { file: 'MonsterSheetScreen.tsx', ids: ['monsterSheet'], cancels: true },
   { file: 'CharacterSheetScreen.tsx', ids: ['characterSheet', 'characterSheet.codex'], cancels: true, traps: true },
   { file: 'GearScreen.tsx', ids: ['equipment'], cancels: true },
+
+  // Wave 5 — the four with a structural problem rather than a wiring one:
+  // two card grids whose only filter was a text field, a page of prose links,
+  // and a screen that is four different screens wearing one name.
+  { file: 'DeckScreen.tsx', ids: ['deck'], cancels: true },
+  { file: 'CardCodexScreen.tsx', ids: ['cardCodex'], cancels: true },
+  { file: 'ChronicleScreen.tsx', ids: ['chronicle'], cancels: true },
+  { file: 'MultiplayerScreen.tsx', ids: ['multiplayer', 'duel.concede'], cancels: true, traps: true },
 ];
 
-/** Still mouse-only. This list must reach zero before the Steam build. */
-const NOT_YET_CONVERTED: string[] = ['CardCodexScreen.tsx', 'ChronicleScreen.tsx', 'DeckScreen.tsx', 'MultiplayerScreen.tsx'];
+/**
+ * Still mouse-only. Empty, and it must stay that way: the coverage test below
+ * fails if a new screen appears in components/ without an entry in one list or
+ * the other, so the only way to add a screen is to decide what its B does.
+ */
+const NOT_YET_CONVERTED: string[] = [];
 
 describe('screen conversion coverage', () => {
   const screenFiles = readdirSync(COMPONENT_DIR).filter((f) => /(Screen|Overlay)\.tsx$/.test(f));
@@ -682,6 +694,52 @@ describe('screen layouts, as geometry', () => {
     expect(source).toMatch(/data-nav-skip=\{navigable \? undefined : ''\}/);
     // The card inspector opts back in — a card's rules text IS the content.
     expect(componentSource('CardDetailOverlay.tsx')).toMatch(/<KeywordText[^>]*navigable/);
+  });
+
+  it('keeps chronicle prose links out of the pad ring', () => {
+    // A full timeline is 100+ inline entity buttons. Same demotion as the
+    // glossary terms — and nothing is lost, because every entity these link to
+    // also has its own row under the Figures / Beasts / Relics tabs.
+    expect(componentSource('ChronicleText.tsx')).toMatch(/data-nav-skip=""/);
+  });
+
+  it('binds the shoulders on the three screens that need lateral movement', () => {
+    // CONTROLLER.md reserves LB/RB for movement between sections. Chronicle
+    // turns the page, the codex jumps a section of a 200-cell gallery, and the
+    // deck cycles the type filter.
+    for (const [file, marker] of [
+      ['ChronicleScreen.tsx', 'stepTab'],
+      ['CardCodexScreen.tsx', 'jumpSection'],
+      ['DeckScreen.tsx', 'cycleType'],
+    ] as const) {
+      const source = componentSource(file);
+      expect(source, file).toMatch(/'prevTab'/);
+      expect(source, file).toMatch(/'nextTab'/);
+      expect(source, file).toContain(marker);
+    }
+  });
+
+  it('gives every text-filtered screen a way out of its own search box', () => {
+    // Arrows move the caret and Space types a space while focus is in a text
+    // field; only Escape gets through. A screen with a search box that does
+    // not handle it strands the cursor there.
+    for (const file of ['DeckScreen.tsx', 'CardCodexScreen.tsx', 'CreateScreen.tsx']) {
+      expect(componentSource(file), file).toMatch(/HTMLInputElement/);
+    }
+  });
+
+  it('lets a focused scroll box scroll itself, but never reveal itself', () => {
+    // The Chronicle's page is one focus stop wrapping 3000px of prose. Bulk
+    // scrolling has to move the focused element itself; `revealElement` must
+    // NOT, or "scroll this into view" becomes a no-op inside its own box and
+    // never reaches the ancestors that actually needed moving.
+    const nav = readFileSync(fileURLToPath(new URL('../../nav/navBus.ts', import.meta.url)), 'utf8');
+    const focus = readFileSync(fileURLToPath(new URL('../../nav/focus.ts', import.meta.url)), 'utf8');
+    expect(focus).toMatch(/export function bulkScrollTarget/);
+    // pageScroll and the right-stick branch use it; revealElement does not.
+    expect(nav.match(/bulkScrollTarget\(/g)?.length).toBe(2); // pageScroll + right stick
+    const reveal = focus.slice(focus.indexOf('export function revealElement'));
+    expect(reveal).not.toMatch(/bulkScrollTarget/);
   });
 
   it('gives ItemHover a focus path, not only a cursor one', () => {

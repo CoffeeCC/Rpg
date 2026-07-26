@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { CardDef } from '../engine/types';
 import { CLASS_DECKS, RACE_CARDS, REWARD_POOLS, SPECIES_CARDS, TAME_CARD_ID, cardMatchesQuery, getCard } from '../engine/data/cards';
@@ -6,6 +6,7 @@ import { SPECIES } from '../engine/data/species';
 import { CardView } from './CardView';
 import { CardDetailOverlay } from './CardDetailOverlay';
 import { Icon } from './Icon';
+import { focusFirstIn, useNavScope, useRefocusOn } from '../nav';
 import { play as sfx } from '../platform/sfx';
 
 interface CodexEntry {
@@ -40,6 +41,8 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
       type="button"
       key={entry.card.id}
       className={`deck-cell codex-cell ${entry.owned ? '' : 'codex-locked'}`}
+      data-nav-key={`codex-${entry.card.id}`}
+      aria-label={`${entry.card.name}${entry.owned ? '' : ', not currently available'}`}
       onClick={() => {
         sfx('uiClick');
         setInspect(entry);
@@ -98,9 +101,54 @@ export function CardCodexScreen({ state, backScreen, dispatch }: { state: GameSt
   ];
   const hasResults = allEntries.some((e) => cardMatchesQuery(e.card, query));
 
+  const root = useRef<HTMLDivElement>(null);
+
+  /**
+   * LB/RB jump a whole section.
+   *
+   * The tallest screen in the game: roughly two hundred grid cells across two
+   * dozen sections, and until now the ONLY way to cut it down was a text field
+   * — i.e. on a Deck, the Steam on-screen keyboard, for a compendium you are
+   * browsing. Section jumping is the paging the audit asked for, and it costs
+   * nothing but a query of the grids that are already on screen: no state, no
+   * index to keep in sync with a filtered list.
+   */
+  const jumpSection = (delta: 1 | -1): boolean => {
+    const el = root.current;
+    if (!el) return false;
+    const grids = [...el.querySelectorAll<HTMLElement>('.deck-grid')];
+    if (grids.length === 0) return false;
+    const active = document.activeElement as HTMLElement | null;
+    const at = active ? grids.findIndex((g) => g.contains(active)) : -1;
+    if (at < 0) return focusFirstIn(grids[delta > 0 ? 0 : grids.length - 1]);
+    const next = (at + delta + grids.length) % grids.length;
+    return focusFirstIn(grids[next]);
+  };
+
+  useNavScope(root, {
+    id: 'cardCodex',
+    onButton: (button) => (button === 'prevTab' ? jumpSection(-1) : button === 'nextTab' ? jumpSection(1) : false),
+    onCancel: () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && active.type === 'text') {
+        if (!focusFirstIn(root.current?.querySelector<HTMLElement>('.deck-grid'))) active.blur();
+        return true;
+      }
+      if (query) {
+        setQuery('');
+        return true;
+      }
+      // `cardCodex` is not in App.tsx's `backable` list, so there is no HUD
+      // back chip here. B is the only way out that is not a mouse.
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+  useRefocusOn([query]);
+
   return (
     <>
-      <div className="panel">
+      <div className="panel" ref={root}>
         <h1 className="title title-with-icon">
           <Icon name="deck" size={26} emoji="" /> Card Codex
         </h1>

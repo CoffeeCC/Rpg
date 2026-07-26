@@ -23,6 +23,7 @@ import { CardView } from './CardView';
 import { MonsterImage, HeroImage } from '../art/MonsterImage';
 import { PAINTED_TOWN } from '../art/painted';
 import { Icon } from './Icon';
+import { useNavScope, useRefocusOn } from '../nav';
 import { play as sfx } from '../platform/sfx';
 import '../duel.css';
 
@@ -290,12 +291,49 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
   }, [view, localFx, submit]);
 
   // ==========================================================================
+  // Navigation. Four phases, and each is a completely different focus surface
+  // — `setPhase` replaces the whole DOM, so a pad player's cursor was dropped
+  // on every transition. One scope covers all the PANEL phases (menu, setup,
+  // chalking, verdict): they render the same element in the same position, so
+  // React keeps one DOM node under the ref and the scope survives the swap.
+  //
+  // The fight itself is not one of them. It is `BattleStage`, which brings its
+  // own scope — this screen must not put a second one over the battlefield.
+  //
+  // `cardCodex` aside, this is the other screen with no HUD back chip (it is
+  // not in App.tsx's `backable` list), so B is the only non-mouse way out and
+  // it has to be phase-aware.
+  // ==========================================================================
+  const inRing = phase === 'duel' && !!view && view.outcome.kind === 'ongoing';
+  const panelRef = useRef<HTMLDivElement>(null);
+  useNavScope(panelRef, {
+    id: 'multiplayer',
+    enabled: !inRing,
+    onCancel: () => {
+      if (phase === 'setup') {
+        setPhase('menu');
+        return true;
+      }
+      if (phase === 'duel') {
+        // The verdict card. Leaving is the safe reading of B here: "Again"
+        // starts a whole new match and must be asked for.
+        setView(null);
+        dispatch({ type: 'GOTO', screen: 'town' });
+        return true;
+      }
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+  useRefocusOn([phase, view?.outcome.kind, inRing]);
+
+  // ==========================================================================
   // Menu — the shell a server browser will grow into
   // ==========================================================================
   if (phase === 'menu') {
     const record = state.duelRecord;
     return (
-      <div className="panel duel-panel">
+      <div className="panel duel-panel" ref={panelRef}>
         <h1 className="title">⚔️ The Duelling Ring</h1>
         <p className="subtitle">
           No orbs, no spoils, no graves. Two tamers, a chalk circle, and whatever their beasts think of each other.
@@ -356,7 +394,7 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     const peek = peekCardId ? deckGroups.find((g) => g.card.id === peekCardId) : deckGroups[0];
     const overmatched = rival ? !isFairMatch(rival, player.level) : false;
     return (
-      <div className="panel duel-panel">
+      <div className="panel duel-panel" ref={panelRef}>
         <h1 className="title">⚔️ Terms of the Duel</h1>
         <p className="subtitle">
           Up to {DUEL_PARTY_MAX} beasts a side, matched numbers, no taming and no killing blows that carry home.
@@ -395,6 +433,13 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
                       disabled={full}
                       onClick={() => toggleBeast(m.uid)}
                       title={noCards ? 'This beast lends no cards to your deck.' : m.personality?.instinctText}
+                      // The "lends no cards" warning was `title`-only, which on
+                      // a Deck never fires. (` · no cards` is also inline below,
+                      // so this is belt to that braces — but the instinct text
+                      // had no other home at all.)
+                      aria-label={`${m.nickname}, level ${m.level} ${m.species.name}${
+                        noCards ? '. Lends no cards to your deck.' : m.personality?.instinctText ? `. ${m.personality.instinctText}` : ''
+                      }${picked ? '. Entered.' : ''}`}
                     >
                       <MonsterImage speciesId={m.speciesId} size={38} rarity={m.rarity} />
                       <span>
@@ -481,6 +526,10 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
                   key={`${g.card.id}-${g.source ?? ''}`}
                   className={`duel-chip${peek?.card.id === g.card.id ? ' picked' : ''}`}
                   onMouseEnter={() => setPeekCardId(g.card.id)}
+                  // The preview was hover-driven with a click fallback, which
+                  // meant a pad player had to PRESS every chip to see what it
+                  // was. On focus it just reads, exactly as it does for a mouse.
+                  onFocus={() => setPeekCardId(g.card.id)}
                   onClick={() => setPeekCardId(g.card.id)}
                 >
                   <span className="duel-chip-cost">{g.card.cost}</span>
@@ -527,7 +576,7 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
   // ==========================================================================
   if (!view) {
     return (
-      <div className="panel duel-panel">
+      <div className="panel duel-panel" ref={panelRef}>
         <h1 className="title">⚔️ The Duelling Ring</h1>
         <p className="subtitle">Chalking the circle…</p>
       </div>
@@ -543,7 +592,7 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     const drew = view.outcome.kind === 'draw';
     const quote = rival ? (won ? rival.defeatLine : drew ? rival.taunt : rival.victoryLine) : won ? '"Of course you did. I am you."' : '"I am you. Remember that."';
     return (
-      <div className="panel duel-panel">
+      <div className="panel duel-panel" ref={panelRef}>
         <h1 className="title">⚔️ The Duelling Ring</h1>
         <div className="duel-result">
           <div className={`duel-verdict${won ? '' : drew ? ' draw' : ' loss'}`}>{drew ? 'Drawn' : won ? 'The Ring Is Yours' : 'The Ring Is Theirs'}</div>
@@ -577,29 +626,59 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
     <>
       <BattleStage key={matchKey} view={battleView} />
       {confirmConcede && (
-        <div className="duel-yield">
-          <div className="duel-yield-box">
-            <p className="duel-yield-text">Yield the ring to {view.foe.name}?</p>
-            <div className="btn-row" style={{ justifyContent: 'center' }}>
-              <button
-                className="btn danger"
-                onClick={() => {
-                  const transport = transportRef.current;
-                  setConfirmConcede(false);
-                  if (!transport) return;
-                  sfx('uiClick');
-                  transport.submitAction({ kind: 'concede', side: transport.localSide });
-                }}
-              >
-                Yield
-              </button>
-              <button className="btn" onClick={() => { sfx('uiClick'); setConfirmConcede(false); }}>
-                Fight on
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConcedeConfirm
+          foeName={view.foe.name}
+          onFightOn={() => {
+            sfx('uiClick');
+            setConfirmConcede(false);
+          }}
+          onYield={() => {
+            const transport = transportRef.current;
+            setConfirmConcede(false);
+            if (!transport) return;
+            sfx('uiClick');
+            transport.submitAction({ kind: 'concede', side: transport.localSide });
+          }}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * The concede confirm, over the battlefield.
+ *
+ * It was a `position: fixed` box with no Escape handler, no trap and no
+ * gamepad path at all — the pad's B went to the battle scope underneath and
+ * deselected a card while a yes/no question sat on screen. Its own trapping
+ * scope at layer 10 puts it above BattleStage's, so B answers the question
+ * (with "Fight on", the safe half) and the D-pad cannot walk off it.
+ */
+function ConcedeConfirm({ foeName, onYield, onFightOn }: { foeName: string; onYield: () => void; onFightOn: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useNavScope(ref, {
+    id: 'duel.concede',
+    layer: 10,
+    trap: true,
+    onCancel: () => {
+      onFightOn();
+      return true;
+    },
+  });
+  return (
+    <div className="duel-yield" ref={ref}>
+      <div className="duel-yield-box">
+        <p className="duel-yield-text">Yield the ring to {foeName}?</p>
+        <div className="btn-row" style={{ justifyContent: 'center' }}>
+          <button className="btn danger" onClick={onYield}>
+            Yield
+          </button>
+          {/* The cursor opens on the safe answer. */}
+          <button className="btn" data-nav-initial="" onClick={onFightOn}>
+            Fight on
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

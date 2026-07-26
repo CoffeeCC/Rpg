@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { speciesById } from '../engine/data/species';
@@ -10,6 +10,7 @@ import { PRESENT_TELLING_LINES, ordinal } from '../engine/data/tellingsLore';
 import { TELLINGS_PREFACE_TITLE, TIMELINE_PREAMBLE, prefaceFor } from '../engine/data/retellingLore';
 import { depthByLevel, faceableSpeciesCount } from '../engine/data/bindings';
 import { ChroniclerPassage, MarginaliaList } from './BookPanel';
+import { navItem, useNavScope, useRefocusOn } from '../nav';
 import '../sheets.css';
 
 // v17 (PLAN7 C5): the Chronicle reads like a tome — tab bar styled as book
@@ -20,10 +21,52 @@ type Tab = 'timeline' | 'figures' | 'beasts' | 'artifacts' | 'deeds' | 'tellings
 
 const REF_TAB: Record<string, Tab> = { figure: 'figures', beast: 'beasts', artifact: 'artifacts' };
 
+const TAB_ORDER: Tab[] = ['timeline', 'figures', 'beasts', 'artifacts', 'deeds', 'tellings', 'marginalia'];
+
 export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [tab, setTab] = useState<Tab>('timeline');
   const [focus, setFocus] = useState<ChronRef | null>(null);
   const world = state.world;
+
+  // Shoulders turn the page. This is the one screen in the game with a real
+  // tab bar, and LB/RB is where every console storefront puts lateral movement
+  // between sections — reaching up to the bar and walking it with the D-pad
+  // for every switch would be the wrong shape.
+  const root = useRef<HTMLDivElement>(null);
+  const stepTab = (delta: 1 | -1): boolean => {
+    const next = TAB_ORDER[(TAB_ORDER.indexOf(tab) + delta + TAB_ORDER.length) % TAB_ORDER.length];
+    setTab(next);
+    // Take the cursor with it. Leaving the ring on the tab you just left means
+    // pressing A jumps back, and pressing Down enters the wrong page.
+    queueMicrotask(() => root.current?.querySelector<HTMLElement>(`[data-nav-key="chron-tab-${next}"]`)?.focus({ preventScroll: true }));
+    return true;
+  };
+
+  /**
+   * The page body is a scroll box 3000px tall inside a 400px window, and after
+   * the prose links were demoted out of the ring it had no focusable children
+   * at all — so a pad player could reach the tabs and the Back button and
+   * never read a word past the first screenful.
+   *
+   * Making the box itself one focus stop fixes it with no new machinery: land
+   * on it, and the triggers page it and the right stick free-scrolls it,
+   * because both work off the focused element's nearest scroll container. It
+   * announces as a group rather than a button — there is nothing to press.
+   */
+  const pageRegion = navItem({ role: 'group', key: 'chron-page', label: 'The page — triggers or the right stick to read on' });
+  useNavScope(root, {
+    id: 'chronicle',
+    enabled: !!world,
+    onButton: (button) => (button === 'prevTab' ? stepTab(-1) : button === 'nextTab' ? stepTab(1) : false),
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+  // Changing tab replaces the entire page body, including whatever the cursor
+  // was standing on — the audit filed this as a dropped-focus bug even for a
+  // mouse user following an entity link across tabs.
+  useRefocusOn([tab]);
 
   // After a reference click switches tabs, scroll its entry into view and flash it.
   useEffect(() => {
@@ -58,7 +101,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
     .replaceAll('{name}', heroName);
 
   return (
-    <div className="panel chronicle">
+    <div className="panel chronicle" ref={root}>
       <h1 className="title">The Chronicle of {world.name}</h1>
       <NpcHost npcId="chronicler" state={state} />
 
@@ -74,7 +117,15 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
             ['marginalia', '🖋 Marginalia'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} className={`chron-tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)}>
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            className={`chron-tab ${tab === id ? 'on' : ''}`}
+            data-nav-initial={tab === id ? '' : undefined}
+            data-nav-key={`chron-tab-${id}`}
+            onClick={() => setTab(id)}
+          >
             {label}
           </button>
         ))}
@@ -82,7 +133,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
 
       <div className="chron-page">
       {tab === 'timeline' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           {/* The one line that reconciles generated world history with the
               retelling frame: the deep past is regenerated every telling, and
               until now nothing told the player that was on purpose. */}
@@ -118,7 +169,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       )}
 
       {tab === 'figures' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           {world.figures.map((f) => {
             const mentor = world.figures.find((m) => m.id === f.mentorId);
             const rival = world.figures.find((r) => r.id === f.rivalId);
@@ -146,7 +197,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       )}
 
       {tab === 'beasts' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           {world.beasts.map((b) => {
             const slain = state.chronicle.beastsSlain.includes(b.id);
             const species = speciesById(b.speciesId);
@@ -171,7 +222,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       )}
 
       {tab === 'artifacts' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           {world.artifacts.map((a) => {
             const found = state.chronicle.artifactsFound.includes(a.id);
             const holder = world.beasts.find((b) => b.holdsArtifactId === a.id);
@@ -196,7 +247,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
       )}
 
       {tab === 'deeds' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           <p className="chronicle-line present-telling-line">{presentLine}</p>
           {fallen.length > 0 && (
             <>
@@ -222,7 +273,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
           delivers this once, at the moment it matters; this is where a player
           who wants it again, or wants the rest of it, can always find it. */}
       {tab === 'tellings' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           <h2 className="title era-heading">{TELLINGS_PREFACE_TITLE}</h2>
           <ChroniclerPassage paragraphs={prefaceFor(triumphed)} />
 
@@ -286,7 +337,7 @@ export function ChronicleScreen({ state, dispatch }: { state: GameState; dispatc
           the Chronicler's annotations on the practical business of a telling,
           each entry said once in voice and once plainly. */}
       {tab === 'marginalia' && (
-        <div className="chronicle-scroll">
+        <div className="chronicle-scroll" {...pageRegion}>
           <p className="chronicle-line timeline-preamble">
             Notes made in the margins over a long time, for a reader the Chronicler has not met. Each is written twice:
             once as it is meant, and once as it is.

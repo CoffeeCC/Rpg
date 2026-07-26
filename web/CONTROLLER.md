@@ -4,8 +4,12 @@ Everdusk ships to Steam Deck. **Every menu must be operable with a controller,
 combat included.** This document is how you make a screen comply. You should
 not need to read `src/nav/` to do it.
 
-Wave 1 built the layer and converted `BattleScreen` and `FloorScreen` as
-reference implementations. Everything else is still mouse-only.
+**Every screen and overlay in `src/components/` is converted.** Wave 1 built
+the layer and converted `BattleScreen` and `FloorScreen` as reference
+implementations; waves 2–5 took the remaining nineteen screens and the five
+overlays. `engine/test/controllerNav.test.ts` asserts that the list of
+converted screens accounts for every screen file in `components/`, so a new
+screen cannot be added without somebody deciding what its B button does.
 
 ---
 
@@ -196,10 +200,18 @@ screen beneath.
 A modal with no way out — `MercyPrompt` in combat, where the game is waiting on
 a decision — simply omits `onCancel`. B then does nothing, which is correct.
 
-`CardDetailOverlay`, `StoryOverlay`, `LegendOverlay` and `ItemHover` are **not
-yet converted.** They are owned by other files; whoever converts them should use
-exactly the pattern above. Until then, B falls through to the screen behind
-them — the same thing that happens today with Escape.
+Every overlay in the game now follows that pattern: `CardDetailOverlay`,
+`StoryOverlay`, `LegendOverlay`, `LeavingOverlay`, the character sheet's
+Arrangement codex, the duel's concede confirm, combat's mercy prompt and the
+floor's merchant mat.
+
+Two of them deliberately omit `onCancel` and still trap — `StoryOverlay` and
+`LegendOverlay`. B does nothing there, which is correct: each has exactly one
+control, A presses it, and "cancel" would mean silently advancing the story.
+
+If an overlay has its own `window` keydown listener for Escape, **delete it**
+when you add the scope. `CardDetailOverlay` had both for a while and Escape
+closed it twice.
 
 ---
 
@@ -216,7 +228,33 @@ side to side"). The nav layer's `revealElement` exists to avoid it.
 For long screens, also give the player bulk movement: LT/RT page the focused
 container, and the right stick free-scrolls it. Both work with no code from you,
 as long as the scrolling element is a real scroll container (`overflow: auto`)
-and an ancestor of the focused control.
+and an ancestor of the focused control — **or is the focused control itself.**
+
+That last case is how you make a wall of prose readable on a pad. The
+Chronicle's page is 3,000+px of text in a 400px window with nothing focusable
+inside it (the inline entity links are demoted out of the ring), so the scroll
+box is itself one focus stop:
+
+```tsx
+const pageRegion = navItem({ role: 'group', key: 'chron-page', label: 'The page — triggers or the right stick to read on' });
+<div className="chronicle-scroll" {...pageRegion}>…</div>
+```
+
+Land on it and the triggers page it. `bulkScrollTarget` in `nav/focus.ts` is
+what makes a focused scroller scroll itself; `revealElement` deliberately does
+not use it, because "scroll a thing into view" must always walk outward.
+
+### Prose that is made of links
+
+`KeywordText` and `ChronicleText` turn every glossary term / every generated
+entity name inside a paragraph into a focusable element. That is right for a
+mouse and unusable on a D-pad — the character sheet was 40–80 focus stops and
+a full Chronicle timeline is over a hundred. Both now carry **`data-nav-skip`**,
+which takes them out of the *controller's* ring only: `tabIndex` stays, so Tab
+and screen readers still reach every one.
+
+`KeywordText` takes a `navigable` prop to opt back in. `CardDetailOverlay`
+passes it, because on a card inspector the rules text is the content.
 
 ---
 
@@ -277,11 +315,36 @@ is a scope handler.
 
 ## 8. Reference implementations
 
+- **`QuestBoardScreen.tsx`** — the whole conversion, in three lines. Start here.
 - **`FloorScreen.tsx`** — a widget that eats directions (the map), a toolbar
   reached with B, and a trapping modal (the merchant mat).
 - **`BattleScreen.tsx`** — two input modes in one scope (browsing vs. aiming),
   a consumed direction, `navItem` on clickable divs, refocus after a re-render,
   and a modal with no cancel.
+- **`CardCodexScreen.tsx`** — LB/RB jumping a section of a 217-cell gallery,
+  and B that empties the search box before it leaves the screen.
+- **`MultiplayerScreen.tsx`** — one scope across four phases that each replace
+  the whole DOM, switched off entirely while `BattleStage` owns the screen.
+
+### What B means, and when it means nothing
+
+B is not "go back" — it is "undo the innermost thing". Screens layer it:
+
+| Screen | B, in order |
+|---|---|
+| `deck` | leave the search box → clear filters and query → back |
+| `equipment` | clear the bag filter → back |
+| `breeding` | unpick parent B → unpick parent A → back |
+| `cardCodex` | leave the search box → clear the query → back |
+| `multiplayer` | setup → menu → town |
+| `create` | leave the nameplate. Nothing else: there is nowhere behind it |
+
+And it is **deliberately unbound** on `town`, `event`, `cardReward`, `victory`,
+`fallen`, `StoryOverlay` and `LegendOverlay`. On each of those the only thing
+cancel could reach is irreversible — discard a rare, skip a choice, begin a new
+telling — or there is nothing behind the screen to go back to. An omitted
+`onCancel` on those screens is a decision, not an oversight; the test suite
+asserts it stays that way.
 
 ## 9. API surface
 
