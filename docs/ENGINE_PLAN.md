@@ -269,7 +269,7 @@ once.**
 | **M0** | **Lantern Lab** — `web/public/lantern-lab.html`. Material baker: albedo → height → normal + AO, live-lit preview, PNG export. | ✅ **Done.** Drag a light across a real tile and see whether derived normals hold up. They do — measured, §7. |
 | **M1** | **Lantern core** — GL context, sprite batcher, HDR target, tonemap, bloom, debug HUD, Scene, Renderer. The board drawn on the GPU with today's art. | ✅ **Done.** `web/public/lantern-board.html` — real tiles, real hero sprite, painter-sorted, 2.3 ms CPU at 1200x750. Flat and bright on purpose: M1 draws **albedo only**, so nothing is dark yet. M2 is where light lands. |
 | **M2** | **Materials + per-pixel lighting** — the Lab's pipeline as a build step, normal-mapped diffuse and specular, soft shadows from world geometry. | **The first real moment.** The lantern rakes across the board instead of just clearing fog. |
-| **M3** | **The tilt** — board camera, walls given front faces, pieces stand up as billboards with contact shadows. | It becomes a board with pieces on it. |
+| **M3** | **The board becomes an object** — see §11. Piece bases, contact shadows, board edge and thickness, a table under it, tile seams. Camera tilt and wall front faces already landed early, in M1/M2. | It becomes a board with pieces on it. |
 | **M4** | **The furniture** — UI surfaces drawn as lit materials under the DOM text. Elevation, contact shadows, hover-lift, pressed buttons. | Every screen, all at once. Cards lift and cast. No flat rectangles left. |
 | **M5** | **Radiance cascades** — real 2D GI. Bounce, colour bleed, penumbra that closes. `AMBIENT_FLOOR` dies here. | Shadows get *structure* instead of a constant. |
 | **M6** | **Volumetrics + emitters** — god rays through a doorway, glowing shrines, a fire card lighting the room for a turn. | Atmosphere. The murk's honest successor. |
@@ -823,3 +823,36 @@ Do not read it as a regression; there is no lighting in it yet to be wrong.
   `FloorScreen` still renders through the DOM. That is deliberate — the flag is
   worth adding when there is something better than the DOM map to show, which
   is M2, not before.
+
+---
+
+## 11. Why it does not look like a board yet (2026-07-26)
+
+Paul, on the first lit frame: *"the board still doesn't look like a game board
+though — does that come at a later step?"*
+
+Partly later, and partly a gap in this plan that his question exposed. §1.2
+adopted "a board game on a table" as the organising metaphor and then the
+milestones treated it as an **art-direction label**. It is not. It is a short
+list of concrete geometric features, and almost none of them existed:
+
+| cue | why it matters | status before M3 |
+|---|---|---|
+| **Pieces have bases** | a disc or plinth under a figure is the single strongest signal that it is a game piece rather than a picture of one | missing |
+| **Contact shadow** | what makes an object sit ON a surface. Without it a piece floats, however well it is lit | missing |
+| **Board edge and thickness** | a board is a slab with a visible rim; ours was an infinite tile plane that simply stopped | missing |
+| **A table underneath** | gives the board a context and makes it an OBJECT rather than the whole world. Everything outside it was flat `night`, which reads as void | missing |
+| **Tile seams** | inlaid or printed pieces have edges; continuous rock texture reads as terrain, not as a board | missing |
+| **Material variety** | wood, brass, wax, vellum, pewter — the "what is this made of" brief | pending the de-shaded art re-shoot |
+
+Only *one* of those — contact shadows — appeared anywhere in the milestone
+table, and it was a clause inside M3 rather than a thing with a design.
+
+**The lesson for the rest of this plan:** an organising metaphor has to be
+decomposed into features that can be built and seen, or it stays a mood and
+the renderer keeps getting better at something nobody asked for. The lighting
+work was not wrong — it is the foundation the rest sits on — but "make it look
+like a board" was never going to fall out of it.
+
+M3 is now that list, in that order. The camera tilt and wall front faces that
+M3 originally owned both landed early, during M1 and M2.
