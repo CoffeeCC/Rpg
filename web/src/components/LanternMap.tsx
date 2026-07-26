@@ -36,16 +36,23 @@ import { formatHud, type HudStats } from '../lantern/debug/hud';
 import { BOARD_BORDER, buildFloorScene, snapshotFloor } from '../render/floorScene';
 import { createMaterialLibrary, requestUnitArt, type MaterialLibrary } from '../render/materials';
 import {
+  FRAMING_MS,
   clampCentre,
-  clampZoom,
   extentCentre,
   followHero,
   latticeCss,
   latticeTransform,
+  pinchFactor,
   scaleCamera,
+  touchSpan,
+  tweenDone,
+  tweenZoom,
+  zoomAbout,
   zoomFor,
   type BoardExtent,
   type CameraMode,
+  type TouchSpan,
+  type ZoomTween,
 } from '../render/boardCamera';
 import { STEP_MS, glidePosition, type Glide } from '../render/walk';
 import '../lantern.css';
@@ -134,6 +141,8 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
    */
   const pannedRef = useRef(false);
   const libRef = useRef<MaterialLibrary | null>(null);
+  /** A framing change in flight, or null. See `boardCamera.ZoomTween`. */
+  const tweenRef = useRef<ZoomTween | null>(null);
 
   const floorKey = `${exp.gateId}:${exp.floorIndex}`;
   const lastFloorRef = useRef(floorKey);
@@ -217,7 +226,16 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
       const ext: BoardExtent = { width: s.width, height: s.height, border: BOARD_BORDER };
       const cam = camRef.current;
       cam.viewport = { x: cssW, y: cssH };
-      if (!zoomedRef.current) cam.zoom = zoomFor(modeRef.current, ext, cam.viewport, cam.tilt);
+      // THE FRAMING, in priority order. A framing change in flight owns the
+      // zoom outright; failing that the camera re-fits on resize, until the
+      // player takes the wheel and `zoomedRef` hands it over for good.
+      const tw = tweenRef.current;
+      if (tw) {
+        cam.zoom = tweenZoom(tw, nowMs);
+        if (tweenDone(tw, nowMs)) tweenRef.current = null;
+      } else if (!zoomedRef.current) {
+        cam.zoom = zoomFor(modeRef.current, ext, cam.viewport, cam.tilt);
+      }
 
       const hero = glideRef.current
         ? glidePosition(glideRef.current, nowMs)
@@ -293,10 +311,33 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
     // gives: perceived zoom is logarithmic, so a fixed increment crawls when
     // you are zoomed in and lurches when you are zoomed out.
     const surface: HTMLElement = surfaceRef?.current ?? host;
+
+    /**
+     * The camera's screen space is the HOST's box, not the viewport's — that
+     * is what `cam.viewport` is set from every frame. Anchoring against raw
+     * `clientX` works only while the canvas happens to start at the window
+     * edge, and drifts by exactly the offset the moment anything sits beside
+     * it.
+     */
+    const toSurface = (clientX: number, clientY: number) => {
+      const r = host!.getBoundingClientRect();
+      return { x: clientX - r.left, y: clientY - r.top };
+    };
+    const currentExtent = (): BoardExtent => {
+      const s = snapRef.current;
+      return { width: s.width, height: s.height, border: BOARD_BORDER };
+    };
+
+    // Zoom about the CURSOR, not the frame centre — see `zoomAbout`. Still
+    // multiplicative, for the reason `lantern-board.html` gives: perceived zoom
+    // is logarithmic, so a fixed increment crawls when you are zoomed in and
+    // lurches when you are zoomed out.
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       zoomedRef.current = true;
-      camRef.current.zoom = clampZoom(camRef.current.zoom * (e.deltaY > 0 ? 0.92 : 1.087));
+      tweenRef.current = null; // the hand beats the framing key
+      pannedRef.current = true; // zooming somewhere IS choosing where to look
+      zoomAbout(camRef.current, toSurface(e.clientX, e.clientY), e.deltaY > 0 ? 0.92 : 1.087, currentExtent());
     };
     surface.addEventListener('wheel', onWheel, { passive: false });
 
@@ -304,38 +345,102 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
     // shift-drag, because plain left-drag on a cell is click-to-move and the
     // cells are the layer on top.
     let panning: { x: number; y: number } | null = null;
-    const onDown = (e: PointerEvent) => {
-      if (e.button !== 1 && !(e.button === 0 && e.shiftKey)) return;
-      e.preventDefault();
-      panning = { x: e.clientX, y: e.clientY };
-      surface.setPointerCapture(e.pointerId);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (!panning) return;
+    /** Live touch contacts, by pointerId. Mouse and pen never enter this. */
+    const touches = new Map<number, { x: number; y: number }>();
+    let span: TouchSpan | null = null;
+
+    /** Drag the camera by a screen delta. Shared by the mouse and the two-finger pan. */
+    const panBy = (dx: number, dy: number) => {
       pannedRef.current = true;
       const cam = camRef.current;
       const cos = Math.cos(cam.tilt);
       // MOVE THE CAMERA, NOT THE BOARD (§17.1). Dragging right pulls the view
       // left, which is what looking across a table does.
-      cam.centre = {
-        x: cam.centre.x - (e.clientX - panning.x) / cam.zoom,
-        y: cam.centre.y - (e.clientY - panning.y) / (cam.zoom * cos),
-      };
-      const s = snapRef.current;
-      cam.centre = clampCentre(cam.centre, { width: s.width, height: s.height, border: BOARD_BORDER }, cam.viewport, cam.zoom, cam.tilt);
+      cam.centre = clampCentre(
+        { x: cam.centre.x - dx / cam.zoom, y: cam.centre.y - dy / (cam.zoom * cos) },
+        currentExtent(),
+        cam.viewport,
+        cam.zoom,
+        cam.tilt,
+      );
+    };
+
+    const twoTouches = () => {
+      const it = touches.values();
+      const a = it.next().value;
+      const b = it.next().value;
+      return a && b ? touchSpan(a, b) : null;
+    };
+
+    const onDown = (e: PointerEvent) => {
+      // TOUCH. One finger is deliberately left alone: a tap on a cell is
+      // click-to-move and the lattice is the layer on top (§1.2), so panning
+      // on one finger would turn every attempted move into a drag. Two
+      // fingers pan and pinch at once, which is also how they really behave.
+      if (e.pointerType === 'touch') {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 2) {
+          span = twoTouches();
+          tweenRef.current = null;
+          zoomedRef.current = true;
+        }
+        return;
+      }
+      if (e.button !== 1 && !(e.button === 0 && e.shiftKey)) return;
+      e.preventDefault();
+      panning = { x: e.clientX, y: e.clientY };
+      surface.setPointerCapture(e.pointerId);
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        if (!touches.has(e.pointerId)) return;
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size !== 2 || !span) return;
+        e.preventDefault();
+        const next = twoTouches();
+        if (!next) return;
+        // Pinch first, about the pinch centre, then carry the residual drag.
+        // Order matters: zooming changes px-per-tile, so a pan computed
+        // against the old zoom lands short.
+        zoomAbout(camRef.current, toSurface(next.centre.x, next.centre.y), pinchFactor(span, next), currentExtent());
+        panBy(next.centre.x - span.centre.x, next.centre.y - span.centre.y);
+        span = next;
+        return;
+      }
+      if (!panning) return;
+      panBy(e.clientX - panning.x, e.clientY - panning.y);
       panning = { x: e.clientX, y: e.clientY };
     };
-    const onUp = () => {
+
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') {
+        touches.delete(e.pointerId);
+        // Dropping to one finger ends the gesture rather than re-seating it.
+        // Re-seating would make the remaining finger yank the board as the
+        // span jumps to whatever pair is left.
+        if (touches.size < 2) span = null;
+        return;
+      }
       panning = null;
     };
+
+    // Without this the browser claims the gesture for page scroll/zoom and
+    // simply stops sending pointermove — the handlers above are correct and
+    // never run. It is set here rather than in CSS so it lives next to the
+    // code that depends on it, and is put back on teardown.
+    const prevTouchAction = surface.style.touchAction;
+    surface.style.touchAction = 'none';
+
     surface.addEventListener('pointerdown', onDown);
-    surface.addEventListener('pointermove', onMove);
+    surface.addEventListener('pointermove', onMove, { passive: false });
     surface.addEventListener('pointerup', onUp);
     surface.addEventListener('pointercancel', onUp);
 
     return () => {
       disposed = true;
       cancelAnimationFrame(raf);
+      surface.style.touchAction = prevTouchAction;
       surface.removeEventListener('wheel', onWheel);
       surface.removeEventListener('pointerdown', onDown);
       surface.removeEventListener('pointermove', onMove);
@@ -369,8 +474,17 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'o' && e.key !== 'O') return;
       e.preventDefault();
+      const cam = camRef.current;
+      const s = snapRef.current;
+      const next: CameraMode = modeRef.current === 'overview' ? 'play' : 'overview';
+      const to = zoomFor(next, { width: s.width, height: s.height, border: BOARD_BORDER }, cam.viewport, cam.tilt);
+      // The tween, not a cut. It owns the zoom until it finishes, after which
+      // `zoomedRef` being false hands the framing back to the auto-fit — which
+      // is already sitting at exactly `to`, so there is no seam at the join.
+      tweenRef.current = { from: cam.zoom, to, startMs: performance.now(), durMs: FRAMING_MS };
       zoomedRef.current = false;
-      setMode((m) => (m === 'overview' ? 'play' : 'overview'));
+      modeRef.current = next;
+      setMode(next);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -381,7 +495,7 @@ export function LanternMap({ exp, player, bossDefeated, cellsRef, surfaceRef, de
       {/* The canvas is appended by the effect — see the note there. */}
       {error && <p className="lantern-error">Lantern renderer unavailable — {error}</p>}
       <p className="lantern-chip">
-        LANTERN · {mode} · O framing · scroll zoom · shift-drag pan
+        LANTERN · {mode} · O framing · scroll zoom · shift-drag pan · two-finger touch
       </p>
       {debug && <pre className="lantern-hud">{hud}</pre>}
     </div>

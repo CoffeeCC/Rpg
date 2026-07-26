@@ -24,7 +24,7 @@
 // therefore lives on this side of the §2 boundary.
 // =========================================================================
 
-import type { Camera, Vec2 } from '../lantern/scene/camera';
+import { unproject, type Camera, type Vec2 } from '../lantern/scene/camera';
 
 /** The rectangle the camera is allowed to look at, in tiles. */
 export interface BoardExtent {
@@ -203,6 +203,140 @@ export function latticeTransform(cam: Camera, pitch: number): LatticeTransform {
 
 export function latticeCss(t: LatticeTransform): string {
   return `translate(${t.translateX}px, ${t.translateY}px) scale(${t.scaleX}, ${t.scaleY})`;
+}
+
+/**
+ * ZOOM ABOUT A POINT — the tile under the cursor stays under the cursor.
+ *
+ * Scroll-to-zoom that zooms toward the middle of the frame is the version
+ * everyone writes first and nobody likes: you point at the thing you want a
+ * closer look at, and the board slides it away from you. Anchoring is the
+ * difference between a camera and a slider, and it is four lines of algebra
+ * because §13 chose an orthographic axis-aligned projection — `unproject` is
+ * exact, so the anchor is exact.
+ *
+ * Solve `project(p, cam') == screen` for the new centre, where `p` is the board
+ * point currently under `screen`:
+ *
+ *     cx' = p.x - (sx - vw/2) / z'
+ *     cy' = p.y - (sy - vh/2) / (z' * cos)
+ *
+ * TWO THINGS THAT LOOK LIKE DETAILS AND ARE NOT:
+ *
+ * 1. The correction uses the CLAMPED zoom, not the requested one. At MIN_ZOOM
+ *    or MAX_ZOOM the factor is refused, and anchoring against a zoom the camera
+ *    did not actually take makes the board creep sideways on every further
+ *    scroll while the scale sits still. `test/boardCamera.test.ts` scrolls into
+ *    the stop twenty times and asserts the centre has not moved.
+ * 2. The clamp gets the last word, so near a board edge the anchor is NOT held
+ *    exactly. That is correct and deliberate — §17.1's rule that you never
+ *    scroll off into dead space outranks the anchor.
+ */
+export function zoomAbout(cam: Camera, screen: Vec2, factor: number, extent: BoardExtent): void {
+  const next = clampZoom(cam.zoom * factor);
+  if (next === cam.zoom) return;
+  const p = unproject(screen, cam, 0);
+  const cos = Math.max(1e-3, Math.cos(cam.tilt));
+  cam.zoom = next;
+  cam.centre = clampCentre(
+    {
+      x: p.x - (screen.x - cam.viewport.x / 2) / next,
+      y: p.y - (screen.y - cam.viewport.y / 2) / (next * cos),
+    },
+    extent,
+    cam.viewport,
+    next,
+    cam.tilt,
+  );
+}
+
+/**
+ * A framing change in flight. OVERVIEW to PLAY and back (§17).
+ *
+ * The toggle used to be a cut: press O and the board is simply at the other
+ * zoom on the next frame. §17.1 asks the camera to behave like a head moving
+ * over a table, and a head does not teleport — leaning back to survey is a
+ * movement, and seeing it is what tells you the board did not change, your view
+ * of it did.
+ */
+export interface ZoomTween {
+  from: number;
+  to: number;
+  startMs: number;
+  durMs: number;
+}
+
+/** Long enough to read as a lean, short enough not to be in the way of play. */
+export const FRAMING_MS = 380;
+
+/** Smoothstep. C¹ at both ends, no overshoot — a lean, not a bounce. */
+export function easeInOut(t: number): number {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+}
+
+/**
+ * The tween's zoom right now, interpolated GEOMETRICALLY.
+ *
+ * The same reason the wheel is multiplicative: perceived zoom is logarithmic.
+ * Linear interpolation from 32 to 64 passes through 48 at the halfway point,
+ * but the perceptual midpoint is sqrt(32*64) = 45.25 — so a linear tween starts
+ * slow and finishes with a rush, which reads as the camera being yanked the
+ * last of the way. Interpolating the LOG makes the felt rate constant, and it
+ * is what makes a 380ms move feel like one gesture instead of two.
+ */
+export function tweenZoom(tw: ZoomTween, nowMs: number): number {
+  if (tw.durMs <= 0) return tw.to;
+  const e = easeInOut((nowMs - tw.startMs) / tw.durMs);
+  return tw.from * Math.pow(tw.to / tw.from, e);
+}
+
+export function tweenDone(tw: ZoomTween, nowMs: number): boolean {
+  return nowMs >= tw.startMs + tw.durMs;
+}
+
+/**
+ * TOUCH. The Steam Deck has a touchscreen and no wheel, so without this the
+ * board cannot be zoomed or panned at all on one of the two target machines.
+ *
+ * The mapping is the platform convention, and the single-finger case is the
+ * one that matters: ONE finger is left alone, because a tap on a cell is
+ * click-to-move and the cell lattice is the layer on top (§1.2). Panning on
+ * one finger would make every attempted move drag the board instead. TWO
+ * fingers pan and pinch at once, which is also how they actually behave —
+ * nobody pinches without their midpoint wandering.
+ */
+export interface TouchSpan {
+  /** Distance between the two pointers, in px. */
+  distance: number;
+  /** Their midpoint, in the same space. */
+  centre: Vec2;
+}
+
+export function touchSpan(a: Vec2, b: Vec2): TouchSpan {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return {
+    distance: Math.hypot(dx, dy),
+    centre: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+  };
+}
+
+/**
+ * The zoom factor a pinch asks for, guarded against the degenerate span.
+ *
+ * Two pointers can report the same position for a frame — a fresh contact
+ * before the first move, or two fingers touching down together. The ratio is
+ * then 0/0, and an unguarded pinch answers `NaN`, which propagates into
+ * `cam.zoom` and blanks the canvas permanently: every subsequent projection is
+ * NaN and nothing on screen ever comes back. Returning 1 costs one frame of
+ * responsiveness and cannot poison the camera.
+ */
+export const MIN_SPAN_PX = 8;
+
+export function pinchFactor(prev: TouchSpan, next: TouchSpan): number {
+  if (prev.distance < MIN_SPAN_PX || next.distance < MIN_SPAN_PX) return 1;
+  return next.distance / prev.distance;
 }
 
 /**

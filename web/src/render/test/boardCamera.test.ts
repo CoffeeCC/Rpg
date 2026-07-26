@@ -13,22 +13,32 @@ import { describe, expect, it } from 'vitest';
 import { makeCamera, project, DEFAULT_TILT, type Camera } from '../../lantern/scene/camera';
 import {
   EDGE_SLACK,
+  FRAMING_MS,
   MAX_ZOOM,
   MIN_ZOOM,
+  MIN_SPAN_PX,
   PLAY_FACTOR,
   DEADZONE,
   clampAxis,
   clampCentre,
   clampZoom,
+  easeInOut,
   extentBounds,
   fitZoom,
   followHero,
   latticeTransform,
   latticeCss,
+  pinchFactor,
   scaleCamera,
+  touchSpan,
+  tweenDone,
+  tweenZoom,
+  zoomAbout,
   zoomFor,
   type BoardExtent,
+  type ZoomTween,
 } from '../boardCamera';
+import { unproject } from '../../lantern/scene/camera';
 
 const EXTENT: BoardExtent = { width: 22, height: 14, border: 1.35 };
 const VIEW = { x: 1280, y: 800 };
@@ -199,5 +209,131 @@ describe('the clamp is what makes it furniture (§17.1)', () => {
     // edge plus the slack.
     expect(clamped.x - halfW).toBeGreaterThanOrEqual(b.minX - EDGE_SLACK - 1e-6);
     expect(clamped.y).toBeLessThanOrEqual(b.maxY + EDGE_SLACK);
+  });
+});
+
+// ===========================================================================
+// The three camera defects, each tested by what the OLD behaviour would do.
+// ===========================================================================
+
+describe('zoom is anchored to the cursor, not the frame centre', () => {
+  /** A camera whose centre the clamp leaves alone, so the anchor is exact. */
+  const fresh = () => makeCamera({ centre: { x: 11, y: 7 }, zoom: 90, viewport: VIEW, tilt: DEFAULT_TILT });
+  const CURSOR = { x: 1000, y: 250 };
+
+  it('keeps the board point under the cursor under the cursor', () => {
+    const cam = fresh();
+    const before = unproject(CURSOR, cam, 0);
+    zoomAbout(cam, CURSOR, 1.087, EXTENT);
+    const after = unproject(CURSOR, cam, 0);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
+  });
+
+  it('REJECTS the centre-anchored version this replaced', () => {
+    // The old code was `cam.zoom = clampZoom(cam.zoom * factor)` and nothing
+    // else. Staging it here is what gives the test above its teeth: without
+    // this, "the point stayed put" could pass on a camera that never moved.
+    const naive = fresh();
+    const before = unproject(CURSOR, naive, 0);
+    naive.zoom = clampZoom(naive.zoom * 1.087);
+    const after = unproject(CURSOR, naive, 0);
+    // Nearly half a tile of drift on ONE notch, toward the frame centre.
+    expect(Math.hypot(after.x - before.x, after.y - before.y)).toBeGreaterThan(0.3);
+  });
+
+  it('does not creep sideways once the zoom has hit its stop', () => {
+    // The bug this guards: correcting against the REQUESTED zoom rather than
+    // the clamped one. The scale refuses to change, the anchor correction does
+    // not, and the board slides a little on every further scroll.
+    const cam = makeCamera({ centre: { x: 11, y: 7 }, zoom: MAX_ZOOM, viewport: VIEW, tilt: DEFAULT_TILT });
+    const centre0 = { ...cam.centre };
+    for (let i = 0; i < 20; i++) zoomAbout(cam, CURSOR, 1.087, EXTENT);
+    expect(cam.zoom).toBe(MAX_ZOOM);
+    expect(cam.centre.x).toBeCloseTo(centre0.x, 10);
+    expect(cam.centre.y).toBeCloseTo(centre0.y, 10);
+  });
+
+  it('still refuses to scroll off the board, anchor or no anchor', () => {
+    // §17.1 outranks the anchor: at an edge the point under the cursor moves,
+    // because the alternative is dead space beside the slab.
+    const cam = makeCamera({ centre: { x: 11, y: 7 }, zoom: 40, viewport: VIEW, tilt: DEFAULT_TILT });
+    for (let i = 0; i < 30; i++) zoomAbout(cam, { x: 1279, y: 799 }, 1.087, EXTENT);
+    const b = extentBounds(EXTENT);
+    const halfW = cam.viewport.x / 2 / cam.zoom;
+    expect(cam.centre.x + halfW).toBeLessThanOrEqual(b.maxX + EDGE_SLACK + 1e-6);
+  });
+});
+
+describe('the framing change is a lean, not a cut', () => {
+  const tw: ZoomTween = { from: 32, to: 64, startMs: 1000, durMs: FRAMING_MS };
+
+  it('starts at the old framing and ends at the new one', () => {
+    expect(tweenZoom(tw, 1000)).toBeCloseTo(32, 6);
+    expect(tweenZoom(tw, 1000 + FRAMING_MS)).toBeCloseTo(64, 6);
+    expect(tweenDone(tw, 1000 + FRAMING_MS)).toBe(true);
+    expect(tweenDone(tw, 1000 + FRAMING_MS - 1)).toBe(false);
+  });
+
+  it('interpolates the LOG, which is what makes the rate feel constant', () => {
+    const mid = tweenZoom(tw, 1000 + FRAMING_MS / 2);
+    // Geometric midpoint, not arithmetic. This is the assertion that rejects a
+    // plain lerp: sqrt(32*64) = 45.25, whereas (32+64)/2 = 48.
+    expect(mid).toBeCloseTo(Math.sqrt(32 * 64), 4);
+    expect(mid).not.toBeCloseTo((32 + 64) / 2, 1);
+  });
+
+  it('holds the endpoints flat so the move has no kick at either end', () => {
+    expect(easeInOut(0)).toBe(0);
+    expect(easeInOut(1)).toBe(1);
+    expect(easeInOut(0.5)).toBeCloseTo(0.5, 10);
+    // Slower than linear at the start, or it is a cut with extra steps.
+    expect(easeInOut(0.1)).toBeLessThan(0.1);
+    expect(easeInOut(0.9)).toBeGreaterThan(0.9);
+    // Clamped, because a tween polled one frame late must not overshoot.
+    expect(easeInOut(-0.5)).toBe(0);
+    expect(easeInOut(1.5)).toBe(1);
+  });
+});
+
+describe('two fingers pan and pinch, one finger is left alone', () => {
+  it('measures the span between two contacts', () => {
+    const s = touchSpan({ x: 100, y: 100 }, { x: 400, y: 500 });
+    expect(s.distance).toBeCloseTo(500, 6);
+    expect(s.centre).toEqual({ x: 250, y: 300 });
+  });
+
+  it('turns a spreading pinch into the factor it asks for', () => {
+    const a = touchSpan({ x: 300, y: 400 }, { x: 500, y: 400 });
+    const b = touchSpan({ x: 200, y: 400 }, { x: 600, y: 400 });
+    expect(pinchFactor(a, b)).toBeCloseTo(2, 6);
+    expect(pinchFactor(b, a)).toBeCloseTo(0.5, 6);
+  });
+
+  it('never answers NaN on a degenerate span', () => {
+    // Two contacts landing on the same pixel is a real frame, not a
+    // hypothetical: fingers touch down together. NaN here would reach
+    // `cam.zoom` and blank the canvas for the rest of the session, because
+    // every later projection inherits it.
+    const zero = touchSpan({ x: 200, y: 200 }, { x: 200, y: 200 });
+    const wide = touchSpan({ x: 0, y: 0 }, { x: 300, y: 0 });
+    expect(pinchFactor(zero, wide)).toBe(1);
+    expect(pinchFactor(wide, zero)).toBe(1);
+    expect(Number.isNaN(pinchFactor(zero, zero))).toBe(false);
+    // And the guard is a floor, not just a zero check.
+    const hair = touchSpan({ x: 0, y: 0 }, { x: MIN_SPAN_PX - 1, y: 0 });
+    expect(pinchFactor(hair, wide)).toBe(1);
+  });
+
+  it('drives the same anchored zoom the wheel does, about the pinch centre', () => {
+    const cam = makeCamera({ centre: { x: 11, y: 7 }, zoom: 90, viewport: VIEW, tilt: DEFAULT_TILT });
+    const a = touchSpan({ x: 900, y: 300 }, { x: 1100, y: 300 });
+    const b = touchSpan({ x: 850, y: 300 }, { x: 1150, y: 300 });
+    const before = unproject(b.centre, cam, 0);
+    zoomAbout(cam, b.centre, pinchFactor(a, b), EXTENT);
+    const after = unproject(b.centre, cam, 0);
+    expect(cam.zoom).toBeCloseTo(90 * 1.5, 6);
+    expect(after.x).toBeCloseTo(before.x, 6);
+    expect(after.y).toBeCloseTo(before.y, 6);
   });
 });
