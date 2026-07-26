@@ -1879,7 +1879,7 @@ screenshot this session and was skimmed past every time, which is the actual
 lesson — a plausible-looking zero hides better than a missing field. Now reads
 1.51 ms on the stress scene.
 
-**OPEN — the table renders as a staircase.** Visible in the near corner of the
+**FIXED (see below) — the table rendered as a staircase.** Visible in the near corner of the
 stress lab: the table surface steps in tile-sized increments instead of lying
 flat. The stress-lab agent reported this as "a sawtooth on the frame just
 outside the near border, one tooth per tile" and could not place it — it
@@ -1892,3 +1892,33 @@ strength 1 under a grazing light — at knee height N·L on the floor is ~0.05, 
 a 15 degree bump multiplies it several times and the floor becomes crumpled
 foil. The maps are not wrong; they are authored for overhead light. Stress-lab
 default is 0.35, and the shipping default should follow.
+
+
+### 18.3 The staircase table: a category error, not a maths bug (2026-07-26)
+
+Diagnosed and fixed. The sawtooth §18.2 left open — "one tooth per tile" on
+the frame outside the near border — was **the board's occupancy grid casting
+shadows onto the table**.
+
+Found by bisecting the scene rather than reading the shader: removing sprites
+by texture and measuring the region showed the table alone accounted for it,
+and rendering the table in isolation showed a rectangular shadowed patch with
+tile-quantised teeth along every lit boundary.
+
+**Why it is a category error.** The occupancy grid describes walls standing ON
+the board. Marching it for a surface UNDERNEATH the board is asking a question
+the data cannot answer, and the 2D march has no height to reason with — so a
+wall of any height casts an infinitely deep shadow regardless of where the
+receiver sits. That is tolerable on the board plane and plainly wrong half a
+tile below it, which is exactly where the teeth appeared.
+
+**The fix:** below the board plane, the grid does not shadow. The board's own
+shadow on the table is already a dedicated soft sprite in `scene/board.ts`,
+which is the right mechanism — a slab's shadow is one soft rectangle, not a
+per-tile stencil of the walls standing on top of it.
+
+**What it is really a preview of.** §14's per-tile height field makes this
+exact rather than merely correct, and turns the same machinery into an asset:
+a ledge shadowing the floor below it is the SAME query, answered properly. The
+current fix is the honest interim — it declines to answer rather than
+answering wrongly.

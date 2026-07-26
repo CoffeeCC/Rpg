@@ -476,7 +476,26 @@ void main() {
     // has no business casting a hard shadow), and the ROOM the board is
     // sitting in, which is outside the fiction and must not be occluded by
     // the fiction's walls.
-    float shadow = castsShadow > 0.5 ? softShadow(surface, lp.xy, radius) : 1.0;
+    // NOTHING BELOW THE BOARD IS SHADOWED BY THE BOARD'S OWN GRID.
+    //
+    // The occupancy grid describes walls standing ON the board. Marching it
+    // for a surface UNDERNEATH the board — the table — is a category error,
+    // and it looked like one: the table picked up a tile-quantised sawtooth,
+    // one tooth per tile, along every lit boundary. The 2D march has no height
+    // to reason with, so a wall of any height casts an infinitely deep shadow
+    // regardless of where the receiver sits; that is tolerable on the board
+    // plane and plainly wrong half a tile below it.
+    //
+    // The board's own shadow on the table is already drawn as a dedicated soft
+    // sprite by scene/board.ts, which is the right mechanism for it — a
+    // slab's shadow is one soft rectangle, not a per-tile stencil of the walls
+    // standing on top of it.
+    //
+    // A real per-tile height field (ENGINE_PLAN §14) makes this exact rather
+    // than merely correct, and would let a ledge shadow the floor below it.
+    // Until then, below the board plane is unshadowed by the grid.
+    float belowBoard = step(vHeight, -0.001);
+    float shadow = (castsShadow > 0.5 && belowBoard < 0.5) ? softShadow(surface, lp.xy, radius) : 1.0;
 
     // These return on the FIRST light in the bin. Binning preserves the
     // caller's order within a bin, so that is still the lantern wherever the
