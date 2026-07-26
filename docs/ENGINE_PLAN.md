@@ -1580,3 +1580,234 @@ Three consequences, all of them favourable:
 This closes the space problem opened in §13 and complained about in §17. Boards
 can now be as large as design wants, because the camera can reach all of them
 without the board ever stopping being an object.
+
+---
+
+## 18. The light cap is gone, and the board has scenery (2026-07-26)
+
+§12.3 named M2's light cap as the blocker for the whole art direction. It is
+lifted. `renderer.ts` no longer culls to the viewport and takes the first eight
+lights; lights are binned per tile, uploaded as textures, and each fragment
+shades against only the handful whose reach covers where it stands.
+
+### What the ceiling actually was
+
+Worth restating because the shape of it is the lesson: `MAX_LIGHTS = 8` was
+**eight lights on screen, total** — not eight per tile — because a GLSL uniform
+array has to be sized at compile time, and `render()` sliced the culled list
+down to fit. The ninth light did not appear anywhere, and nothing said so.
+
+**Measured, on the harness, with 61 emitters on a 22x14 board:**
+
+| | emitters measurably lighting their surroundings |
+|---|---|
+| old rule (`lightBudget: 8`) | **4** of 58 on screen |
+| per-tile binning | **52** of 58 |
+
+48 emitters that were invisible are now visible. The remaining 6 are either
+inside the lantern's own pool (where a faint green lift is below the 6%
+detection threshold) or among the 6 placements the bins dropped at that
+density — which the HUD says out loud.
+
+### The structure
+
+`scene/lightBins.ts`, and it is pure — bounds and lights in, typed arrays out,
+no GL anywhere near it. That is what makes the interesting half testable.
+
+- **A coarse grid over the visible region**, 2 tiles per bin, padded by 3 tiles
+  because culling keeps sprites whose box merely overlaps the view.
+- **Each light writes its index into every bin its reach covers.** The
+  footprint is the xy circle of radius `reach`, which is conservative by
+  construction: 3D distance is never less than xy distance, so binning can
+  over-include but never miss. That is the right direction to be wrong in.
+- **A light data texture** — RGBA32F, three texels per light, one row each. A
+  texture rather than a uniform array IS the fix: `texelFetch` takes a runtime
+  index, so the light count stops being a shader-source question.
+- **A bin texture** — R16UI, `binsX * capacity` by `binsY`, sentinel-terminated
+  with 0xFFFF. The shader's inner loop breaks on the sentinel, so a bin holding
+  two mushrooms costs two lights and not sixteen. Unused capacity is free.
+- **Overflow evicts the weakest, and is reported.** A full bin scores the
+  newcomer against its occupants at the bin centre and only evicts for
+  something brighter. `HudStats` carries peak, capacity and drops, and
+  `RenderOptions.debug = 6` false-colours bin occupancy. The bug this replaces
+  was silent; a silent overflow would be the same bug one level down.
+
+**`RenderOptions.lightBudget` reinstates the old ceiling deliberately.** Set it
+to 8 and the renderer does exactly what it did before: cull to the viewport,
+take the first eight, lose the rest. That is what made the table above
+measurable rather than asserted, and it is in the harness as a two-button
+toggle.
+
+Binning does not compete with M5 — the cascade solver wants the same spatial
+structure to seed from, and cascades are now a BOUNCE feature rather than a
+light-count rescue.
+
+### The emitters (§12.4), and one thing they forced
+
+`scene/emitters.ts`: sconce/torch, glowing mushroom, drifting wisp. All
+procedural — a flame, a cap and a soft radial core are shapes made of
+arithmetic, so no art was blocked on this and the look is tunable without a
+re-shoot. All `indirectOnly` and `castsShadow: false`, which is right for a dim
+source and is where most of a light's cost lives.
+
+**`Material.emissiveStrength` had to arrive early, and Paul's "very tiny" is
+why.** A sprite that is only visible by the light falling on it forces its
+brightness and its reach to be one number: turn a wisp down until it lights
+nothing and it stops being visible; turn it up until it reads and it is a
+second lantern. Emissive splits them. A wisp now paints at ~2.5 in HDR and
+casts intensity 0.95 over 3.2 tiles. It is the scalar stand-in for M6's
+emissive map; the shader term is the same one.
+
+**Placement is found, not scattered.** Mushrooms grow only in actual corners —
+an open tile with two *perpendicular* solid neighbours, because two opposite
+ones is a corridor, and a mushroom every second tile down a corridor reads as
+installed lighting rather than as something that grew. Thinned by a coordinate
+hash, so a board looks identical every session.
+
+**Wisps are on a tether, not behind a fence** (Paul: *"they can kind of drift
+out of the board a bit"*). The offset is a sum of two sines whose amplitudes
+total exactly 1, so containment is by construction — no restoring force to
+tune, and no chance of one escaping on a frame nobody watched. Two octaves
+rather than one, because a single sine per axis is an ellipse and the eye reads
+an ellipse as a track within seconds. They may drift past the rim, and out
+there they light the table, which is the strongest statement in the renderer
+that the board is an object in a room.
+
+### Three numbers that were wrong until they were measured
+
+1. **A dozen sconces are not faint even though one is.** At 1.6 intensity over
+   2.8 tiles, one sconce read beautifully — and a sconce on every wall face
+   that could take one raised the mean luminance of the board interior by 15%
+   and the darkness was gone. Retuned to 1.25 over 2.4, and the harness default
+   density dropped from 0.35 to 0.12. **Density is as much a part of "very
+   tiny" as intensity is**, and only the second of those lives in the emitter.
+2. **A wisp at reach 1.9 lit nothing it flew over.** Core 100/255 against a 3.5
+   background, halo 3.9 against 3.6 — a bright dot with no relationship to the
+   surface under it. The board is half a tile proud of the table, so a wisp 0.9
+   above the board is 1.4 above the wood, and 1.4 out of 1.9 is where the
+   falloff window has already eaten four fifths of the light. Reach 3.2 at
+   intensity 0.95: halo gain 1.29–1.43x over the table, and the board's own
+   mean rose 2%.
+3. **The glow could not sit in its own sprite's plane.** A billboard's normal is
+   the view direction, so a light level with the quad leaves every fragment
+   above it facing 90 degrees away — a flame with a bright waist and a black
+   tongue, which looks exactly like bad art. The light sits forward and up by a
+   FRACTION of the sprite size (0.75 / 0.65), which keeps N·L above 0.8 at every
+   corner at any scale. Tested rather than eyeballed.
+
+### Checked and clean
+
+- **No firefly scintillation.** The worst case for the bloom's Karis average is
+  a small bright emitter in motion, so it was measured rather than assumed:
+  over 36 consecutive frames a wisp's core varies by 1.0% of its mean with
+  Karis on and 1.4% with it off. The mipmapped procedural sprite is doing most
+  of that work.
+- **A wisp over the table draws on top of it.** The one case in the scene where
+  a sprite is above the table but not above the board, which a y-sort alone
+  gets wrong. `LAYER_PIECE` handles it, and there is a test staging exactly
+  that pair.
+
+### Also landed: scroll to zoom
+
+Paul: *"my first inclination is to scroll to zoom and i cannot please add that
+lol"*. There was no wheel handler at all, so the reflex failed silently.
+
+Multiplicative rather than additive, because perceived zoom is logarithmic and
+a fixed increment crawls when zoomed in and lurches when zoomed out. The slider
+stays the source of truth and is written back, so the two controls cannot
+disagree.
+
+**It is centre-anchored, not cursor-anchored, and that is a deliberate stop.**
+Keeping the board point under the pointer fixed means moving the camera CENTRE,
+which is exactly the state §17.1's clamped pan is about to own. It is one line
+on top of pan once pan exists — unproject the cursor before and after, add the
+difference — and a second, unclamped writer of the centre now would only have
+to be unpicked.
+
+### What is still open
+
+- **Bin capacity is 16 and the default bin size is 2 tiles.** At 61 emitters on
+  a 22x14 board the peak bin fills and 6 placements drop. That is far past the
+  design point (the harness defaults peak at 5 of 16) and it degrades by losing
+  the least visible light, but it is the number to raise first if a real floor
+  ever reports drops. §17's larger boards make bins cheaper, not dearer — the
+  grid caps at 64 per axis and grows the bin size instead.
+- **`Material.emissive` as a MAP is still M6.** The scalar covers a uniformly
+  glowing sprite and cannot do ember cracks on an otherwise dark wall.
+- **A wisp's height is measured above the BOARD, not above what it is over.**
+  Past the rim it is half a tile further from the table than it looks, which
+  the reach now absorbs. Following the surface would be nicer and is not free.
+- **Emitters are not wired into the game**, same as everything else here —
+  `?r=lantern` still does not exist.
+
+---
+
+## 18. The player console (2026-07-26)
+
+> Paul: *"I do want the Menus and buttons that were in the old version to be
+> physically a part of the Board Border, like attached to the sides of it.
+> facing the player im assuming that should be doable in blender"*
+
+This is §1.2's "the UI is furniture on the same board" made concrete, and the
+instinct is right. One refinement is needed, because taken literally it breaks
+against a decision made an hour earlier.
+
+### The conflict
+
+**§17.1 made the board pan and zoom, clamped to its own edges.** UI physically
+attached to the board's border would therefore:
+
+- shrink past readability when zoomed out,
+- leave the frame entirely when zoomed in,
+- slide away when panned.
+
+UI bolted to a moving object stops being usable. This is not a small tuning
+problem; it is a straight contradiction between two things that are both wanted.
+
+### The resolution: attach it to the TABLE, not the board
+
+A **player console** at the near edge of the table, facing the player, fixed
+while the board pans and zooms behind it.
+
+This is more authentic rather than less. It is a **player board** — the
+dashboard, card tray and resource track that sit in front of you at a real
+table, separate from the main board, and which do not move when someone scrolls
+the map. Physically continuous with the table, lit by the same lantern, casting
+real shadows, made of the same brass and timber. Everything §1.2 asks for; it
+simply is not glued to the thing that moves.
+
+| surface | behaviour | role |
+|---|---|---|
+| the board | pans, zooms, clamped to its edges | the world |
+| the player console | fixed at the near edge, always reachable | the interface |
+| both | physical furniture on one table under one light | — |
+
+It also means the console can be DESIGNED — a carved dashboard with dedicated
+slots for the things that matter — rather than being whatever happens to fit
+along a rim that may be off-screen.
+
+### What Blender makes, and what it does not
+
+Blender makes the **furniture**: brass plates, routed recesses, bezels, tabs,
+the console body itself. Hard-surface, must look machine-made, wants real
+bevels and baked AO — §7's exact case.
+
+Blender does **not** make the UI. §1.2's split still holds and is what keeps
+this affordable:
+
+> **The GPU draws every SURFACE. The DOM draws TEXT and HIT TARGETS.**
+
+So a button is a Blender-baked brass plate drawn by the renderer, with a
+transparent DOM element on top carrying the label, the click handler, the ARIA
+role and the `data-nav-item` attribute. All 22 screens keep working, controller
+nav keeps working, and text stays crisp at every breakpoint — because none of
+that moves.
+
+### Open
+
+- Does the console scroll internally when it holds more than fits (a hand of
+  many cards), or does it page?
+- Does it lift/tilt toward the player on hover, the way §1.2 gives cards
+  elevation? Probably yes for the active tray, and it is nearly free.
+- How much vertical space it may claim before the board is squeezed — this
+  interacts with §17's readability numbers and should be measured, not guessed.
