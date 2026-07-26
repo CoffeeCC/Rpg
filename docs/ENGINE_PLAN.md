@@ -1223,7 +1223,7 @@ every piece, a printed figure slotted into it.
 
 ---
 
-## 16. M3 landed: it is an object on a table now (2026-07-26)
+## 15.1 M3 landed: it is an object on a table now (2026-07-26)
 
 §11 decomposed "a board game on a table" into five buildable cues and found
 four of them missing. Four are now in, in the order §11 ranked them. What
