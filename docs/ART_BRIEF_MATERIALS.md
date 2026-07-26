@@ -122,3 +122,44 @@ Open `http://localhost:5174/lantern-lab.html`, load a finished PNG with the
   survived), or blocky rectangular structure (means JPEG got in somewhere).
 - The panel prints how much tonal range the height used. **Aim above 60%.**
   The current JPEG tiles score 23%.
+
+---
+
+## Addendum (2026-07-26): what a CHARACTER asset is now
+
+Not covered by the tile brief above, and it changes the intent rather than the
+subject. See `docs/ENGINE_PLAN.md` §15.
+
+**A monster or hero is a GAME PIECE, not an illustration of a creature.**
+Picture a painted tin figure, a carved wooden piece, or a moulded plastic
+miniature that someone has painted by hand — then photographed straight on.
+The engine slots that figure into a plinth on the board and carves it into a
+low relief so the lantern rakes across its form.
+
+That last part is why the intent matters. The pipeline derives a height field
+from the SILHOUETTE (EDT beveling) and bulges the shape toward its centre, so
+the artwork's outline becomes its geometry. Art drawn as a flat illustration
+produces a flat bulge; art drawn as a figure produces a figure.
+
+### Requirements
+
+1. **One clean, readable silhouette.** The outline IS the geometry. Wispy
+   tendrils, thin trailing smoke and detached floating bits all become noise in
+   the height field. A shape you could cut out of card and still recognise.
+2. **Face the viewer, straight on.** These are billboards; they never turn.
+   Three-quarter is fine, profile is not.
+3. **Form readable from one angle.** Shoulders, brow, chest, limb thickness —
+   the things a sculptor would emphasise so the piece reads across a table.
+4. **NO painted lighting**, same as the tiles: no rim light, no cast shadow, no
+   dramatic key from the upper left. The engine lights it, and painted-in
+   lighting fights the derived normals. This is the single most common failure.
+5. **Transparent background, PNG.** The alpha is not just masking — it is the
+   input the relief is derived from. A sloppy matte becomes bad geometry.
+6. **Feet flat and level at the bottom of the frame.** The figure stands in a
+   plinth; a piece drawn mid-leap has nothing to stand on.
+
+### What NOT to change
+
+The existing painted style is the strength and should not become 3D-render
+pastiche. The instruction is "paint this creature as a figurine someone owns",
+not "make it look computer-generated".
