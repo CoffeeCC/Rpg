@@ -1407,3 +1407,68 @@ faint ones" affordable.
   one slab, but the horizontal seams on a face are not chamfered.
 - **Nothing is wired into the game yet.** `?r=lantern` still does not exist;
   everything above lives in `lantern-board.html`. Unchanged from §10.
+
+---
+
+## 16. Buildings and sub-boards (2026-07-26)
+
+> Paul: *"another way to enhance the size of the playable area without making
+> the board ridiculously huge would be to add Some building tiles with
+> enterances that subtly transport the player to a new map. back and forth."*
+
+The third answer to §13's constraint, alongside §14's vertical layers — and
+**by a wide margin the cheapest of the three.**
+
+### It costs the renderer nothing
+
+A "new map" is a different `Scene`. The renderer already draws exactly one
+Scene per frame and has no idea what a floor is. Nothing new is needed:
+no height field, no painter-order change, no fade rules, none of §14's cost.
+
+**And the game already does this, bidirectionally.** `engine/game.ts` calls
+`descend(exp, ...)` to swap floors and already has a "You climb back up" path.
+A building entrance is structurally the same transition with a different
+fiction and a different return anchor. This is a re-use, not a feature.
+
+| | renderer cost | game cost |
+|---|---|---|
+| Buildings | **zero** | modest — a door tile, a return anchor, a transition |
+| Layers (§14) | height field, painter order, fade rules | movement, fog of war, line of sight, falling |
+
+### The argument that is not about cost
+
+**A small interior is a BETTER lighting showcase than a big board.** One lantern
+in a six-by-six room is the most dramatic case the engine has: walls close
+enough to catch raking light, corners that go genuinely black, and a single
+sconce that actually changes the room. A large board DILUTES the light — the
+pool becomes a small bright patch in a wide dark field, and the drama flattens.
+
+So this does not merely add space. It adds the *good kind* of space, and it is
+the cheap option as well. That combination is rare enough to act on.
+
+### Build the spill from the start
+
+Light should escape a doorway **before** the player enters. A warm glow at a
+threshold says the room beyond is lit and occupied — the same "information and
+atmosphere in the same pixel" idea as §14.1's mushroom seen through a hole in
+the floor. Nearly free once §12.3's emitters land, and it is what stops a door
+reading as a menu option.
+
+### How it composes with layers
+
+They are complementary rather than competing, and the difference is worth
+naming:
+
+- **Buildings are discrete pockets.** Cheap, great for lighting, endless
+  variety. What you lose is CONTINUITY — you cannot see the other space, so it
+  is "more boards" rather than "more connected place".
+- **Layers are continuous verticality.** Expensive, and what they buy is
+  exactly the thing buildings cannot: looking down into somewhere you have not
+  been yet.
+
+### Sequencing change
+
+**Buildings before layers.** They are nearly free, they are a better lighting
+showcase, and they answer the space problem on their own. Layers become the
+dramatic set-piece rather than the load-bearing solution, which is a much safer
+place for the most expensive item on the roadmap to sit.
