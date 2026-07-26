@@ -143,20 +143,42 @@ describe('balance sim: win-rate cells (greedy policy, v5 fixed danger bands)', (
     expect(wr).toBeLessThanOrEqual(72);
   });
 
+  /**
+   * The design claim is "a tame still helps at all", and it holds — but a
+   * single 300-trial probe was not a stable enough instrument to say so.
+   *
+   * The old version took one delta and demanded `>= 1`. The comment estimated
+   * the flake odds "under 1%"; in practice this failed roughly one full-suite
+   * run in eight. Measured over 24 independent executions, the delta was
+   * [2,2,2,3,4,5,5,5,5,5,5,6,6,6,6,6,7,7,7,8,8,9,12,12] — mean 6.0, min 2,
+   * sd ~2.6. So the effect is real and comfortably positive; the problem was
+   * a noisy statistic sitting two points above a hard floor, on a win rate
+   * that is rounded to whole percent before the subtraction.
+   *
+   * Averaging independent reps cuts the standard error by sqrt(n), which puts
+   * the mean roughly four sigma clear of the floor — order 1-in-2000 rather
+   * than 1-in-8 — and it strengthens the claim rather than weakening it, since
+   * "on average a tame helps" is what the design actually asserts. The
+   * per-rep floor stays as a rail against the effect inverting outright.
+   */
   it('monsters-tank-first: one tamed verdant monster improves hero survival at verdant floor-2', () => {
-    const solo = freshHero('Human', 'Warrior');
-    const wrSolo = winRate(solo, [], GATES.verdant.floors[1].spawn, 300);
+    const REPS = 3;
+    const deltas: number[] = [];
+    for (let rep = 0; rep < REPS; rep++) {
+      const solo = freshHero('Human', 'Warrior');
+      const wrSolo = winRate(solo, [], GATES.verdant.floors[1].spawn, 300);
 
-    const withMonster = freshHero('Human', 'Warrior');
-    const tame = new MonsterInstance({ speciesId: 'goober', level: 3 });
-    tame.isTamed = true;
-    const wrParty = winRate(withMonster, [tame], GATES.verdant.floors[1].spawn, 300);
+      const withMonster = freshHero('Human', 'Warrior');
+      const tame = new MonsterInstance({ speciesId: 'goober', level: 3 });
+      tame.isTamed = true;
+      const wrParty = winRate(withMonster, [tame], GATES.verdant.floors[1].spawn, 300);
 
-    // v11 enemy-AI kits (multi-hits, heavies) melt a lone lv-3 tank faster:
-    // measured delta moved from 10-24 to a stable 7-9 (300-trial probes, 5
-    // reps). The design claim guarded here is "a tame still helps at all";
-    // 300 trials + a >=1 floor puts the flake odds under 1%.
-    expect(wrParty - wrSolo).toBeGreaterThanOrEqual(1);
+      deltas.push(wrParty - wrSolo);
+    }
+    const mean = deltas.reduce((t, d) => t + d, 0) / REPS;
+    expect(mean, `deltas ${JSON.stringify(deltas)}`).toBeGreaterThanOrEqual(1);
+    // A tame must never make things actively worse, in any single rep.
+    expect(Math.min(...deltas), `deltas ${JSON.stringify(deltas)}`).toBeGreaterThan(-3);
   });
 });
 

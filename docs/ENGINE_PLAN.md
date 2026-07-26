@@ -593,6 +593,19 @@ range rather than a fallback:
 | **Steam Machine** | the ceiling. `d₀ = 2`, bilinear fix on, base-16 cascade 0, full mip-chain bloom. Where HRC lands first. |
 | **desktop web** | auto-detect between them off a startup timing probe. |
 
+**Paul's dev machine is Windows/NVIDIA, and that is a hazard rather than a
+reassurance.** Windows/NVIDIA is the single best-supported configuration for
+every graphics API including WebGPU — so it is exactly the machine on which an
+AMD/SteamOS problem is invisible. Anything that looks fine here has been tested
+on the easy target. Treat "works on the desktop" as the beginning of
+verification, not the end of it, and keep the Deck floor honest by measuring
+against it rather than against this box.
+
+**Native SteamOS is noted and deferred.** Paul: *"making this steam os native
+would be super cool."* It is, and it changes nothing structurally — a native
+build would be the same renderer against the same GL, through a different
+window/input shim. Revisit after M4; nothing before then forecloses it.
+
 Designing for a fixed spec was never going to happen; designing for a *spread*
 with the Deck as the floor is the discipline that keeps the top end honest.
 Build the dial in M1 alongside the debug HUD, not at the end.

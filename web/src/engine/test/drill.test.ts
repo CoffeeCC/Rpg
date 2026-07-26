@@ -217,13 +217,39 @@ describe('the beat cursor', () => {
   // The other half of the same problem: the drill must not become a slog for
   // a low-damage deck. A Bard needed 17-23 turns against a pool big enough to
   // stop a Thief skipping lessons, which is why pacing moved off hit points.
+  /**
+   * The upper bound is the point of this test; the lower one is a sanity rail.
+   *
+   * It used to demand `>= 3` from EVERY sample and failed about one run in
+   * three. Measured over 400 playthroughs per class: nothing ever exceeded 12
+   * turns (0/400 for all four), but a Warrior finishes in 2 on 6/400 and a Mage
+   * on 7/400 — a lucky opening hand, which is a legitimate outcome and not a
+   * broken drill.
+   *
+   * A two-turn drill is only a problem if the lesson did not happen, and that
+   * is guaranteed by `beatsSeen` in the test above, which requires all seven
+   * beats. Asserting it a second time here, per-sample, was both redundant and
+   * the flake. So the per-sample rail drops to the real floor, and the claim
+   * this test is actually making — that a drill is not routinely trivial —
+   * moves to the median, where a regression that shortened every drill would
+   * still be caught.
+   */
   it('runs in a sane number of turns for every class', () => {
     for (const cls of ['Warrior', 'Mage', 'Thief', 'Bard'] as const) {
-      for (let sample = 0; sample < 4; sample++) {
+      const turnCounts: number[] = [];
+      for (let sample = 0; sample < 8; sample++) {
         const { turns } = playThrough(cls);
-        expect(turns, `${cls} took ${turns} turns`).toBeGreaterThanOrEqual(3);
+        // Never a slog. This is the bound the test exists for — a Bard once
+        // needed 17-23 turns against a pool that was too big.
         expect(turns, `${cls} took ${turns} turns`).toBeLessThanOrEqual(12);
+        // And never instant: a drill that ends before a card is played would
+        // mean the exhibit died on the opening hand.
+        expect(turns, `${cls} took ${turns} turns`).toBeGreaterThanOrEqual(2);
+        turnCounts.push(turns);
       }
+      turnCounts.sort((a, b) => a - b);
+      const median = turnCounts[Math.floor(turnCounts.length / 2)];
+      expect(median, `${cls} median ${median} turns`).toBeGreaterThanOrEqual(3);
     }
   });
 
