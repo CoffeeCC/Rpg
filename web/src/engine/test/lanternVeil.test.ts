@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { generateFloor, type FloorGenOptions } from '../systems/floorgen';
 import { reachableTiles, TILE } from '../systems/floors';
 import { SeededRng } from '../random';
-import type { Expedition } from '../game';
+
+/**
+ * `Expedition` is not exported from ../game, so the shape is taken from the
+ * function actually under test. That is the better dependency anyway: if
+ * reachableTiles ever needs another field, this stops compiling instead of
+ * silently passing a half-built object.
+ */
+type Exp = Parameters<typeof reachableTiles>[0];
 
 /**
  * THE BARREL IN THE DARK.
@@ -34,7 +41,7 @@ const OPTS: FloorGenOptions = {
 };
 
 /** Just enough Expedition for the floor helpers under test. */
-function expeditionOn(grid: string[], x: number, y: number): Expedition {
+function expeditionOn(grid: string[], x: number, y: number): Exp {
   return {
     gateId: 'verdant',
     floorIndex: 0,
@@ -49,7 +56,7 @@ function expeditionOn(grid: string[], x: number, y: number): Expedition {
     broken: [],
     revealed: [],
     leavings: [],
-  } as unknown as Expedition;
+  } as unknown as Exp;
 }
 
 /** The veil rule FloorScreen now uses. Kept in step with it deliberately. */
