@@ -399,6 +399,12 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   // v12 click-to-move: tiles you can walk to this turn, and units you can reach
   // and bump (adjacent to you or to a reachable tile).
   const reachable = reachableTiles(exp, exp.movLeft);
+  // THE POOL'S RADIUS, IN TILES — stated once and used twice: by the LightLayer
+  // that draws the pool, and by the `beyond` veil that dims what falls outside
+  // it. Two expressions would drift and the veil's edge would stop agreeing
+  // with the light's, which is the sort of mismatch you only notice as "the
+  // lighting looks a bit broken".
+  const lightCells = exp.movLeft + 0.7 + (lanternRadius(player) - BALANCE.lanternRadius);
   const canReachUnit = (ux: number, uy: number) =>
     (Math.abs(ux - exp.x) + Math.abs(uy - exp.y) === 1) ||
     [`${ux - 1},${uy}`, `${ux + 1},${uy}`, `${ux},${uy - 1}`, `${ux},${uy + 1}`].some((k) => reachable.has(k));
@@ -618,11 +624,26 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   // if every tile shines, none of them do.
                   const catchesLight = tile !== TILE.FLOOR && tile !== TILE.WALL;
                   const isPickup = tile === TILE.CHEST || tile === TILE.SHRINE || tile === TILE.EVENT || hasLeaving;
-                  // Beyond the light is beyond the move. This replaced the gold
-                  // chips: the pool's edge is the move's edge, so out-of-reach
-                  // ground just sits further into the night. Never the tile the
-                  // hero is on, and never fog (which is already nothing).
-                  const beyond = !isReachable && !(x === exp.x && y === exp.y);
+                  // Beyond the light is beyond the POOL — measured, not pathed.
+                  //
+                  // Paul: "some objects like the barrels are just very dark and
+                  // shaded when I'm standing next to them."
+                  //
+                  // This used to read `!isReachable`, and `reachableTiles` is a
+                  // BFS over places you may legally END A MOVE: it skips walls,
+                  // it skips tiles holding a unit, and — the bug — it skips
+                  // unbroken breakables, because you cannot stop on a barrel.
+                  // So every barrel on the floor was flagged as beyond the light
+                  // and took the full night veil, including one you were
+                  // standing right next to, holding the lantern.
+                  //
+                  // "Can I finish my move here" and "is this lit" were never the
+                  // same question; they only looked alike while everything in
+                  // range happened to be bare floor. So the veil is geometric
+                  // now, against the same radius the LightLayer is given below.
+                  // A barrel inside the pool is lit because it is inside the
+                  // pool, which is also what the player can plainly see.
+                  const beyond = Math.hypot(x - exp.x, y - exp.y) > lightCells;
                   return (
                     <span
                       key={x}
@@ -691,7 +712,25 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               a DOM mutation). No `lamp`: the hero token IS the lantern here,
               and §5 of lighting.css already draws it. */}
           <LightLayer
-            occluderSelector=".map-grid .map-cell.wall"
+            /* Walls block light, and so do the barrels — Paul: "they should
+               be lit, but casting a shadow of the barrel."
+
+               The WALL occluder is the whole cell, because a wall fills its
+               cell. The barrel is not its cell: it is a painted object sitting
+               in the middle of one, so its occluder is the ART box. Handing in
+               the full cell would throw a shadow a barrel's-width too wide on
+               every side, which reads as a pillar rather than a barrel. */
+            occluderSelector=".map-grid .map-cell.wall, .map-grid .map-cell.breakable .cell-top"
+            /* THE CORNERS. .map-row carries `gap: 2px`, so two neighbouring
+               wall cells are two rectangles with a 2px slot between them — and
+               light, being modelled properly, goes straight through a slot.
+               That is the "bit broken in corners": thin bright wedges leaking
+               between wall segments exactly where two runs meet and the seam
+               points at the lantern. Growing every occluder by half the gap
+               closes the seam, and costs nothing, because an occluder that is
+               1px larger than the wall it stands for is still smaller than the
+               error in pretending a painted wall is a rectangle at all. */
+            occluderPad={1.5}
             anchorSelector=".map-grid .hero-walker"
             /* Follow him as he walks, not once he lands. See LightLayer. */
             trackAnchor
@@ -707,7 +746,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                movement and the light closes in around you; take your last step
                and you are standing in a pinprick with the floor about to move.
                The lantern-luck perk still widens it, now as reach per step. */
-            reachCells={exp.movLeft + 0.7 + (lanternRadius(player) - BALANCE.lanternRadius)}
+            reachCells={lightCells}
             intensity={0.72}
             flameSize={22}
             ambient={0.18}

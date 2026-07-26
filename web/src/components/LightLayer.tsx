@@ -44,6 +44,7 @@ export function LightLayer({
   occluderSelector,
   anchorSelector,
   responderSelector,
+  occluderPad = 0,
   trackAnchor = false,
   reach = 620,
   reachCells,
@@ -57,6 +58,20 @@ export function LightLayer({
 }: {
   /** Elements that stop light. Measured live. */
   occluderSelector: string;
+  /**
+   * Grow every occluder by this many CSS px on all sides.
+   *
+   * For grids whose cells are separated by a `gap`. Two neighbouring wall cells
+   * are two rectangles with a slot between them, and light that is modelled
+   * honestly goes straight through a slot — so a run of wall leaks a thin bright
+   * wedge at every seam, most visibly where two runs meet at a corner and the
+   * seam happens to point at the flame. Half the gap on each side closes it.
+   *
+   * This is not fudging the physics. The rectangle was already an approximation
+   * of a painted wall; being a pixel generous with it is a smaller lie than
+   * pretending the mortar between two cells is a window.
+   */
+  occluderPad?: number;
   /** Element the flame hangs at the top-centre of. Falls back to the layer. */
   anchorSelector?: string;
   /**
@@ -201,7 +216,11 @@ export function LightLayer({
         })
         // Anything with no area cannot block anything, and a zero-width rect
         // would produce a degenerate shadow quad.
-        .filter((o) => o.w > 1 && o.h > 1);
+        .filter((o) => o.w > 1 && o.h > 1)
+        .map((o) => {
+          const p = occluderPad * SCALE;
+          return p ? { x: o.x - p, y: o.y - p, w: o.w + p * 2, h: o.h + p * 2 } : o;
+        });
 
       anchorEl = anchorSelector ? document.querySelector(anchorSelector) : null;
       if (anchorEl) {
@@ -399,7 +418,7 @@ export function LightLayer({
     // DELIBERATELY NOT the numeric props — see `dials` above. Only the things
     // that change what is being observed belong here; putting `intensity` in
     // this list is what made the screen flash every time a card was played.
-  }, [occluderSelector, anchorSelector, responderSelector, trackAnchor, lamp]);
+  }, [occluderSelector, anchorSelector, responderSelector, occluderPad, trackAnchor, lamp]);
 
   // Geometry moved: re-measure in place, keeping the running loop.
   useEffect(() => {
