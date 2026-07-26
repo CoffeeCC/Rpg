@@ -377,6 +377,14 @@
   pointer-events: none;
 }
 
+/* A fixed slot whose unit is gone outright — tamed, mercy-spared, or reaped
+   out of `state.party` the instant it died — rather than merely at hp 0.
+   `.felled` already fades and grays the figure; this just says "there is
+   nothing here to click" with a dashed outline instead of a live nameplate. */
+.bf-unit.bf-slot-empty .bf-plate {
+  border-style: dashed;
+}
+
 .enemy-slot.targetable {
   cursor: crosshair;
 }

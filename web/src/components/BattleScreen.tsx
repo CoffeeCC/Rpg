@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LightLayer } from './LightLayer';
 import type { GameAction, GameState } from '../engine/game';
-import type { CardDef, CardInstance, FxEvent, GateId, Intent } from '../engine/types';
+import type { CardDef, CardInstance, FxEvent, GateId, Intent, MonsterRarity } from '../engine/types';
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { getCard } from '../engine/data/cards';
@@ -120,6 +120,26 @@ interface Ghost {
   card: CardDef;
   from: { x: number; y: number };
   to: { x: number; y: number };
+}
+
+/**
+ * Card-game slots: Paul wants a unit's ROW POSITION fixed for the whole fight,
+ * dying units left behind as a faded gap rather than the row re-centering
+ * around the hole. That's easy for an enemy that stays in `battle.enemies` at
+ * hp 0 (already just faded via `.felled`) — but `reapFallen` splices a dead
+ * party monster out of `state.party` in the SAME dispatch that killed it, so
+ * there is never a render where it exists at hp 0 to fade. And a tamed or
+ * mercy-spared foe is spliced out of `battle.enemies` outright too. Both are
+ * cases where the live object is just gone — so this snapshot is the only
+ * record of what belonged in that slot, kept around purely so the empty slot
+ * can still show a face and a name instead of a blank box.
+ */
+interface UnitSlotSnapshot {
+  uid: string;
+  name: string;
+  speciesId: string;
+  rarity?: MonsterRarity;
+  isBoss?: boolean;
 }
 
 let popupSeq = 0;
@@ -352,6 +372,13 @@ export function BattleStage({ view }: { view: BattleView | null }) {
   const enemyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const stageRef = useRef<HTMLDivElement>(null);
+  // Fixed slot order for the two rows — see UnitSlotSnapshot above. BattleStage
+  // mounts fresh per encounter (the entering-flash effect above says so), so
+  // these start empty for every fight; uids are appended the first time seen
+  // and never reordered or dropped, which is the whole mechanism.
+  const enemySlotOrder = useRef<string[]>([]);
+  const partySlotOrder = useRef<string[]>([]);
+  const unitSnapshots = useRef<Map<string, UnitSlotSnapshot>>(new Map());
 
   // Locked = the fight is resolving, OR (in a duel) it is not your turn. Both
   // mean "hands off", and every control already keys off this one flag.
@@ -692,6 +719,50 @@ export function BattleStage({ view }: { view: BattleView | null }) {
   const boss = portrait?.kind === 'beast' && portrait.boss ? portrait.unit : null;
   const popupsFor = (uid: string) => popups.filter((p) => p.targetUid === uid);
 
+  // Grow the fixed slot order and refresh the snapshot cache for whoever is
+  // still live. `includes` guards mean this is a no-op once a uid is tracked,
+  // so re-running it every render (Strict Mode double-invokes, too) is safe —
+  // it only ever appends, and only for a uid it has never seen before (a foe
+  // rolled at battle start, or a monster tamed mid-fight and pushed onto
+  // `state.party`).
+  for (const e of view.enemies) {
+    if (!enemySlotOrder.current.includes(e.uid)) enemySlotOrder.current.push(e.uid);
+    unitSnapshots.current.set(e.uid, { uid: e.uid, name: e.displayName(), speciesId: e.speciesId, rarity: e.rarity, isBoss: e.isBoss });
+  }
+  for (const m of view.party) {
+    if (!partySlotOrder.current.includes(m.uid)) partySlotOrder.current.push(m.uid);
+    unitSnapshots.current.set(m.uid, { uid: m.uid, name: m.nickname, speciesId: m.speciesId });
+  }
+  const enemySlots = enemySlotOrder.current.map((uid) => ({
+    uid,
+    live: view.enemies.find((e) => e.uid === uid) ?? null,
+    snap: unitSnapshots.current.get(uid)!,
+  }));
+  const partySlots = partySlotOrder.current.map((uid) => ({
+    uid,
+    live: view.party.find((m) => m.uid === uid) ?? null,
+    snap: unitSnapshots.current.get(uid)!,
+  }));
+
+  // The rail chips read as "how is my SIDE doing" / "how is the OPPOSING side
+  // doing" — a single lead unit's sliver used to stand in for the whole squad,
+  // so a fresh boss at full HP could sit over a chip that looked untouched
+  // while its two escorts were nearly dead. The art and name still belong to
+  // the lead unit (that's who you're looking AT), but the ring and its number
+  // now sum hp/maxHp across everyone still standing on that side.
+  const livingEnemiesForChip = view.enemies.filter((e) => e.isAlive());
+  const enemyHpSum = livingEnemiesForChip.reduce((s, e) => s + e.hp, 0);
+  const enemyMaxHpSum = livingEnemiesForChip.reduce((s, e) => s + e.maxHp, 0);
+  // Between the killing blow and the array actually losing the corpse (see
+  // the enemy-slot snapshot below), `living` can be momentarily empty — fall
+  // back to the portrait's own unit rather than divide by zero into a NaN ring.
+  const enemyHpFrac = enemyMaxHpSum > 0 ? enemyHpSum / enemyMaxHpSum : portrait?.kind === 'beast' ? portrait.unit.hp / portrait.unit.maxHp : 0;
+
+  const livingPartyForChip = view.party.filter((m) => m.isAlive());
+  const heroSideHpSum = hero.hp + livingPartyForChip.reduce((s, m) => s + m.hp, 0);
+  const heroSideMaxHpSum = hero.maxHp + livingPartyForChip.reduce((s, m) => s + m.maxHp, 0);
+  const heroHpFrac = heroSideMaxHpSum > 0 ? heroSideHpSum / heroSideMaxHpSum : 0;
+
   // MTG-style portrait HP ring.
   const RING_C = 2 * Math.PI * 30;
   const hpRing = (frac: number) => (
@@ -939,11 +1010,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
               className={`bf-portrait bf-top ${boss ? 'bf-boss' : ''} ${portrait.kind === 'tamer' ? flashing[portrait.uid] ?? '' : ''}`}
             >
               <div className="bf-ring">
-                {hpRing(
-                  portrait.kind === 'beast'
-                    ? portrait.unit.hp / portrait.unit.maxHp
-                    : portrait.hero.hp / portrait.hero.maxHp
-                )}
+                {hpRing(portrait.kind === 'beast' ? enemyHpFrac : portrait.hero.hp / portrait.hero.maxHp)}
                 <span className="bf-art">
                   {portrait.kind === 'beast' ? (
                     <MonsterImage speciesId={portrait.unit.speciesId} size={78} rarity={portrait.unit.rarity} />
@@ -966,8 +1033,8 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                   </div>
                 </div>
               ) : portrait.kind === 'beast' ? (
-                <span className="bf-hp">
-                  {portrait.unit.hp}/{portrait.unit.maxHp}
+                <span className="bf-hp" title={livingEnemiesForChip.length > 1 ? 'The whole pack, not just the lead' : undefined}>
+                  {enemyHpSum}/{enemyMaxHpSum}
                 </span>
               ) : (
                 <>
@@ -1019,13 +1086,13 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           <div className="bf-rail-cap bf-rail-bottom">
           <div className="bf-portrait bf-bottom">
             <div className="bf-ring">
-              {hpRing(hero.hp / hero.maxHp)}
+              {hpRing(heroHpFrac)}
               <span className="bf-art">
                 <HeroImage className={hero.className} size={78} />
               </span>
             </div>
-            <span className="bf-hp">
-              {hero.hp}/{hero.maxHp}
+            <span className="bf-hp" title={livingPartyForChip.length > 0 ? 'You and the whole party, not just you' : undefined}>
+              {heroSideHpSum}/{heroSideMaxHpSum}
             </span>
             {/* v18: the hero's block + statuses + stat mods (STR↑ …) pinned to
                 the portrait itself, where the eye already lives. */}
@@ -1066,7 +1133,29 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         </aside>
 
         <div className="bf-row enemy-row">
-          {view.enemies.map((enemy) => {
+          {enemySlots.map(({ uid, live: enemy, snap }) => {
+            // Gone from `battle.enemies` outright — tamed or mercy-spared off
+            // the field mid-fight (ordinary death leaves the corpse in the
+            // array at hp 0, handled below by the `felled` class same as
+            // always). The slot stays put, faded, so the rest of the line
+            // doesn't re-center around the gap it left.
+            if (!enemy) {
+              return (
+                <div key={uid} className="bf-unit enemy-slot felled bf-slot-empty" aria-hidden="true">
+                  <div className="bf-figure lit-fig">
+                    <MonsterImage speciesId={snap.speciesId} size={snap.isBoss ? 250 : 150} rarity={snap.rarity} boss={snap.isBoss} />
+                  </div>
+                  <div className="bf-plate">
+                    <div className="bf-name" title={snap.name}>
+                      {snap.name}
+                    </div>
+                    <div className="bf-hp-row">
+                      <span>left the field</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
             const intent = view.intents[enemy.uid];
             const staggered = enemy.hasStatus('Stunned') || enemy.hasStatus('Frozen');
             // 'STAGGERED' is a word, not a number: it rides the telegraph's
@@ -1245,44 +1334,69 @@ export function BattleStage({ view }: { view: BattleView | null }) {
               </div>
             </div>
           </div>
-          {view.party.map((m: MonsterInstance) => (
-            <div
-              key={m.uid}
-              className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${preTargetUid === m.uid ? 'pre-target' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
-              {...(allyAimable && !locked && m.isAlive()
-                ? navItem({ key: `ally-${m.uid}`, label: `Mend ${m.nickname}, ${m.hp} of ${m.maxHp}` })
-                : {})}
-              onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
-              title={
-                allyAimable && m.isAlive()
-                  ? `Aim the mending at ${m.nickname} (${m.hp}/${m.maxHp})`
-                  : m.aspect
-                    ? `${m.aspect.name} — ${m.aspect.blurb}`
-                    : undefined
-              }
-            >
-              <div className="bf-figure lit-fig">
-                <MonsterImage speciesId={m.speciesId} size={124} facing="right" />
-                {!m.isAlive() && <span className="ko-label">FALLEN</span>}
-                {renderPopups(m.uid)}
-                {renderImpact(m.uid)}
+          {partySlots.map(({ uid, live: m, snap }) => {
+            // `reapFallen` splices a dead party monster out of `state.party`
+            // in the very same dispatch that killed it (see UnitSlotSnapshot
+            // above) — there is no render where it sits at hp 0 to fade, it is
+            // just gone. Stand a faded slot in its place from the snapshot so
+            // the rest of the line holds its ground instead of closing ranks.
+            if (!m) {
+              return (
+                <div key={uid} className="bf-unit combatant-figure ally-fig felled bf-slot-empty" aria-hidden="true">
+                  <div className="bf-figure lit-fig">
+                    <MonsterImage speciesId={snap.speciesId} size={124} facing="right" />
+                    <span className="ko-label">FALLEN</span>
+                  </div>
+                  <div className="bf-plate">
+                    <div className="bf-name" title={snap.name}>
+                      {snap.name}
+                    </div>
+                    <div className="bf-hp-row">
+                      <span>FALLEN</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div
+                key={uid}
+                className={`bf-unit combatant-figure ally-fig ${m.isAlive() ? '' : 'felled'} ${flashing[m.uid] ?? ''} ${actingUid === m.uid ? 'acting' : ''} ${preTargetUid === m.uid ? 'pre-target' : ''} ${allyAimable && !locked && m.isAlive() ? 'ally-aimable' : ''} ${m.isAlive() && m.hp <= m.maxHp * 0.25 ? 'hp-danger' : ''}`}
+                {...(allyAimable && !locked && m.isAlive()
+                  ? navItem({ key: `ally-${m.uid}`, label: `Mend ${m.nickname}, ${m.hp} of ${m.maxHp}` })
+                  : {})}
+                onClick={() => allyAimable && !locked && m.isAlive() && playSelected(m.uid)}
+                title={
+                  allyAimable && m.isAlive()
+                    ? `Aim the mending at ${m.nickname} (${m.hp}/${m.maxHp})`
+                    : m.aspect
+                      ? `${m.aspect.name} — ${m.aspect.blurb}`
+                      : undefined
+                }
+              >
+                <div className="bf-figure lit-fig">
+                  <MonsterImage speciesId={m.speciesId} size={124} facing="right" />
+                  {!m.isAlive() && <span className="ko-label">FALLEN</span>}
+                  {renderPopups(m.uid)}
+                  {renderImpact(m.uid)}
+                </div>
+                <div className="bf-plate">
+                  <div className="bf-name" title={m.nickname}>
+                    {m.nickname}
+                  </div>
+                  <div className="souls-track hp">
+                    <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
+                  </div>
+                  <div className="bf-hp-row">
+                    <span>{m.isAlive() ? 'HP' : 'FALLEN'}</span>
+                    <span>
+                      {m.hp}/{m.maxHp}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="bf-plate">
-                <div className="bf-name" title={m.nickname}>
-                  {m.nickname}
-                </div>
-                <div className="souls-track hp">
-                  <div className="souls-fill" style={{ width: `${(m.hp / m.maxHp) * 100}%` }} />
-                </div>
-                <div className="bf-hp-row">
-                  <span>{m.isAlive() ? 'HP' : 'FALLEN'}</span>
-                  <span>
-                    {m.hp}/{m.maxHp}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Player portrait chip, bottom-center, mirroring the enemy's. */}

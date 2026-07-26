@@ -1220,3 +1220,190 @@ every piece, a printed figure slotted into it.
   hidden by it rather than peeking over.
 - **One true sculpted mini later is reasonable** — a boss, or the hero — as a
   luxury. It must not become the default for 92 monsters.
+
+---
+
+## 16. M3 landed: it is an object on a table now (2026-07-26)
+
+§11 decomposed "a board game on a table" into five buildable cues and found
+four of them missing. Four are now in, in the order §11 ranked them. What
+follows is what shipped, what it cost, and what is still open — written for
+whoever picks this up cold.
+
+### What landed
+
+**Piece bases and contact shadows** (`scene/piece.ts`). A piece is three
+things: a contact shadow, a plinth with visible thickness, and the figure
+standing on it. The load-bearing sentence is that *a standing sprite with no
+contact shadow reads as a sticker however well it is lit* — the eye decides
+"on the surface" versus "in front of the surface" almost entirely from the
+darkening where the two meet.
+
+The falloff law is that lifting an object **widens and fades** its shadow
+together, opacity going as the inverse square of the growth, because the same
+blocked light is being spread over that much more board. The widen-only
+version is the one everybody writes and it reads as the object getting bigger
+rather than lifting off.
+
+The shadow is an ordinary sprite with a **black albedo and an alpha gradient**,
+which is not a shortcut — the lit shader outputs `albedo.rgb * light`, so a
+black texel under the standard blend leaves `dst * (1 - a)`. Occlusion of
+light, in the HDR target, before the tonemap. No second blend mode, no
+dedicated pass, and it behaves identically on the unlit path.
+
+Thickness is free from the projection: the plinth is one disc drawn twice, at
+`z = 0` and `z = thickness`. The tilt lifts the top copy up the screen and
+what shows underneath is a crescent — which is exactly the silhouette of a
+cylinder, whose top and bottom ellipses *are* the same ellipse, offset.
+
+**Painter layers** (`scene/sprite.ts`), forced rather than designed. Sorting
+by board `y` alone slices the front off every contact shadow whenever a piece
+stands in the far half of its tile, because the tile row in front sorts after
+it — 45% of the time, with a hard horizontal cut. Layers say what a y-sort
+cannot: board surface first, then things resting on it, then things standing
+up off it. The default (`upright` means piece, flat means board) reproduces
+the old order exactly for every sprite that existed before, so nothing had to
+be migrated. It also cut draw calls from 59 to 16, since the tiles now group.
+
+**Walls as blocks** (§12.1). `wallBlockSprites` lives beside
+`pieceBaseSprites` and shares its shadow, because §12.1's claim is that a wall
+and a hero are the same kind of object at different sizes. A block is a
+footprint shadow, a top face and a front face. Paint order is the part that
+goes wrong: the top face is a *lying* quad that must nevertheless draw with
+the pieces, because it is above the board and can legitimately hide the feet
+of a figure standing behind it. Tested both ways round.
+
+**Board edge, thickness and a table** (`scene/board.ts`). The trick for "the
+board is proud of the table" is that the table sits at `z = -thickness`; the
+projection drops negative z further down the screen, so the table surface
+appears below the board's and the rim fills the gap. A table at `z = 0` is
+just a bigger board.
+
+The frame is **one quad**, not a ring of four strips: four strips need four
+chamfer directions and therefore four textures or a quad rotation the sprite
+format does not have. One quad with the chamfer baked around all four sides
+of its texture gets every edge at once and the tile grid draws over the middle
+of it.
+
+The chamfer **tips the normal** rather than painting a gradient, and that is
+the whole reason to do it here rather than in art: a painted edge looks the
+same from every light angle, which is to say it looks painted.
+
+The rim is not a special case for the board's outline — it is `ledgeFace`,
+a vertical quad wherever the height of the world changes. A wall block's
+front face is the same thing, and so is the step between two map layers when
+§14 lands.
+
+**Tile seams**, as a per-material `inlay` strength plus a seam and a chamfer
+at every whole-tile boundary. The dark line alone is a drawn line and the eye
+files it as texture; the chamfer is what makes it an edge, because the near
+side of every tile then catches the lantern and the far side falls away.
+Continuous rock reads as terrain you are inside; pieces with edges read as a
+board you are looking at.
+
+### The bug that was in every frame since M2
+
+Standing quads mapped their surface normal to board **minus** y — into the
+board, away from the viewer. Everything else in the projection says the camera
+is on the `+y` side: `project` sends larger y down the screen, `sortKey`
+paints larger y last, `visibleBounds` widens `maxY` so tall pieces below the
+viewport still poke in. So wall faces were lit only by lights *behind* them,
+and every character sprite met its own lantern at exactly 90° and contributed
+nothing — **the hero rendered as a black silhouette in the middle of his own
+pool of light**, and it read as "the art is dark". One sign, both symptoms.
+The specular view vector had the same error.
+
+Fixing the sign is not enough for pieces, so orientation became three-valued:
+lying, a fixed vertical **face** (a wall), or a **billboard** (a piece). A
+painted figure presents itself to whoever is looking, so its normal is the
+view direction, and against that the overhead lantern lands at `cos(55°)`
+instead of zero.
+
+**The lesson, and it is the reusable part:** this was visible in every single
+frame for two milestones and was only found by zooming in and asking why one
+object was dark. A wrong sign in a basis does not look like a bug, it looks
+like art direction. The false-colour views (`RenderOptions.debug`) would have
+shown it immediately — `debug=5` draws the world normal — and nobody ran them
+because nothing looked broken.
+
+A second, quieter one from the same pass: `vHeight` per vertex had its pivot
+factor inverted, which put the hero's entire body at *negative* height, under
+the board. The only symptom was that the lighting looked slightly off. A unit
+test found it in the same hour the feature was written; no amount of looking
+would have.
+
+### The rings that were not what they looked like
+
+Reported as concentric arcs centred on the light at regular radii, diagnosed
+as step-count quantisation in `traceShadow`. Measured first:
+
+- `debug=4` shows the shadow term flat at 1.0 along an open-floor ray. On open
+  floor the march finds nothing whatever the step count, so it cannot ring.
+- 96 angles, every shadow transition bucketed by radius modulo the 0.75 step:
+  a flat histogram.
+- The radial brightness profile dips at **1.0-tile** spacing, not 0.75.
+- Second difference of that profile: 9.34 shipped, 9.44 with bloom off, 1.51
+  with the seams off. The seams carried six sevenths of the structure.
+
+It was the inlay, and mostly the bevel half: a 0.85 tip leaves a floor tile's
+normal at `z = 0.64` right at the seam, which against a near-overhead lantern
+is most of the diffuse gone — a black line rather than a chamfer, reading as
+arcs on a tilted board. Retuned to 0.035/0.72/0.32 and exposed as sliders.
+
+**DDA landed anyway**, because the recommendation was right even though the
+symptom was not. Fixed steps are wrong on a grid in the way fixed steps always
+are: depending on ray *angle* they either sample both sides of a tile the ray
+genuinely crosses (a corner leak) or sample the same tile twice. Walking tile
+boundaries visits exactly the tiles the ray passes through, once each, in
+order — so `SHADOW_STEPS` goes back to being a budget rather than a
+correctness parameter, and it is the traversal a per-tile height field wants.
+
+### The room lamp, which is a design decision and not a knob
+
+§12 says the hero's lantern is the only significant light — **inside the
+fiction**. The board is a physical object on a table in a room, and that room
+has a lamp. Without one, the rim, the frame and the table are lit by ambient
+alone and every bit of the edge work above is invisible, because the board's
+own border blocks shadow the entire slab edge from the lantern. Correctly, and
+uselessly.
+
+It **casts**, and casting is what keeps it out of the fiction rather than a
+flag would: raking from the near-left means the border blocks shadow the
+dungeon interior from it completely, so it lands on the table, the rim and the
+near and left frame and stops dead at the wall — and the board casts its own
+shadow across the table, which is the object cue the whole section is for.
+The other way was tried: a room lamp that casts nothing lights the dungeon
+floor exactly as well as the table, and at any intensity that makes the rim
+read, the darkness is gone.
+
+`Light.castsShadow` survives regardless, for §12.2's faint emitters. Skipping
+the march is where most of a light's cost goes, which is what makes "many
+faint ones" affordable.
+
+### What is still open
+
+- **`uOccluderHeight` is a placeholder with a known expiry.** One global
+  number for how tall a solid tile stands, so a receiver on top of the wall
+  layer cannot be shadowed by it. §14's vertical map retires it. `traceShadow`
+  is already shaped for the swap — it takes a `vec3 from`, skips by TILE
+  rather than by distance, and now walks boundaries. The early-out becomes a
+  per-tile comparison and the ray height at each step is a lerp toward the
+  light. **One consumer only; do not add a second.**
+- **`isSolid` and the shadow march deliberately disagree off-grid.** `isSolid`
+  still answers true outside the board — that is a *gameplay* claim about
+  where a piece may stand. The march treats off-board as empty, because out
+  there is a table. Two questions that happened to share an answer while the
+  board was the whole world.
+- **Pieces have no normal maps**, so a figure lights flat and its head goes
+  dark the moment the lantern is below it. This is the EDT-bevel path in §9.1
+  and it is the single biggest remaining win on the pieces.
+- **The table is one quad sized to `visibleBounds`.** Fine for a fixed camera
+  (§13); it will need revisiting if the camera ever eases in far enough to
+  matter.
+- **Material variety** is still pending the de-shaded art re-shoot — the fifth
+  cue in §11's table, and the only one not addressed here.
+- **The seam chamfer is applied to standing quads on the x axis only.** A wall
+  run gets a vertical groove between blocks, which is what stops it reading as
+  one slab, but the horizontal seams on a face are not chamfered.
+- **Nothing is wired into the game yet.** `?r=lantern` still does not exist;
+  everything above lives in `lantern-board.html`. Unchanged from §10.
