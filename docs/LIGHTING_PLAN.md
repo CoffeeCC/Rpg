@@ -330,10 +330,10 @@ bug depends on; if it did not move, the run proves nothing.
 
 ## 11. Related open work (not lighting)
 
-- **Controller nav on 19 of 22 screens.** `nav/` is a complete controller layer
-  but only `BattleScreen`, `FloorScreen` and `QuestBoardScreen` register a
-  scope. Paul has called controller support a shipping blocker for Steam.
-  Ranked above content work.
+- ~~Controller nav on 19 of 22 screens.~~ **Done.** Every screen and overlay in
+  `components/` now registers a nav scope from the shared `nav/` layer, and
+  `controllerNav.test.ts`'s "screen conversion coverage" suite enforces it —
+  a new screen cannot ship without someone deciding what its B button does.
 - Aggregate HP on the rail portraits (enemy chip = sum of all enemies, hero
   chip = party sum).
 - Fixed **slots** for enemies and party. Today both rows are plain flex
