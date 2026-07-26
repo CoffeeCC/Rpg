@@ -1,0 +1,1307 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Lantern Stress Lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  LANTERN STRESS LAB — a scene built to BREAK the lighting.
+  ========================================================
+  `lantern-board.html` is the milestone page: it shows that the assembly works.
+  This one is the opposite. Every object in it exists to make ONE specific
+  thing in `passes/lighting.ts` fail visibly if it is wrong, and every number
+  that decides how it looks is a slider so the failure can be walked into
+  rather than waited for.
+
+  WHAT IS IN THE SCENE, AND WHY EACH PIECE IS THERE
+
+    CAMPFIRE, ON THE GROUND     a light at z ~ 0.15 is the hardest case for
+                                the march: it grazes the floor, so N.L is tiny
+                                everywhere and every normal-map error is at
+                                maximum contrast. Flicker is VALUE NOISE, from
+                                `art/lightEngine.ts` — a sine reads as a fault
+                                in the wiring, noise reads as a flame.
+
+    PENUMBRA LADDER             five IDENTICAL pillars at 2, 4, 6, 8 and 10
+                                tiles from the fire, fanned so none of them
+                                stands in another's shadow. Penumbra width
+                                goes as radius * (caster->receiver) /
+                                (light->caster), so the near pillar's shadow
+                                must go soft fast and the far one's must stay
+                                crisp a long way out. If they all look the
+                                same, `softShadow` is not doing its job. This
+                                is the single most valuable thing on the page.
+
+    WALL WITH A ONE-TILE GAP    a light shaft. This is what exposes leaking
+                                through wall corners, which is the exact bug
+                                DDA traversal was added to fix.
+
+    BLOCKS AT 0.4 / 0.7 / 1.0 / 1.5   shadow length should scale with caster
+                                height. See the note under the Scene group:
+                                in this engine it DOES NOT, and that is the
+                                point of putting them here.
+
+    A DRAGGABLE TORCH           sweeping a second light across the pillars by
+                                hand is the most direct way to feel whether
+                                the shadows are right.
+
+    A SEALED ALCOVE             one doorway, four corners. Somewhere for two
+                                shadows to overlap and for ambient to be
+                                judged against something.
+
+  READ-ONLY. This page imports from `/src/lantern/...` and changes nothing
+  there. Where the engine is missing something it is worked around HERE and
+  called out in the notes, never patched upstream.
+
+  Dev-server only: imports .ts directly, which Vite compiles on the fly.
+-->
+<style>
+  :root { --ink:#e8e3d8; --dim:#9a9384; --edge:#2a2620; --panel:#14120f; --bg:#080706;
+          --gold:#d9a441; --warn:#e06d5a; --ok:#7fb069; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    display:grid; grid-template-columns:286px 1fr; height:100vh; overflow:hidden; }
+  #panel { background:var(--panel); border-right:1px solid var(--edge); padding:14px; overflow-y:auto; }
+  h1 { font-size:15px; margin:0 0 2px; letter-spacing:.04em; color:var(--gold); }
+  .sub { color:var(--dim); font-size:11px; margin-bottom:12px; }
+  h2 { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim);
+       margin:18px 0 8px; border-bottom:1px solid var(--edge); padding-bottom:4px; }
+  label { display:block; margin-bottom:8px; }
+  .row { display:flex; justify-content:space-between; font-size:11px; color:var(--dim); }
+  .row b { color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:var(--gold); }
+  .seg { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
+  .seg button { flex:1 1 auto; background:#1d1a15; color:var(--ink); border:1px solid var(--edge);
+                border-radius:4px; padding:5px 4px; font:inherit; font-size:11px; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--gold); color:#14120f; border-color:var(--gold); font-weight:600; }
+  .seg.small button { font-size:10px; padding:4px 2px; }
+  #stage { position:relative; display:grid; place-items:center; background:#000; overflow:hidden; }
+  canvas { width:100%; height:auto; max-height:100vh; display:block; cursor:crosshair; }
+  .note { color:var(--dim); font-size:10.5px; line-height:1.45; margin:4px 0 0; }
+  .note em { color:var(--gold); font-style:normal; }
+  #err { color:var(--warn); font-size:11px; white-space:pre-wrap; }
+  #stats, #geom { font-family:ui-monospace, monospace; font-size:10.5px; color:var(--dim); white-space:pre; }
+  #geom { color:var(--ink); margin-bottom:8px; }
+  .flag { color:var(--warn); font-size:10.5px; }
+</style>
+
+<div id="panel">
+  <h1>Lantern Stress Lab</h1>
+  <div class="sub">a scene built to break the lighting</div>
+  <div id="ui"></div>
+  <h2>Status</h2>
+  <div id="geom">—</div>
+  <div id="stats">—</div>
+  <p id="err"></p>
+</div>
+
+<div id="stage"><canvas id="gl"></canvas></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const fail = (m) => { $('err').textContent = String(m?.stack || m?.message || m); console.error(m); };
+
+// -------------------------------------------------------------------------
+// THE CONTROL SURFACE, declared as data.
+//
+// Twenty-odd sliders hand-written as markup is twenty-odd chances to wire a
+// readout to the wrong input, and that failure looks exactly like a slider
+// that does nothing. Declaring them makes the label, the readout and the
+// live value one thing, and lets the notes sit with the group they explain.
+// -------------------------------------------------------------------------
+const S = (id, label, min, max, step, value, fmt) => ({ id, label, min, max, step, value, fmt });
+const f2 = (v) => Number(v).toFixed(2);
+const f1 = (v) => Number(v).toFixed(1);
+const f3 = (v) => Number(v).toFixed(3);
+const i0 = (v) => String(Math.round(Number(v)));
+
+const GROUPS = [
+  {
+    title: 'Camera & board',
+    segs: [
+      { id: 'cammode', options: [['fit', 'Overview (fit)'], ['fixed', 'Play (pan, clamped)']], value: 'fit' },
+      { id: 'follow', options: [['1', 'Follow hero'], ['0', 'Free pan']], value: '1' },
+    ],
+    rows: [
+      S('tilt', 'Tilt', 10, 85, 1, 55, (v) => `${v}\u00b0`),
+      S('zoom', 'Zoom (play mode)', 8, 160, 1, 48, i0),
+      S('bw', 'Board width', 12, 72, 1, 30, i0),
+      S('bh', 'Board height', 8, 48, 1, 20, i0),
+    ],
+    note: '<em>Scroll to zoom, left- or middle-drag to pan, drag the flame to move the torch.</em> Zoom is multiplicative and anchored under the cursor; scrolling out past the fit snaps back to Overview, which is what \u00a717.1 says overview is \u2014 the zoom at which the clamp has nothing left to do. Pan is clamped to the board\u2019s edges, so at the boundary you get rim and a sliver of table rather than dead space. <em>The counters lying on the table are there to make the pan legible</em>: board and table moving together is the only cue that says the CAMERA moved, and wood grain repeats so it cannot carry it alone. <em>Watch the two numbers in Status</em>: 48px tiles / 67px piece is the shipping framing, and \u00a717 puts overview\u2019s useful floor near 25px.',
+  },
+  {
+    title: 'Camera lean',
+    segs: [
+      { id: 'lean', options: [['1', 'On'], ['0', 'Off']], value: '1' },
+    ],
+    rows: [
+      S('leanTilt', 'Tilt swing', 0, 12, 0.1, 2.5, (v) => `\u00b1${f1(v)}\u00b0`),
+      S('leanPan', 'Pan swing', 0, 2, 0.01, 0.25, (v) => `\u00b1${f2(v)} tiles`),
+      S('leanTau', 'Settle', 0.02, 0.9, 0.01, 0.22, (v) => `${f2(v)} s`),
+    ],
+    note: 'Someone leaning to see more of the board. <em>Tilt rather than translation</em>, deliberately: tilt feeds <code>uTilt</code>, which is the view vector the specular lobe is built from, so brass and wet stone catch the light differently as you move \u2014 and it barely displaces what is under the cursor, so clicking stays honest. Pan is the small companion term. Settle is what makes it feel like a head and not a joystick: the lean LAGS the cursor and comes to rest while your hand is still. <em>Right stick drives it on a controller.</em> Off by default under <code>prefers-reduced-motion</code>.',
+  },
+  {
+    title: 'Campfire',
+    rows: [
+      S('fireI', 'Intensity', 0, 60, 0.5, 26, f1),
+      S('fireR', 'Flame radius (penumbra)', 0, 1.5, 0.01, 0.35, f2),
+      S('fireReach', 'Reach (tiles)', 2, 40, 0.5, 15, f1),
+      S('fireZ', 'Height above board', 0.05, 3, 0.01, 0.35, f2),
+      S('fireK', 'Colour temperature', 1200, 8000, 25, 1900, (v) => `${i0(v)} K`),
+      S('fireF', 'Flicker', 0, 1, 0.01, 0.35, f2),
+    ],
+    note: 'Flame radius IS the penumbra: at 0 every shadow is knife-edged, because a light with no width cannot cast a soft one. <em>Drag Height from 0.15 to 3 and watch the shadows not get any shorter</em> \u2014 the march is 2D, so light height changes only N\u00b7L and falloff. Flicker is fractal value noise from <code>art/lightEngine.ts</code>, not a sine.',
+  },
+  {
+    title: 'Torch (drag it)',
+    rows: [
+      S('torchI', 'Intensity', 0, 60, 0.5, 15, f1),
+      S('torchR', 'Flame radius', 0, 1.5, 0.01, 0.18, f2),
+      S('torchReach', 'Reach (tiles)', 2, 30, 0.5, 9, f1),
+      S('torchZ', 'Height above board', 0.05, 4, 0.01, 1, f2),
+      S('torchK', 'Colour temperature', 1200, 12000, 25, 2600, (v) => `${i0(v)} K`),
+    ],
+    note: '<em>Drag the small flame to move it</em> — dragging anywhere else pans the camera. Sweep it across the penumbra ladder and watch two shadows from one pillar cross. Raise the temperature past 6000K for a cold second source: the warm/cold split makes the shadow boundaries far easier to read than two warm lights ever will.',
+  },
+  {
+    title: 'Scene',
+    segs: [
+      { id: 'rig', multi: true, options: [['ladder', 'Ladder'], ['gap', 'Gap wall'], ['heights', 'Heights'], ['alcove', 'Alcove'], ['filler', 'Filler']], value: 'ladder,gap,heights,alcove,filler' },
+    ],
+    rows: [
+      S('room', 'Room lamp', 0, 8, 0.05, 0.9, f2),
+      S('occH', 'Occluder height', 0, 2.5, 0.01, 0.4, f2),
+      S('fillD', 'Filler density', 0, 0.35, 0.005, 0.09, f3),
+      S('emit', 'Faint emitters', 0, 96, 1, 12, i0),
+      S('binSize', 'Bin size (tiles)', 1, 8, 0.5, 2, f1),
+    ],
+    note: 'The height blocks run 0.4 / 0.7 / 1.0 / 1.5 left to right. <em>Their shadows are the same length</em>, because <code>OccluderGrid</code> is binary \u2014 a known gap, ENGINE_PLAN \u00a714. Occluder height is the one number standing in for all of them: below a block\u2019s own height it cuts a hard horizontal line across that block\u2019s front face, above it the block stops casting altogether. There is no value that is right for four different heights, and that is the point. <em>Room lamp is the lamp above the TABLE</em>, not anything in the fiction \u2014 without it every block top is black, because the only light in the fiction sits at knee height. Drag it to 0 to see why the shipping scene has one.',
+  },
+  {
+    title: 'Surface',
+    rows: [
+      S('amb', 'Ambient', 0, 0.5, 0.002, 0.02, f3),
+      S('norm', 'Normal strength', 0, 2.5, 0.01, 0.35, f2),
+      S('spec', 'Specular', 0, 1, 0.01, 0.25, f2),
+      S('gloss', 'Gloss', 4, 96, 1, 24, i0),
+      S('sw', 'Seam width', 0, 0.15, 0.005, 0.035, f3),
+      S('sd', 'Seam darken', 0, 1, 0.01, 0.72, f2),
+      S('sb', 'Seam bevel', 0, 1.2, 0.01, 0.32, f2),
+    ],
+    note: 'A grazing campfire is the case normal maps exist for. <em>Drop Normal strength to 0</em> and the floor collapses to a flat radial wash with the shadows drawn on it. <em>Push it to 1 and the floor turns to crumpled foil</em> — and that is not the map being wrong. At a knee-high light N·L on the floor is around 0.05, so a fifteen-degree bump multiplies it several times over; the raking case amplifies a normal map far harder than an overhead one, and the derived tile normals are authored for overhead. 0.35 is where this scene stops arguing. Seam bevel past ~0.5 tips a floor tile so far off the fire that the seam goes black and the grid reads as rings.',
+  },
+  {
+    title: 'Look',
+    segs: [
+      { id: 'tm', options: [['agx', 'AgX'], ['aces', 'ACES'], ['none', 'None']], value: 'agx' },
+      { id: 'lit', options: [['1', 'Lit'], ['0', 'Albedo']], value: '1' },
+    ],
+    rows: [
+      S('exp', 'Exposure (stops)', -3, 4, 0.05, 0, f1),
+      S('bloom', 'Bloom strength', 0, 1.5, 0.01, 0.4, f2),
+      S('thr', 'Bloom threshold', 0, 4, 0.01, 1.1, f2),
+    ],
+    note: 'AgX vs ACES on a fire is the whole \u00a79.6 argument in one toggle: ACES skews the warm core toward yellow-white, AgX desaturates it toward white the way film does. <em>Albedo</em> is the M1 path and the only way to see what the lighting is contributing.',
+  },
+  {
+    title: 'Debug & perf',
+    segs: [
+      { id: 'dbg', small: true, options: [['0', 'Off'], ['1', 'Board'], ['2', 'N\u00b7L'], ['3', 'Atten'], ['4', 'Shadow'], ['5', 'Normal'], ['6', 'Bins']], value: '0' },
+      { id: 'tier', options: [['floor', 'Floor'], ['mid', 'Mid'], ['ceiling', 'Ceiling']], value: 'mid' },
+      { id: 'cap', options: [['0', 'All lights'], ['8', '8-light cap']], value: '0' },
+      { id: 'run', options: [['1', 'Running'], ['0', 'Paused']], value: '1' },
+      { id: 'sync', options: [['0', 'Async timing'], ['1', 'GPU sync']], value: '0' },
+    ],
+    note: 'Tier is the Deck dial: <em>floor marches 12 steps and takes 3 shadow samples</em>, ceiling 24 and 5. Watch the penumbra band on the ladder and the point where long shadows simply stop. The 8-light cap reinstates exactly the pre-M4 renderer \u2014 turn it on and count the emitters that vanish. GPU sync calls <code>gl.finish()</code> and gives a true wall-clock cost at the price of stalling the pipe.',
+    buttons: [['shot', 'Save PNG'], ['reset', 'Reset all']],
+  },
+];
+
+try {
+  // Cache-bust every import: this browser HTTP-caches module URLs and Vite's
+  // HMR socket does not reach a page under /public, so an edited source file
+  // would silently keep running the old module. Same reason as the board page.
+  const V = `?v=${Date.now()}`;
+  const { createDevice } = await import('/src/lantern/gl/device.ts' + V);
+  const { Renderer } = await import('/src/lantern/renderer.ts' + V);
+  const { makeCamera, clampTilt, unproject } = await import('/src/lantern/scene/camera.ts' + V);
+  const { makeScene, makeOccluderGrid, setSolid } = await import('/src/lantern/scene/scene.ts' + V);
+  const { formatHud } = await import('/src/lantern/debug/hud.ts' + V);
+  const { LAYER_DECAL, LAYER_PIECE, LAYER_TABLE } = await import('/src/lantern/scene/sprite.ts' + V);
+  const { createRGBATexture } = await import('/src/lantern/gl/procedural.ts' + V);
+  const { contactShadowPixels, blockShadowPixels, baseDiscPixels, baseDiscNormalPixels,
+          pieceBaseSprites, contactShadowSprite, wallBlockSprites }
+    = await import('/src/lantern/scene/piece.ts' + V);
+  const { boardSlabSprites, boardFramePixels, boardFrameNormalPixels, boardRimPixels,
+          boardRimNormalPixels, woodField, fieldToAlbedo, fieldToNormals, slabBounds }
+    = await import('/src/lantern/scene/board.ts' + V);
+  // THE FLICKER, borrowed rather than reinvented. `lightEngine.ts` explains at
+  // length why a flame is value noise and not a sine, and that reasoning is
+  // exactly as true here as it was there.
+  const { fractalNoise } = await import('/src/art/lightEngine.ts' + V);
+
+  // ---------------------------------------------------------------------
+  // BUILD THE PANEL
+  // ---------------------------------------------------------------------
+  const seg = {};      // id -> current value (string)
+  const multi = {};    // id -> Set of values
+  const defaults = {};
+  {
+    const parts = [];
+    for (const g of GROUPS) {
+      parts.push(`<h2>${g.title}</h2>`);
+      for (const sg of g.segs ?? []) {
+        parts.push(`<div class="seg${sg.small ? ' small' : ''}" id="${sg.id}">`);
+        const on = new Set(String(sg.value).split(','));
+        for (const [v, text] of sg.options) {
+          parts.push(`<button data-v="${v}" aria-pressed="${on.has(v)}">${text}</button>`);
+        }
+        parts.push('</div>');
+        if (sg.multi) multi[sg.id] = on;
+        else seg[sg.id] = sg.value;
+        defaults[sg.id] = sg.value;
+      }
+      for (const r of g.rows ?? []) {
+        parts.push(
+          `<label><span class="row">${r.label}<b id="v_${r.id}">${r.fmt(r.value)}</b></span>` +
+          `<input type="range" id="${r.id}" min="${r.min}" max="${r.max}" step="${r.step}" value="${r.value}" /></label>`,
+        );
+        defaults[r.id] = r.value;
+      }
+      if (g.buttons) {
+        parts.push('<div class="seg">');
+        for (const [id, text] of g.buttons) parts.push(`<button id="${id}">${text}</button>`);
+        parts.push('</div>');
+      }
+      if (g.note) parts.push(`<p class="note">${g.note}</p>`);
+    }
+    $('ui').innerHTML = parts.join('');
+  }
+
+  const num = (id) => Number($(id).value);
+  const on = (id, v) => multi[id].has(v);
+
+  const canvas = $('gl');
+  const { device, status, reason } = createDevice(canvas);
+  if (!device) throw new Error(`${status}: ${reason}`);
+  const gl = device.gl;
+  const renderer = new Renderer(device);
+
+  // ---------------------------------------------------------------------
+  // TEXTURES
+  // ---------------------------------------------------------------------
+  async function loadTexture(url, srgb = true) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    try {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error(url)); img.src = url; });
+    } catch { return null; }
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    // COLOUR gets SRGB8_ALPHA8 so the hardware decodes to linear. A NORMAL MAP
+    // gets RGBA8, because it is three numbers that merely happen to live in a
+    // colour texture — sRGB-decoding it turns 0.5 ("no tilt") into 0.21 and
+    // every surface lights as though tilted hard.
+    gl.texImage2D(gl.TEXTURE_2D, 0, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return tex;
+  }
+
+  /**
+   * A flame, as pixels. Warm core, cooler shoulders, alpha falling to nothing.
+   *
+   * Page-local rather than reaching into `scene/emitters.ts`: that file is
+   * another agent's in-flight work and this page must not depend on its shape.
+   */
+  function flamePixels(size = 96) {
+    const px = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const u = (x + 0.5) / size * 2 - 1;
+        const v = (y + 0.5) / size;          // 0 top, 1 base
+        // A teardrop: narrow at the top, full at the base, tucked back in at
+        // the very bottom so it does not read as a rectangle sitting on the
+        // ground.
+        const width = 0.30 + 0.70 * Math.pow(v, 0.85) * (1 - Math.pow(Math.max(0, v - 0.86) / 0.14, 2));
+        const r = Math.abs(u) / Math.max(1e-3, width);
+        const a = Math.max(0, 1 - r * r);
+        const core = Math.pow(a, 2.2);
+        const i = (y * size + x) * 4;
+        px[i] = Math.round(255 * Math.min(1, 0.55 + core * 0.9));
+        px[i + 1] = Math.round(255 * Math.min(1, 0.16 + core * 0.95));
+        px[i + 2] = Math.round(255 * Math.min(1, 0.02 + core * core * 0.85));
+        px[i + 3] = Math.round(255 * Math.min(1, a * 1.15));
+      }
+    }
+    return px;
+  }
+
+  /** A soft radial disc. Used for scorch marks and emitter halos. */
+  function discPixels(size, rgb, power = 2) {
+    const px = new Uint8Array(size * size * 4);
+    const c = (size - 1) / 2;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const d = Math.min(1, Math.hypot((x - c) / c, (y - c) / c));
+        const a = Math.pow(1 - d, power);
+        const i = (y * size + x) * 4;
+        px[i] = rgb[0]; px[i + 1] = rgb[1]; px[i + 2] = rgb[2];
+        px[i + 3] = Math.round(a * 255);
+      }
+    }
+    return px;
+  }
+
+  const furniture = new Map([
+    // Alpha-only masks: NOT sRGB, they carry no colour.
+    ['shadow', { id: 'shadow', albedo: createRGBATexture(gl, 96, contactShadowPixels(96), { mipmap: true }) }],
+    ['blockshadow', { id: 'blockshadow', albedo: createRGBATexture(gl, 96, blockShadowPixels(96), { mipmap: true }) }],
+    ['base', {
+      id: 'base',
+      albedo: createRGBATexture(gl, 128, baseDiscPixels(128), { srgb: true, mipmap: true }),
+      normal: createRGBATexture(gl, 128, baseDiscNormalPixels(128), { mipmap: true }),
+    }],
+    ['flame', { id: 'flame', albedo: createRGBATexture(gl, 96, flamePixels(96), { srgb: true, mipmap: true }) }],
+    ['scorch', { id: 'scorch', albedo: createRGBATexture(gl, 64, discPixels(64, [0, 0, 0], 1.4), { mipmap: true }) }],
+    ['glow', { id: 'glow', albedo: createRGBATexture(gl, 64, discPixels(64, [255, 255, 255], 2.4), { srgb: true, mipmap: true }) }],
+  ]);
+
+  const SLAB_BORDER = 1.35;
+  const SLAB_THICK = 0.5;
+  const tableField = woodField(256, { grain: 7, warp: 1.5 });
+  for (const [id, albedo, normal, opts, size] of [
+    ['rim', boardRimPixels(256), boardRimNormalPixels(256), { repeat: true }, 256],
+    ['table', fieldToAlbedo(tableField, 256, [30, 21, 14], [92, 64, 40]),
+              fieldToNormals(tableField, 256, 0.9), { repeat: true }, 256],
+  ]) {
+    furniture.set(id, {
+      id,
+      albedo: createRGBATexture(gl, size, albedo, { srgb: true, mipmap: true, ...opts }),
+      normal: createRGBATexture(gl, size, normal, { mipmap: true, ...opts }),
+      // Pinned per-material. The renderer's per-material value OVERRIDES the
+      // global, so this is what keeps the Normal strength slider a statement
+      // about the DUNGEON rather than about the furniture around it.
+      normalStrength: 1,
+    });
+  }
+
+  /**
+   * The frame's chamfer is per-axis, so it has to be rebuilt when the board
+   * changes shape — a single fraction on a 60x20 board puts a chamfer three
+   * times as wide on the short edges as on the long ones.
+   *
+   * Cached on the aspect it was built for, because this is a 512x512 CPU
+   * texture generation and doing it inside the board-size slider's input
+   * handler would make the slider crawl.
+   */
+  let frameKey = '';
+  function ensureFrame(W, H) {
+    const b = slabBounds({ width: W, height: H, border: SLAB_BORDER });
+    const opts = { borderU: (SLAB_BORDER * 0.86) / b.width, borderV: (SLAB_BORDER * 0.86) / b.height };
+    const key = `${opts.borderU.toFixed(4)}:${opts.borderV.toFixed(4)}`;
+    if (key === frameKey) return;
+    const old = furniture.get('frame');
+    if (old) { gl.deleteTexture(old.albedo); gl.deleteTexture(old.normal); }
+    furniture.set('frame', {
+      id: 'frame',
+      albedo: createRGBATexture(gl, 512, boardFramePixels(512, opts), { srgb: true, mipmap: true }),
+      normal: createRGBATexture(gl, 512, boardFrameNormalPixels(512, opts), { mipmap: true }),
+      normalStrength: 1,
+    });
+    frameKey = key;
+  }
+
+  // Baked relief lives in gitignored staging, which Vite does not serve.
+  // `/@fs/` reaches it in dev without copying it into `public/`.
+  const STAGING = '/@fs/C:/Users/Paulw/repos/Rpg/web/art-staging/materials';
+  let materials = new Map();
+  const missing = [];
+
+  async function loadArt(gate) {
+    const grab = async (url, srgb) => {
+      const t = await loadTexture(url, srgb);
+      if (!t) missing.push(url.split('/').pop());
+      return t;
+    };
+    const ground = await grab(`art/tiles/${gate}_ground.jpg`, true);
+    const wall = await grab(`art/tiles/${gate}_wall.jpg`, true);
+    const hero = await grab('art/sprites/player.png', true);
+    // THE TILE RELIEF. `lantern-board.html` does not load these and it costs
+    // it: the floor is the largest surface a grazing campfire touches, and
+    // without a normal map it can only get brighter, never rake.
+    const groundN = await loadTexture(`${STAGING}/tiles/${gate}_ground_normal.png`, false);
+    const wallN = await loadTexture(`${STAGING}/tiles/${gate}_wall_normal.png`, false);
+    const heroN = await loadTexture(`${STAGING}/sprites/player_normal.png`, false);
+    materials = new Map([
+      ...furniture,
+      // No per-material normalStrength on ANY of these, on purpose: that is
+      // what lets the global slider reach them.
+      ['ground', { id: 'ground', albedo: ground, normal: groundN, inlay: 1 }],
+      ['wall', { id: 'wall', albedo: wall, normal: wallN, inlay: 0.85 }],
+      ['hero', { id: 'hero', albedo: hero, normal: heroN }],
+    ]);
+    window.__stressMats = materials;
+  }
+
+  // ---------------------------------------------------------------------
+  // THE LAYOUT
+  //
+  // Rebuilt only when its inputs change. At 72x48 this is 3456 tiles of work
+  // and it is emphatically not per-frame — but the SPRITES are, which is the
+  // half of the cost the board-size dial is here to measure.
+  // ---------------------------------------------------------------------
+
+  /** Deterministic, so the same board comes back every time. */
+  function hash01(x, y) {
+    const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  }
+
+  /**
+   * The penumbra ladder's offsets from the fire, and the one constraint that
+   * decides them: NO PILLAR MAY STAND IN ANOTHER'S SHADOW.
+   *
+   * A shadow runs radially away from the light, so two pillars occlude each
+   * other when their angular separation as seen from the fire is smaller than
+   * their angular width. A one-tile pillar at 2 tiles subtends 28 degrees and
+   * one at 10 tiles subtends 5.7, so the fan has to open WIDE near the fire
+   * and may close up further out. These five clear it with room to spare, and
+   * their true distances are 2.0, 4.2, 6.1, 8.2, 10.3.
+   */
+  const LADDER = [[0, -2], [3, -3], [6, -1], [8, 2], [9, 5]];
+  /** The four test blocks, left to right, with the heights they stand at. */
+  const HEIGHTS = [[-3, 5, 0.4], [-1, 5, 0.7], [1, 5, 1.0], [3, 5, 1.5]];
+
+  let layout = null;
+  let layoutKey = '';
+
+  function buildLayout(W, H, flags, density) {
+    const key = `${W}:${H}:${[...flags].sort().join(',')}:${density}`;
+    if (key === layoutKey && layout) return layout;
+
+    const solid = new Uint8Array(W * H);
+    const heightAt = new Float32Array(W * H);
+    const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+    const put = (x, y, h) => { if (inside(x, y)) { solid[y * W + x] = 1; heightAt[y * W + x] = h; } };
+    const isSolid = (x, y) => (inside(x, y) ? solid[y * W + x] === 1 : false);
+
+    // The border. A board is a closed thing; without it the light runs off the
+    // edge and the whole rim/table treatment has nothing to be lit against.
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) put(x, y, 0.9);
+    }
+
+    const fx = Math.round(W * 0.45);
+    const fy = Math.round(H * 0.5);
+    // The rig's own footprint, tracked as it is placed, so the procedural
+    // filler can be told to stay out of it whatever the board size is.
+    let rig = { minX: fx - 2, maxX: fx + 2, minY: fy - 2, maxY: fy + 2 };
+    const claim = (x, y) => {
+      rig.minX = Math.min(rig.minX, x); rig.maxX = Math.max(rig.maxX, x);
+      rig.minY = Math.min(rig.minY, y); rig.maxY = Math.max(rig.maxY, y);
+    };
+    const clear = [];   // features that did not fit on this board
+
+    if (flags.has('ladder')) {
+      let placed = 0;
+      for (const [dx, dy] of LADDER) {
+        const x = fx + dx, y = fy + dy;
+        // A pillar needs floor BEHIND it or its shadow has nowhere to land.
+        if (x < 2 || y < 2 || x > W - 3 || y > H - 3) continue;
+        put(x, y, 1.0);
+        claim(x, y);
+        placed++;
+      }
+      if (placed < LADDER.length) clear.push(`ladder ${placed}/5`);
+    }
+
+    if (flags.has('gap')) {
+      const wx = fx - 5;
+      const y0 = Math.max(1, fy - 7), y1 = Math.min(H - 2, fy + 7);
+      if (wx >= 2 && y1 - y0 >= 4) {
+        for (let y = y0; y <= y1; y++) {
+          if (y === fy) continue;              // THE GAP. One tile, no more.
+          put(wx, y, 1.2);
+          claim(wx, y);
+        }
+      } else clear.push('gap wall');
+    }
+
+    if (flags.has('heights')) {
+      let placed = 0;
+      for (const [dx, dy, h] of HEIGHTS) {
+        const x = fx + dx, y = fy + dy;
+        if (x < 2 || y < 2 || x > W - 3 || y > H - 3) continue;
+        put(x, y, h);
+        claim(x, y);
+        placed++;
+      }
+      if (placed < HEIGHTS.length) clear.push(`heights ${placed}/4`);
+    }
+
+    if (flags.has('alcove')) {
+      const ax = fx - 12, ay = fy - 6;
+      if (ax >= 1 && ay >= 1 && ay + 4 <= H - 2) {
+        for (let i = 0; i <= 4; i++) {
+          put(ax + i, ay, 1.1); put(ax + i, ay + 4, 1.1);
+          put(ax, ay + i, 1.1);
+          // The doorway: one tile in the east wall, facing the fire.
+          if (i !== 2) put(ax + 4, ay + i, 1.1);
+        }
+        claim(ax, ay); claim(ax + 4, ay + 4);
+      } else clear.push('alcove');
+    }
+
+    // FILLER — the perf axis. Everything above is a fixed-size rig, so on a
+    // 60x40 board it would leave most of the floor empty and the geometry
+    // count would barely move. Scattering blocks over the rest is what makes
+    // the board-size dial mean something.
+    const pad = 2;
+    if (flags.has('filler') && density > 0) {
+      for (let y = 2; y < H - 2; y++) {
+        for (let x = 2; x < W - 2; x++) {
+          if (x >= rig.minX - pad && x <= rig.maxX + pad && y >= rig.minY - pad && y <= rig.maxY + pad) continue;
+          const h = hash01(x, y);
+          if (h > density) continue;
+          // Short runs as often as lone pillars, so it reads as ruined
+          // structure rather than as noise.
+          const run = hash01(x + 91, y + 17) < 0.4 ? 1 + Math.floor(hash01(x, y + 3) * 3) : 1;
+          const vert = hash01(x + 7, y + 53) < 0.5;
+          const height = 0.5 + hash01(x + 31, y + 11) * 1.0;
+          for (let i = 0; i < run; i++) {
+            const px = x + (vert ? 0 : i), py = y + (vert ? i : 0);
+            if (px > W - 3 || py > H - 3) break;
+            put(px, py, height);
+          }
+        }
+      }
+    }
+
+    const grid = makeOccluderGrid(W, H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) setSolid(grid, x, y, solid[y * W + x] === 1);
+
+    layout = { W, H, fx, fy, solid, heightAt, grid, isSolid, clear, rig };
+    layoutKey = key;
+    return layout;
+  }
+
+  // ---------------------------------------------------------------------
+  // COLOUR TEMPERATURE
+  //
+  // Normalised so the brightest channel is 1. Without that, the temperature
+  // slider is also a brightness slider and the two dials fight — the same
+  // mistake `lighting.ts` calls out for ambient vs night tint.
+  // ---------------------------------------------------------------------
+  function kelvinRGB(k) {
+    const t = Math.max(1000, Math.min(12000, k)) / 100;
+    let r, g, b;
+    if (t <= 66) { r = 255; g = 99.4708025861 * Math.log(t) - 161.1195681661; }
+    else { r = 329.698727446 * Math.pow(t - 60, -0.1332047592); g = 288.1221695283 * Math.pow(t - 60, -0.0755148492); }
+    if (t >= 66) b = 255;
+    else if (t <= 19) b = 0;
+    else b = 138.5177312231 * Math.log(t - 10) - 305.0447927307;
+    const srgb = [r, g, b].map((v) => Math.min(255, Math.max(0, v)) / 255);
+    // These fits are sRGB-encoded and everything past the sampler here is
+    // linear light, so decode before use or every warm becomes a pastel.
+    const lin = srgb.map((v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    const m = Math.max(lin[0], lin[1], lin[2], 1e-4);
+    return [lin[0] / m, lin[1] / m, lin[2] / m];
+  }
+
+  // ---------------------------------------------------------------------
+  // STATE THE MOUSE OWNS
+  // ---------------------------------------------------------------------
+  const torch = { x: 0, y: 0, set: false };
+  /** The play camera's centre. Written by the hero while following, by the drag otherwise. */
+  const pan = { x: 0, y: 0 };
+
+  /**
+   * THE LEAN — a person moving their head over the table.
+   *
+   * `want` is where the cursor (or the right stick) is asking the view to go,
+   * -1..1 on each axis. `have` is where the camera actually is, and the gap
+   * between them is the entire feature: a lean that tracks the cursor exactly
+   * is the version that feels bad, because the board is still moving when the
+   * click lands. Exponential smoothing toward `want` means it LAGS the hand
+   * and settles while the hand is still.
+   *
+   * TILT, NOT TRANSLATION, and the reason is physical rather than aesthetic:
+   * `uTilt` is what `passes/lighting.ts` builds the view vector V from, so a
+   * lean changes which surfaces are catching a highlight — exactly what moving
+   * your head over a varnished board does. Translation gives none of that, and
+   * it drags targets out from under the cursor. The pan term is here because a
+   * little of it reads as leaning sideways, and it is kept small on purpose.
+   */
+  const lean = { wantX: 0, wantY: 0, tgtX: 0, tgtY: 0, haveX: 0, haveY: 0, last: performance.now(), pad: false };
+  const REDUCED = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+
+  function updateLean() {
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - lean.last) / 1000));
+    lean.last = now;
+
+    // THE RIGHT STICK, because the Deck has no cursor. Same target, same
+    // damping — a feature that only exists on desktop is a feature the machine
+    // this game is aimed at does not have.
+    let wx = lean.wantX, wy = lean.wantY;
+    const pads = navigator.getGamepads?.() ?? [];
+    for (const p of pads) {
+      if (!p || !p.axes || p.axes.length < 4) continue;
+      const ax = p.axes[2], ay = p.axes[3];
+      // Deadzone on the MAGNITUDE, not per axis: per-axis deadzones leave a
+      // cross-shaped dead region and make a diagonal push feel notched.
+      const m = Math.hypot(ax, ay);
+      if (m > 0.18) { wx = ax; wy = ay; lean.pad = true; break; }
+      if (lean.pad) { wx = 0; wy = 0; }
+    }
+    if (seg.lean !== '1') { wx = 0; wy = 0; }
+    // The EFFECTIVE target, kept because "is the lean at rest" has to be asked
+    // against what it is actually chasing — which is 0 when the feature is off,
+    // not wherever the cursor happens to be sitting.
+    lean.tgtX = wx;
+    lean.tgtY = wy;
+
+    // A time constant rather than a per-frame factor, so the settle feels the
+    // same at 30fps and 144fps instead of being a property of the frame rate.
+    const k = 1 - Math.exp(-dt / Math.max(0.01, num('leanTau')));
+    lean.haveX += (wx - lean.haveX) * k;
+    lean.haveY += (wy - lean.haveY) * k;
+    // Snap to rest. Exponential smoothing only ever approaches its target, and
+    // a camera still moving by a thousandth of a degree keeps the page
+    // repainting forever and never quite settles.
+    if (Math.abs(lean.haveX - wx) < 1e-3) lean.haveX = wx;
+    if (Math.abs(lean.haveY - wy) < 1e-3) lean.haveY = wy;
+  }
+
+  const leanSettled = () => lean.haveX === lean.tgtX && lean.haveY === lean.tgtY;
+
+  // ---------------------------------------------------------------------
+  // THE SCENE, rebuilt every frame from state. Never mutated in place.
+  // ---------------------------------------------------------------------
+  let lastGeom = null;
+  let lastScene = null;
+
+  function buildScene(t) {
+    const W = Math.round(num('bw'));
+    const H = Math.round(num('bh'));
+    const flags = multi.rig;
+    const L = buildLayout(W, H, flags, num('fillD'));
+    ensureFrame(W, H);
+
+    const view = device.size();
+    const viewport = { x: view.width, y: view.height };
+    // The lean rides ON TOP of whatever the framing decided, never instead of
+    // it — see the clamp below, which is applied last for exactly that reason.
+    const leanDeg = seg.lean === '1' ? lean.haveY * num('leanTilt') : 0;
+    const tilt = clampTilt(((num('tilt') + leanDeg) * Math.PI) / 180);
+
+    // The hero, walking a slow circuit. He is here for two reasons: he is the
+    // thing the fixed camera follows, and he is a BILLBOARD with baked relief,
+    // which is the one surface on the board whose normal is the view direction
+    // rather than +z or +y.
+    const heroR = Math.min(4.2, Math.max(2, Math.min(W, H) * 0.16));
+    const hx = L.fx + 0.5 + Math.cos(t * 0.28) * heroR;
+    const hy = L.fy + 0.5 + Math.sin(t * 0.28) * heroR * 0.75;
+
+    // OVERVIEW vs PLAY — the §17 pair, as one branch. Both are (centre, zoom);
+    // nothing else in the renderer knows or cares which one produced them,
+    // which is why §17 could amend §13 without touching any of this.
+    const slab = slabBounds({ width: W, height: H, border: SLAB_BORDER });
+    const cos = Math.cos(tilt), sin = Math.sin(tilt);
+    // Generous on purpose. At 1.6 the slab filled the frame and the table was
+    // a sliver, which is what made a pan read as the BOARD sliding rather than
+    // the camera moving — see the token note below.
+    const margin = 3.0;
+    // Computed in BOTH modes, because the wheel needs to know where overview
+    // is in order to snap back to it. §17.1: overview is simply the zoom at
+    // which the clamp has nothing left to do.
+    const fitZoom = Math.max(4, Math.min(
+      viewport.x / (slab.width + margin * 2),
+      // Vertical pays for the squash AND leaves headroom for a piece standing
+      // at the near edge, which the projection lifts up the screen.
+      viewport.y / ((slab.height + margin * 2) * cos + 2.4 * sin),
+    ));
+    let zoom, centre;
+    if (seg.cammode === 'fit') {
+      zoom = fitZoom;
+      centre = { x: slab.x + slab.width / 2, y: slab.y + slab.height / 2 };
+      // Keep the play camera parked where overview is looking, so scrolling in
+      // starts from what is on screen instead of jumping to wherever the pan
+      // was left the last time anyone dragged.
+      pan.x = centre.x; pan.y = centre.y;
+    } else {
+      zoom = num('zoom');
+      // Following the hero and free panning are the same field; following
+      // simply keeps writing to it. That is what lets a drag take over
+      // mid-stride without the view jumping to wherever the pan last was.
+      if (seg.follow === '1') { pan.x = hx; pan.y = hy; }
+      centre = { x: pan.x, y: pan.y };
+    }
+    centre = { x: centre.x + lean.haveX * num('leanPan'), y: centre.y };
+    // CLAMPED PAN (§17.1). The camera stops at the board's edges, and stopping
+    // is the whole point: pushing against a boundary is what tells you how much
+    // board exists. The allowance is half a viewport minus a sliver, so at the
+    // limit you see the rim and a little table — the signal that this is the
+    // end — rather than the board sitting half off-screen beside dead space.
+    //
+    // The lean is folded in BEFORE this, deliberately: a lean that could push
+    // the view past the clamp would be a way to defeat the clamp.
+    const sliver = 1.2;
+    const halfX = viewport.x / 2 / zoom;
+    const halfY = viewport.y / 2 / (zoom * cos);
+    const span = (lo, hi, v) => (lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+    centre = {
+      x: span(slab.x - sliver + halfX, slab.x + slab.width + sliver - halfX, centre.x),
+      y: span(slab.y - sliver + halfY, slab.y + slab.height + sliver - halfY, centre.y),
+    };
+    const camera = makeCamera({ centre, zoom, tilt, viewport });
+
+    if (!torch.set) { torch.x = L.fx + 4.5; torch.y = L.fy - 6.5; torch.set = true; }
+
+    const sprites = [];
+    sprites.push(
+      ...boardSlabSprites(
+        { width: W, height: H, border: SLAB_BORDER, thickness: SLAB_THICK,
+          frameTextureId: 'frame', rimTextureId: 'rim', tableTextureId: 'table',
+          shadowTextureId: 'blockshadow', tableGrain: 3.2 },
+        camera,
+      ),
+    );
+
+    // ---------------------------------------------------------------------
+    // THINGS ON THE TABLE, and they are a RENDERING fix rather than dressing.
+    //
+    // Paul, panning: "middle clicking moves the game board itself. i feel like
+    // it should move the camera instead?" The code was already moving the
+    // camera. The problem is that when every pixel moves together there is
+    // nothing on screen that distinguishes "the camera moved" from "the object
+    // moved" — the only cue available is RELATIVE motion between the board and
+    // the table, which is exactly §17.1's rule stated as perception.
+    //
+    // Making the table bigger is necessary and it is not sufficient, because
+    // wood grain REPEATS. A periodic texture sliding behind a frame is the
+    // aperture problem: every phase looks like every other phase, so the eye
+    // cannot tell how far it travelled or whether it travelled at all. What
+    // fixes it is TRACKABLE FEATURES — a handful of unique, non-repeating
+    // things at fixed world positions, which slide past the frame edge and can
+    // only be read one way.
+    //
+    // Counters set aside beside the board are the cheapest thing that is also
+    // right for the fiction, and they reuse the plinth the pieces stand on.
+    // ---------------------------------------------------------------------
+    for (let i = 0; i < 11; i++) {
+      const side = i % 4;
+      const a = hash01(i, 71), b = hash01(i, 137);
+      const out = 1.1 + a * (margin - 1.4);
+      const along = 0.08 + b * 0.84;
+      const tx = side === 0 || side === 1
+        ? slab.x + slab.width * along
+        : (side === 2 ? slab.x - out : slab.x + slab.width + out);
+      const ty = side === 0 ? slab.y - out
+        : (side === 1 ? slab.y + slab.height + out : slab.y + slab.height * along);
+      const r = 0.38 + hash01(i, 211) * 0.3;
+      const shade = 0.55 + hash01(i, 311) * 0.5;
+      sprites.push({
+        position: { x: tx, y: ty, z: -SLAB_THICK }, size: { x: r * 2, y: r * 2 },
+        pivot: { x: 0.5, y: 0.5 }, uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+        textureId: 'base', tint: [shade, shade * 0.94, shade * 0.86, 1], layer: LAYER_TABLE,
+      });
+    }
+
+    // Window the shared tile texture per cell so neighbours do not visibly
+    // repeat — a UV lookup doing what `backgroundPosition` does in CSS.
+    const cellUv = (x, y) => ({ u0: (x % 4) / 4, v0: (y % 4) / 4, u1: (x % 4 + 1) / 4, v1: (y % 4 + 1) / 4 });
+    let minBlock = Infinity;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (L.solid[y * W + x]) {
+          const h = L.heightAt[y * W + x];
+          if (h < minBlock) minBlock = h;
+          const ahead = L.isSolid(x, y + 1) ? L.heightAt[(y + 1) * W + x] : -1;
+          sprites.push(
+            ...wallBlockSprites({ x, y }, {
+              textureId: 'wall',
+              height: h,
+              topUv: cellUv(x, y),
+              frontUv: { u0: (x % 4) / 4, v0: 0.5, u1: (x % 4 + 1) / 4, v1: 1 },
+              // Skip the front face only when the block in front is at least
+              // as TALL. A shorter neighbour leaves a sliver showing, and what
+              // shows through it is the lit frame underneath.
+              front: ahead < h,
+              topTint: [0.88, 0.88, 0.92, 1],
+              frontTint: [0.78, 0.78, 0.84, 1],
+              shadowTextureId: 'blockshadow',
+              shadowStrength: 0.55,
+            }),
+          );
+        } else {
+          sprites.push({ position: { x, y, z: 0 }, size: { x: 1, y: 1 }, pivot: { x: 0, y: 0 },
+                         uv: cellUv(x, y), textureId: 'ground' });
+        }
+      }
+    }
+
+    // --- THE CAMPFIRE ---------------------------------------------------
+    const fireX = L.fx + 0.5, fireY = L.fy + 0.5;
+    const amount = num('fireF');
+    // VALUE NOISE, not a sine. `lightEngine.ts` says why at length and the
+    // reason survives the move: noise is continuous in time, so two nearby
+    // samples are RELATED and the light guttters. A sine is periodic, and the
+    // eye finds the period in about two seconds and files it as a fault.
+    const flick = 1 + (fractalNoise(t * 2.4 + 4.7) - 0.5) * 2 * amount;
+    const wobble = (fractalNoise(t * 1.7 + 21.3) - 0.5) * 0.16 * amount;
+    const fireZ = num('fireZ');
+    const fireI = num('fireI') * Math.max(0.05, flick);
+    const fireColour = kelvinRGB(num('fireK'));
+
+    sprites.push({
+      position: { x: fireX, y: fireY, z: 0 },
+      size: { x: 2.4, y: 2.4 }, pivot: { x: 0.5, y: 0.5 },
+      uv: { u0: 0, v0: 0, u1: 1, v1: 1 }, textureId: 'scorch',
+      tint: [0, 0, 0, 0.55], layer: LAYER_DECAL,
+    });
+    sprites.push({
+      position: { x: fireX + wobble, y: fireY, z: 0 },
+      size: { x: 0.85 + wobble, y: 1.15 + flick * 0.25 }, pivot: { x: 0.5, y: 1 },
+      uv: { u0: 0, v0: 0, u1: 1, v1: 1 }, textureId: 'flame',
+      billboard: true, layer: LAYER_PIECE,
+      tint: [fireColour[0], fireColour[1], fireColour[2], 1],
+    });
+
+    // --- THE TORCH ------------------------------------------------------
+    const torchZ = num('torchZ');
+    const torchColour = kelvinRGB(num('torchK'));
+    const tflick = 1 + (fractalNoise(t * 3.1 + 61.2) - 0.5) * 0.5;
+    sprites.push({
+      position: { x: torch.x, y: torch.y, z: Math.max(0, torchZ - 0.55) },
+      size: { x: 0.6, y: 0.75 * tflick }, pivot: { x: 0.5, y: 1 },
+      uv: { u0: 0, v0: 0, u1: 1, v1: 1 }, textureId: 'flame',
+      billboard: true, layer: LAYER_PIECE,
+      tint: [torchColour[0], torchColour[1], torchColour[2], 1],
+    });
+
+    // --- THE HERO -------------------------------------------------------
+    sprites.push(...pieceBaseSprites({ x: hx, y: hy }, 'base', 'shadow',
+      { radius: 0.4, thickness: 0.11, shadow: { strength: 0.85, height: 0 } }));
+    sprites.push({
+      position: { x: hx, y: hy, z: 0.11 }, size: { x: 1.1, y: 1.7 },
+      pivot: { x: 0.5, y: 1 }, billboard: true,
+      uv: { u0: 0, v0: 0, u1: 1, v1: 1 }, textureId: 'hero',
+    });
+
+    // --- FAINT EMITTERS -------------------------------------------------
+    //
+    // ENGINE_PLAN §12.2's "many faint ones", here mostly to give the bin stats
+    // something to say. They cast NO shadow — that is the whole reason a scene
+    // can afford a lot of them, and it is also physically right for a dim
+    // source.
+    const lights = [
+      { position: { x: fireX + wobble, y: fireY, z: fireZ }, colour: fireColour,
+        intensity: fireI, radius: num('fireR'), reach: num('fireReach') },
+      { position: { x: torch.x, y: torch.y, z: torchZ }, colour: torchColour,
+        intensity: num('torchI') * tflick, radius: num('torchR'), reach: num('torchReach') },
+      // THE ROOM, not the dungeon — the same light `lantern-board.html` carries
+      // and for the same reason, which this page makes unusually easy to see:
+      // the only light in the fiction is a fire at knee height, so EVERY block
+      // top on the board faces away from it and renders black. It still casts,
+      // and raking from the near-left is what keeps it out of the fiction: the
+      // board's own border blocks shadow the dungeon floor from it entirely, so
+      // it lands on the table, the rim and the block tops and stops at the wall.
+      { position: { x: -5, y: H + 8, z: 15 }, colour: [0.6, 0.68, 1],
+        intensity: num('room'), radius: 1.4,
+        // Far bigger than the board. The falloff window is tuned for a lantern
+        // a few tiles across; a room lamp at that reach is eaten by the inverse
+        // square before it crosses the table. Reach decides how EVEN a light
+        // is, not merely how far it goes.
+        reach: Math.max(60, (W + H) * 3) },
+    ];
+    const emitters = Math.round(num('emit'));
+    if (emitters > 0) {
+      // Spread over the board on a golden-angle spiral rather than a grid, so
+      // raising the count fills in evenly instead of marching along a row.
+      const GA = 2.399963229728653;
+      for (let i = 0; i < emitters; i++) {
+        const r = Math.sqrt((i + 0.5) / emitters);
+        const a = i * GA;
+        const ex = W / 2 + Math.cos(a) * r * (W / 2 - 2);
+        const ey = H / 2 + Math.sin(a) * r * (H / 2 - 2);
+        if (L.isSolid(Math.floor(ex), Math.floor(ey))) continue;
+        const warm = hash01(i, 3) < 0.35;
+        const colour = warm ? [1, 0.55, 0.2] : [0.28, 1, 0.55];
+        lights.push({
+          position: { x: ex, y: ey, z: 0.45 }, colour,
+          // FAINT MEANS FAINT (§12.2). The first pass ran these at 1.4–2.8 and
+          // they were comparable to the campfire three tiles out, so the board
+          // read as mould rather than as pinpricks saying how dark it is.
+          intensity: 0.5 + hash01(i, 9) * 0.5, radius: 0.12,
+          reach: 2.5 + hash01(i, 15) * 1.5, castsShadow: false,
+        });
+        sprites.push({
+          position: { x: ex, y: ey, z: 0.45 }, size: { x: 0.55, y: 0.55 },
+          pivot: { x: 0.5, y: 0.5 }, uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+          textureId: 'glow', billboard: true,
+          tint: [colour[0], colour[1], colour[2], 0.9],
+        });
+      }
+    }
+
+    lastGeom = {
+      W, H, zoom, fitZoom, tileW: zoom, tileH: zoom * cos,
+      pieceH: 1.7 * zoom * sin,
+      tiltDeg: (tilt * 180) / Math.PI,
+      leanDeg,
+      sprites: sprites.length,
+      tiles: W * H,
+      clear: L.clear,
+      minBlock: Number.isFinite(minBlock) ? minBlock : 0,
+    };
+
+    const scene = makeScene(camera, {
+      sprites,
+      materials,
+      occluders: L.grid,
+      // ONE number for every block on the board. See the Scene note: there is
+      // no value that is right when the blocks are 0.4 and 1.5 tiles tall, and
+      // making that visible is why the blocks are there.
+      occluderHeight: num('occH'),
+      time: t,
+      ambient: num('amb'),
+      lights,
+    });
+    // Kept so the pointer handlers can unproject against the camera that was
+    // actually used, without rebuilding a whole scene to ask one question.
+    lastScene = scene;
+    return scene;
+  }
+
+  // ---------------------------------------------------------------------
+  // RENDER OPTIONS — ONE function, used by BOTH entry points.
+  //
+  // `lantern-board.html` learned this the expensive way: `boardFrame` and
+  // `boardOnce` each built their own options object, one of them dropped a
+  // field, and a pixel diff reported zero change for a feature that was
+  // working fine. Two lists that must agree is a bug waiting for a deadline;
+  // one function cannot disagree with itself.
+  // ---------------------------------------------------------------------
+  function renderOpts() {
+    return {
+      exposure: Math.pow(2, num('exp')),
+      bloomStrength: num('bloom'),
+      bloomThreshold: num('thr'),
+      tonemap: seg.tm,
+      lit: seg.lit === '1',
+      normalStrength: num('norm'),
+      specular: num('spec'),
+      gloss: num('gloss'),
+      seamWidth: num('sw'),
+      seamDarken: num('sd'),
+      seamBevel: num('sb'),
+      debug: Number(seg.dbg),
+      binSize: num('binSize'),
+      lightBudget: Number(seg.cap),
+    };
+  }
+
+  const start = performance.now();
+  let frozenT = 0;
+  let syncMs = 0;
+
+  function sizeCanvas() {
+    const stage = $('stage');
+    const cssW = Math.max(640, Math.min(1600, stage.clientWidth || 1280));
+    canvas.style.width = `${cssW}px`;
+    device.resize(cssW, Math.round(cssW * 0.625), window.devicePixelRatio || 1);
+  }
+
+  function frame() {
+    sizeCanvas();
+    updateLean();
+    const t = seg.run === '1' ? (performance.now() - start) / 1000 : frozenT;
+    if (seg.run === '1') frozenT = t;
+    const t0 = performance.now();
+    const stats = renderer.render(buildScene(t), renderOpts());
+    if (seg.sync === '1') { gl.finish(); syncMs = performance.now() - t0; }
+    // THE ENGINE NEVER DRAINS ITS OWN GPU TIMER. `Renderer` calls
+    // `gpuTimer.begin()` and `end()` but never `poll()`, so `HudStats.gpuMs`
+    // is 0.00 forever and one WebGLQuery is allocated per frame and never
+    // deleted. Draining it from here fixes the number on this page and leaves
+    // the engine untouched; the leak is reported rather than patched.
+    renderer.gpuTimer?.poll?.();
+    paintStatus(stats);
+  }
+
+  function paintStatus(stats) {
+    const g = lastGeom;
+    if (g) {
+      const tight = g.tileH < 24 || g.pieceH < 48;
+      $('geom').innerHTML =
+        `board      ${g.W}x${g.H}  (${g.tiles} tiles)\n` +
+        `zoom       ${g.zoom.toFixed(1)} px/tile  [${seg.cammode === 'fit' ? 'overview' : 'play'}]\n` +
+        `tile       ${g.tileW.toFixed(0)} x ${g.tileH.toFixed(0)} px\n` +
+        `piece      ${g.pieceH.toFixed(0)} px${tight ? '   <span class="flag">below the \u00a717 floor</span>' : ''}\n` +
+        `tilt       ${g.tiltDeg.toFixed(1)}\u00b0  (lean ${g.leanDeg >= 0 ? '+' : ''}${g.leanDeg.toFixed(2)}\u00b0)\n` +
+        `sprites    ${g.sprites}\n` +
+        (seg.sync === '1' ? `sync       ${syncMs.toFixed(2)} ms (cpu+gpu)\n` : '') +
+        (g.clear.length ? `<span class="flag">board too small for: ${g.clear.join(', ')}</span>\n` : '') +
+        (missing.length ? `<span class="flag">missing art: ${missing.join(', ')}</span>\n` : '');
+    }
+    $('stats').textContent = formatHud(stats);
+  }
+
+  // ---------------------------------------------------------------------
+  // THE TWO HANDLES. rAF does not fire when this page is not compositing, so
+  // every headless check goes through these.
+  //
+  //   stressFrame()      one frame at the live clock. What the loop calls.
+  //   stressOnce(t,opts) one frame at a PINNED clock, so two renders can be
+  //                      diffed with exactly one thing changed between them.
+  // ---------------------------------------------------------------------
+  window.stressFrame = () => { frame(); return lastGeom; };
+  window.stressOnce = (t, opts = {}) => {
+    sizeCanvas();
+    const stats = renderer.render(buildScene(t), { ...renderOpts(), ...opts });
+    renderer.gpuTimer?.poll?.();
+    paintStatus(stats);
+    return stats;
+  };
+  window.stressScene = (t) => buildScene(t);
+  // Exposed so a scene can be EDITED and re-rendered — drop one kind of sprite,
+  // draw it again, and see what it was contributing. That is how the scalloped
+  // band along the near frame got pinned on the block contact shadows rather
+  // than on the shadow march, which the picture alone could not distinguish.
+  window.stressRenderer = renderer;
+  window.stressOpts = renderOpts;
+  window.stressGL = gl;
+  window.stressGeom = () => lastGeom;
+  window.stressSet = (id, v) => {
+    const el = $(id);
+    if (el && el.type === 'range') { el.value = String(v); el.dispatchEvent(new Event('input')); return true; }
+    const group = $(id);
+    if (group) { const b = group.querySelector(`button[data-v="${v}"]`); if (b) { b.click(); return true; } }
+    return false;
+  };
+  /**
+   * Read the framebuffer back as a data URL.
+   *
+   * IT MUST DRAW FIRST, IN THIS SAME TASK. `createDevice` asks for
+   * `preserveDrawingBuffer: false` — correct, because the scene is opaque and
+   * repainted every frame and preserving it costs a copy — but it means the
+   * drawing buffer is thrown away as soon as the frame is composited. A
+   * `toDataURL` from a console a moment later returns a nearly EMPTY image,
+   * which is not obviously wrong: it is a valid tiny JPEG of nothing, and it
+   * looks exactly like "the renderer drew nothing".
+   */
+  window.stressShot = (quality = 0.92) => { frame(); return canvas.toDataURL('image/jpeg', quality); };
+
+  // ---------------------------------------------------------------------
+  // WIRING
+  // ---------------------------------------------------------------------
+  for (const g of GROUPS) {
+    for (const sg of g.segs ?? []) {
+      const box = $(sg.id);
+      for (const b of box.querySelectorAll('button')) {
+        b.onclick = () => {
+          if (sg.multi) {
+            const set = multi[sg.id];
+            if (set.has(b.dataset.v)) set.delete(b.dataset.v); else set.add(b.dataset.v);
+            b.setAttribute('aria-pressed', String(set.has(b.dataset.v)));
+          } else {
+            seg[sg.id] = b.dataset.v;
+            for (const o of box.querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+            if (sg.id === 'tier') device.setTier(b.dataset.v);
+          }
+          frame();
+        };
+      }
+    }
+    for (const r of g.rows ?? []) {
+      const el = $(r.id);
+      const sync = () => { $(`v_${r.id}`).textContent = r.fmt(el.value); frame(); };
+      el.addEventListener('input', sync);
+      el.addEventListener('change', sync);
+    }
+  }
+
+  $('shot').onclick = () => {
+    const a = document.createElement('a');
+    a.download = `lantern-stress-${Date.now()}.jpg`;
+    a.href = window.stressShot(0.92);   // draws first — see stressShot
+    a.click();
+  };
+  $('reset').onclick = () => {
+    for (const [id, v] of Object.entries(defaults)) {
+      // A multi group's buttons TOGGLE, so replaying a default through them
+      // would turn off everything that was already on. Set the state, then
+      // repaint the buttons from it.
+      if (multi[id]) {
+        multi[id] = new Set(String(v).split(','));
+        for (const b of $(id).querySelectorAll('button')) {
+          b.setAttribute('aria-pressed', String(multi[id].has(b.dataset.v)));
+        }
+      } else window.stressSet(id, v);
+    }
+    torch.set = false;
+    frame();
+  };
+
+  // -------------------------------------------------------------------
+  // THE TABLETOP CAMERA: wheel to zoom, drag to pan, grab the flame to move
+  // the torch. Three gestures on one pointer, decided by what is under it —
+  // which is how every map application anyone has ever used behaves, and the
+  // reason it needs no explaining.
+  // -------------------------------------------------------------------
+
+  /** Screen position in DRAWING BUFFER pixels, which is what the camera's viewport is in. */
+  const toScreen = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const v = device.size();
+    return {
+      x: (e.clientX - rect.left) * (v.width / rect.width),
+      y: (e.clientY - rect.top) * (v.height / rect.height),
+    };
+  };
+  /**
+   * Screen to board. `unproject` needs a HEIGHT, because a screen point does
+   * not determine a board position on its own — every point on the vertical
+   * line above a tile projects into the same column.
+   */
+  const toBoard = (e, z = 0) => (lastScene ? unproject(toScreen(e), lastScene.camera, z) : null);
+
+  let mode = null;              // 'torch' | 'pan'
+  let grab = null;
+
+  // MIDDLE CLICK IS A BROWSER FEATURE BEFORE IT IS OURS. Left unhandled it
+  // starts native autoscroll, which drags the PAGE — indistinguishable, from
+  // the user's chair, from the board being dragged around. Cancelling it on
+  // both events is what stops the browser from answering the gesture first.
+  canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    // Which buttons pan is decided here rather than by accident: LEFT on empty
+    // board, and MIDDLE anywhere. Right is left alone. Accepting every button
+    // is how a drag ends up fighting a future click-to-move.
+    if (e.button === 1) e.preventDefault();
+    if (e.button !== 0 && e.button !== 1) return;
+    const p = toBoard(e, num('torchZ'));
+    if (!p) return;
+    canvas.setPointerCapture(e.pointerId);
+    // Grab what is under the pointer if it is the torch, otherwise grab the
+    // table. A modifier key would work too and nobody would ever find it.
+    if (e.button === 0 && Math.hypot(p.x - torch.x, p.y - torch.y) < 1.1) {
+      mode = 'torch';
+      torch.x = p.x; torch.y = p.y; torch.set = true;
+    } else {
+      mode = 'pan';
+      // Panning is taking the wheel, so stop following the hero — otherwise
+      // the drag and the hero fight over the same field every frame.
+      if (seg.follow === '1') window.stressSet('follow', '0');
+      grab = { screen: toScreen(e), pan: { x: pan.x, y: pan.y } };
+      canvas.style.cursor = 'grabbing';
+    }
+    frame();
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    // The lean's target, always — it is a property of where you are looking,
+    // not of whether you are holding a button.
+    const rect = canvas.getBoundingClientRect();
+    lean.pad = false;
+    lean.wantX = Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width) * 2 - 1));
+    lean.wantY = Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height) * 2 - 1));
+
+    if (mode === 'torch') {
+      const p = toBoard(e, num('torchZ'));
+      if (p) { torch.x = p.x; torch.y = p.y; frame(); }
+    } else if (mode === 'pan' && grab && lastScene) {
+      const cam = lastScene.camera;
+      const s = toScreen(e);
+      // Screen delta back into tiles. The vertical axis carries the squash,
+      // so the same pixel drag is MORE board travel vertically than
+      // horizontally — get this wrong and a diagonal drag curves.
+      const dx = (s.x - grab.screen.x) / cam.zoom;
+      const dy = (s.y - grab.screen.y) / (cam.zoom * Math.cos(cam.tilt));
+      // Minus, because the gesture is dragging the BOARD: what is under the
+      // finger has to stay under it, so the camera travels the other way.
+      pan.x = grab.pan.x - dx;
+      pan.y = grab.pan.y - dy;
+      frame();
+    }
+  });
+
+  // Leaving the board is the cursor letting go: the view comes back to rest
+  // rather than staying stuck at whatever the last edge pixel asked for.
+  canvas.addEventListener('pointerleave', () => { lean.wantX = 0; lean.wantY = 0; });
+  canvas.addEventListener('pointerup', (e) => {
+    mode = null; grab = null; canvas.style.cursor = '';
+    // Guarded: pointerup also fires for the buttons `pointerdown` declined to
+    // capture, and releasing a capture that was never taken throws.
+    if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+  });
+
+  /**
+   * WHEEL ZOOM.
+   *
+   * MULTIPLICATIVE, not additive. Perceived zoom is logarithmic, so a fixed
+   * step in px/tile crawls when you are zoomed in and lurches when you are
+   * zoomed out; a fixed RATIO feels identical at every scale.
+   *
+   * TOWARD THE CURSOR. Keeping the board point under the pointer fixed is
+   * what makes this feel like pulling an object closer rather than like
+   * changing a scale factor — and because the projection is orthographic and
+   * axis-aligned, the re-anchor is two divisions rather than a ray cast.
+   */
+  canvas.addEventListener('wheel', (e) => {
+    // Non-passive, or the page scrolls instead of the board.
+    e.preventDefault();
+    const cam = lastScene?.camera;
+    const g = lastGeom;
+    if (!cam || !g) return;
+    const el = $('zoom');
+    const s = toScreen(e);
+    const before = unproject(s, cam, 0);
+    const next = Math.max(Number(el.min), Math.min(Number(el.max), cam.zoom * (e.deltaY > 0 ? 0.92 : 1.087)));
+    // Re-anchor so `before` stays under the cursor at the new zoom.
+    pan.x = before.x - (s.x - cam.viewport.x / 2) / next;
+    pan.y = before.y - (s.y - cam.viewport.y / 2) / (next * Math.cos(cam.tilt));
+    el.value = String(next);
+    // Keep the slider and the wheel from ever disagreeing about the zoom.
+    $('v_zoom').textContent = i0(next);
+    // Zooming out past the fit is what overview IS (§17.1), so it snaps there
+    // rather than leaving a dead band where the board floats in the middle of
+    // an oversized frame.
+    const wantMode = next <= g.fitZoom + 0.5 ? 'fit' : 'fixed';
+    if (wantMode !== seg.cammode) window.stressSet('cammode', wantMode);
+    if (wantMode === 'fixed' && seg.follow === '1') window.stressSet('follow', '0');
+    frame();
+  }, { passive: false });
+
+  await loadArt('hollow');
+  device.setTier(seg.tier);
+  // MOTION SENSITIVITY. Input-driven camera movement is a known problem, so
+  // the system preference decides the DEFAULT rather than merely being
+  // available in a menu somewhere. After the art loads, because flipping it
+  // draws a frame.
+  if (REDUCED) window.stressSet('lean', '0');
+  window.addEventListener('resize', frame);
+  frame();
+
+  // A paused page still has to draw while the lean is settling, or letting go
+  // of the cursor freezes the camera mid-lean — which looks like the damping
+  // is broken rather than like the page is paused. A connected pad keeps it
+  // ticking too, since a stick has no event to fire.
+  const hasPad = () => Array.from(navigator.getGamepads?.() ?? []).some(Boolean);
+  const loop = () => {
+    if (seg.run === '1' || !leanSettled() || hasPad()) frame();
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+} catch (e) {
+  fail(e);
+}
+</script>
