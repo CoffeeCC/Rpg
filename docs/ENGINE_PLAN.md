@@ -1843,3 +1843,52 @@ core, and probably brighter at the core to compensate — a small bright point
 reads as a light, a large dim blob reads as mist.
 
 None of these are architectural. All three are tuning plus one asset.
+
+### 18.2 Two defects the stress lab found, and one it did not finish (2026-07-26)
+
+**FIXED — `traceShadow` failed OPEN.** The DDA loop ran a fixed `SHADOW_STEPS`
+budget and then fell through to `return 1.0`. A ray that ran out of steps
+before reaching the light therefore reported itself UNOBSTRUCTED. It never
+showed while boards were 22x14 and the lantern's reach was 7, because no ray
+was ever long enough; the moment §17 allowed large boards and a long-reach room
+lamp, it painted diagonal FALSE-LIT BANDS across half the dungeon — worst at
+the `floor` tier, whose budget is 12 steps, which is the Steam Deck.
+
+Now returns `reachedLight ? 1.0 : 0.0`. Failing closed is strictly better here:
+invented light is a lie about what the player can see, which on a fog-of-war
+grid is a correctness bug rather than a look bug, while invented darkness is
+merely conservative — and §14.1 already makes darkness this engine's honest
+failure state. It costs little, because a ray long enough to exhaust the budget
+belongs to a receiver far from the light where attenuation is already small.
+
+**The constraint behind it, which is the durable lesson:** a light's reach must
+not exceed what the march can verify. Past roughly `SHADOW_STEPS` tiles the
+shadow term is guesswork whichever way it guesses, so reach and step budget have
+to be tuned together per tier.
+
+Verified: on the repro (30x20 board, room lamp, floor tier) bright pixels far
+from the light fell to 0.4% of the far field, and the bands are visibly gone.
+
+**FIXED — the renderer never drained its GPU timer.** `renderer.ts` called
+`gpuTimer.begin()`/`end()` but never `poll()`. Results arrive several frames
+later and must be collected, so `HudStats.gpuMs` read `0.00 ms` forever and one
+`WebGLQuery` leaked per frame — 216,000 an hour at 60fps. `lantern-forge.html`
+polls its own timer, which is exactly why nobody noticed: the page showing a
+working number was not the page using this class. That zero appeared in every
+screenshot this session and was skimmed past every time, which is the actual
+lesson — a plausible-looking zero hides better than a missing field. Now reads
+1.51 ms on the stress scene.
+
+**OPEN — the table renders as a staircase.** Visible in the near corner of the
+stress lab: the table surface steps in tile-sized increments instead of lying
+flat. The stress-lab agent reported this as "a sawtooth on the frame just
+outside the near border, one tooth per tile" and could not place it — it
+survives removing the contact-shadow decals AND a zero-radius light, so it is
+neither. It is considerably more obvious than that description suggests. Repro
+is in `lantern-stress.html`. Next person on the renderer should start here.
+
+**ALSO OPEN, from the same session:** derived tile normals are unusable at
+strength 1 under a grazing light — at knee height N·L on the floor is ~0.05, so
+a 15 degree bump multiplies it several times and the floor becomes crumpled
+foil. The maps are not wrong; they are authored for overhead light. Stress-lab
+default is 0.35, and the shipping default should follow.

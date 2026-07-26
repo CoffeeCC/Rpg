@@ -418,6 +418,18 @@ export class Renderer {
     drawFullscreen(gl);
 
     this.gpuTimer.end?.();
+    // DRAIN THE QUERY POOL. `begin`/`end` only ISSUE a timer query; results
+    // arrive some frames later and must be collected, and nothing was
+    // collecting them. Two consequences, both live since M1: `HudStats.gpuMs`
+    // read 0.00 forever — visible in every screenshot this session and never
+    // questioned, because a plausible-looking zero is easier to skim past than
+    // a missing field — and one WebGLQuery leaked per frame, which at 60fps is
+    // 216,000 an hour.
+    //
+    // `lantern-forge.html` polls its own timer, which is exactly why this went
+    // unnoticed: the page that displayed a working number was not the page
+    // using this class.
+    this.gpuTimer.poll?.();
     return this.stats(drawCalls, lights.length, sorted.length, start, useLighting, bins);
   }
 

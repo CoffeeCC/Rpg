@@ -141,10 +141,14 @@ float traceShadow(vec3 from, vec2 to) {
     dir.y > 0.0 ? (tile.y + 1.0 - from.y) : (from.y - tile.y)
   ) * tDelta;
 
+  // FAIL CLOSED, NOT OPEN. See the return below — this flag is the whole
+  // point of it.
+  bool reachedLight = false;
+
   for (int i = 0; i < SHADOW_STEPS; i++) {
     // Distance at which the ray leaves the tile it is in. Past the light
     // means nothing else can be in the way.
-    if (min(tMax.x, tMax.y) >= dist) break;
+    if (min(tMax.x, tMax.y) >= dist) { reachedLight = true; break; }
     if (tMax.x < tMax.y) { tile.x += advance.x; tMax.x += tDelta.x; }
     else { tile.y += advance.y; tMax.y += tDelta.y; }
     if (all(equal(tile, originTile))) continue;
@@ -163,7 +167,31 @@ float traceShadow(vec3 from, vec2 to) {
     float solid = texture(uOccupancy, (tile + 0.5) / uGridSize).r;
     if (solid > 0.5) return 0.0;
   }
-  return 1.0;
+
+  // EXHAUSTING THE STEP BUDGET MEANS "I DID NOT FINISH LOOKING", NOT "NOTHING
+  // WAS THERE".
+  //
+  // This returned 1.0 unconditionally, so a ray that ran out of steps before
+  // reaching the light reported itself UNOBSTRUCTED. On a small board with a
+  // short-reach lantern no ray was ever long enough to hit the limit, so it
+  // never showed. The moment boards got large (ENGINE_PLAN section 17) and a
+  // room lamp got a long reach, it painted diagonal FALSE-LIT BANDS across
+  // half the dungeon — worst at the floor tier, where the budget is 12
+  // steps, which is the Steam Deck.
+  //
+  // Failing closed is strictly better than failing open here. Invented light
+  // is a lie about what the player can see, and on a fog-of-war grid that is
+  // a correctness bug rather than a look bug; invented darkness is merely
+  // conservative, and section 14.1 already establishes darkness as this
+  // engine's honest failure state. It also costs little in practice: a ray
+  // long enough to exhaust the budget belongs to a receiver far from the
+  // light, where attenuation has already made the contribution small.
+  //
+  // The real lesson is a constraint, not a patch: A LIGHT'S REACH MUST NOT
+  // EXCEED WHAT THE MARCH CAN VERIFY. Beyond roughly SHADOW_STEPS tiles the
+  // shadow term is guesswork whichever way it guesses, so reach and step
+  // budget have to be tuned together per tier.
+  return reachedLight ? 1.0 : 0.0;
 }
 
 /**
