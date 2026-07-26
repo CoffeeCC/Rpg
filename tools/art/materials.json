@@ -1,0 +1,1278 @@
+{
+  "version": 1,
+  "generated": "2026-07-26T11:03:09.054Z",
+  "orbit": {
+    "angles": 16,
+    "radius": 0.34,
+    "z": 0.35,
+    "intensity": 1.6,
+    "falloff": 2.6,
+    "ambient": 0.07,
+    "specular": 0.35,
+    "gloss": 24,
+    "aoStrength": 0.7,
+    "lightColour": [
+      1,
+      0.86,
+      0.66
+    ],
+    "stride": 5,
+    "failSpread": 0.1,
+    "failSeparation": 135,
+    "rigForMode": {
+      "tiles": "point",
+      "bevel": "directional"
+    }
+  },
+  "defaults": {
+    "tiles": {
+      "denoise": 1.4,
+      "detail": 1,
+      "form": 0.55,
+      "formRadius": 9,
+      "invert": 0
+    },
+    "bevel": {
+      "alphaThreshold": 0.5,
+      "bevelRadius": "auto",
+      "bevelPercentile": 0.85,
+      "smooth": 2,
+      "detail": 1,
+      "form": 0,
+      "formRadius": 9,
+      "invert": 0
+    }
+  },
+  "assets": [
+    {
+      "id": "monsters/absorbCourt",
+      "name": "absorbCourt",
+      "set": "monsters",
+      "source": "web/public/art/monsters/absorbCourt.png",
+      "sourceSha1": "8a43fee4e65909dc18114390c738e58fe599a083",
+      "sourceBytes": 863222,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 38.601,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/absorbCourt_normal.png",
+        "height": "web/art-staging/materials/monsters/absorbCourt_height.png",
+        "ao": "web/art-staging/materials/monsters/absorbCourt_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.3708,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.3164,
+        "orbitMin": 0.2279,
+        "orbitMax": 0.5443,
+        "orbitPeak": 90,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 86354,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1709,
+        "altSeparation": 135,
+        "silhouette": {
+          "coverage": 0.4118,
+          "touchesBorder": false,
+          "bevelRadius": 38.6
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/ashesToFeathers",
+      "name": "ashesToFeathers",
+      "set": "monsters",
+      "source": "web/public/art/monsters/ashesToFeathers.png",
+      "sourceSha1": "ca1cfc60a903a993883f48fb27b2cc5ad030d142",
+      "sourceBytes": 813250,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 60.108,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/ashesToFeathers_normal.png",
+        "height": "web/art-staging/materials/monsters/ashesToFeathers_height.png",
+        "ao": "web/art-staging/materials/monsters/ashesToFeathers_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4319,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.1044,
+        "orbitMin": 0.5781,
+        "orbitMax": 0.6824,
+        "orbitPeak": 225,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 65298,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1513,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.3113,
+          "touchesBorder": false,
+          "bevelRadius": 60.11
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/bubblim",
+      "name": "bubblim",
+      "set": "monsters",
+      "source": "web/public/art/monsters/bubblim.png",
+      "sourceSha1": "e507bdde8091afffcaf8acd46132c0d8919e8ca8",
+      "sourceBytes": 582629,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 188.088,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/bubblim_normal.png",
+        "height": "web/art-staging/materials/monsters/bubblim_height.png",
+        "ao": "web/art-staging/materials/monsters/bubblim_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4368,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.1081,
+        "orbitMin": 0.4998,
+        "orbitMax": 0.6079,
+        "orbitPeak": 22.5,
+        "orbitTrough": 247.5,
+        "orbitSeparation": 135,
+        "orbitSamples": 86528,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.4253,
+        "altSeparation": 135,
+        "silhouette": {
+          "coverage": 0.4126,
+          "touchesBorder": false,
+          "bevelRadius": 188.09
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/deathlessEdict",
+      "name": "deathlessEdict",
+      "set": "monsters",
+      "source": "web/public/art/monsters/deathlessEdict.png",
+      "sourceSha1": "70e1b4cffcfc5ab6204303c6aa566585079d520d",
+      "sourceBytes": 1248877,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 40.311,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/deathlessEdict_normal.png",
+        "height": "web/art-staging/materials/monsters/deathlessEdict_height.png",
+        "ao": "web/art-staging/materials/monsters/deathlessEdict_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.6437,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0865,
+        "orbitMin": 0.5756,
+        "orbitMax": 0.662,
+        "orbitPeak": 247.5,
+        "orbitTrough": 0,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 96899,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2104,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.4618,
+          "touchesBorder": true,
+          "bevelRadius": 40.31
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/duskFiend",
+      "name": "duskFiend",
+      "set": "monsters",
+      "source": "web/public/art/monsters/duskFiend.png",
+      "sourceSha1": "513cfc80e359d2309eb2762e6cf8621e018b9fb2",
+      "sourceBytes": 636790,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 17.263,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/duskFiend_normal.png",
+        "height": "web/art-staging/materials/monsters/duskFiend_height.png",
+        "ao": "web/art-staging/materials/monsters/duskFiend_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2437,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.3409,
+        "orbitMin": 0.2683,
+        "orbitMax": 0.6092,
+        "orbitPeak": 135,
+        "orbitTrough": 315,
+        "orbitSeparation": 180,
+        "orbitSamples": 41547,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2534,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.1983,
+          "touchesBorder": false,
+          "bevelRadius": 17.26
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/fangPup",
+      "name": "fangPup",
+      "set": "monsters",
+      "source": "web/public/art/monsters/fangPup.png",
+      "sourceSha1": "13d307f9890813dacf126ae4965a15fccb409e7a",
+      "sourceBytes": 451646,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 37.336,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/fangPup_normal.png",
+        "height": "web/art-staging/materials/monsters/fangPup_height.png",
+        "ao": "web/art-staging/materials/monsters/fangPup_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2415,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2583,
+        "orbitMin": 0.2598,
+        "orbitMax": 0.5181,
+        "orbitPeak": 157.5,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 180,
+        "orbitSamples": 54914,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.4072,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.262,
+          "touchesBorder": false,
+          "bevelRadius": 37.34
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/gloomShroom",
+      "name": "gloomShroom",
+      "set": "monsters",
+      "source": "web/public/art/monsters/gloomShroom.png",
+      "sourceSha1": "1cf52e41d94c5ca785e7e2cccb77f0e107fafc6c",
+      "sourceBytes": 759339,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 27.166,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/gloomShroom_normal.png",
+        "height": "web/art-staging/materials/monsters/gloomShroom_height.png",
+        "ao": "web/art-staging/materials/monsters/gloomShroom_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4034,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.1081,
+        "orbitMin": 0.4257,
+        "orbitMax": 0.5338,
+        "orbitPeak": 157.5,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 180,
+        "orbitSamples": 54159,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1264,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.2582,
+          "touchesBorder": false,
+          "bevelRadius": 27.17
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/hollowMarionette",
+      "name": "hollowMarionette",
+      "set": "monsters",
+      "source": "web/public/art/monsters/hollowMarionette.png",
+      "sourceSha1": "3b09d00f35c06bbb0f3574838fdcb2178e638c0f",
+      "sourceBytes": 814537,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 13,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/hollowMarionette_normal.png",
+        "height": "web/art-staging/materials/monsters/hollowMarionette_height.png",
+        "ao": "web/art-staging/materials/monsters/hollowMarionette_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.5241,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.2298,
+        "orbitMin": 0.3928,
+        "orbitMax": 0.6226,
+        "orbitPeak": 90,
+        "orbitTrough": 315,
+        "orbitSeparation": 135,
+        "orbitSamples": 34409,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1516,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.1638,
+          "touchesBorder": true,
+          "bevelRadius": 13
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/livingArmor",
+      "name": "livingArmor",
+      "set": "monsters",
+      "source": "web/public/art/monsters/livingArmor.png",
+      "sourceSha1": "8af50c260e886756cd59add4ffac6ca61ec40e30",
+      "sourceBytes": 720764,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 10.63,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/livingArmor_normal.png",
+        "height": "web/art-staging/materials/monsters/livingArmor_height.png",
+        "ao": "web/art-staging/materials/monsters/livingArmor_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4468,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0497,
+        "orbitMin": 0.4355,
+        "orbitMax": 0.4852,
+        "orbitPeak": 90,
+        "orbitTrough": 270,
+        "orbitSeparation": 180,
+        "orbitSamples": 39042,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1205,
+        "altSeparation": 135,
+        "silhouette": {
+          "coverage": 0.1863,
+          "touchesBorder": false,
+          "bevelRadius": 10.63
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/obsidianWarden",
+      "name": "obsidianWarden",
+      "set": "monsters",
+      "source": "web/public/art/monsters/obsidianWarden.png",
+      "sourceSha1": "bef9b303c9b57ca5aa3acd39ece02e4e89ac5e46",
+      "sourceBytes": 1296759,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 30.017,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/obsidianWarden_normal.png",
+        "height": "web/art-staging/materials/monsters/obsidianWarden_height.png",
+        "ao": "web/art-staging/materials/monsters/obsidianWarden_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4992,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2679,
+        "orbitMin": 0.2132,
+        "orbitMax": 0.4811,
+        "orbitPeak": 270,
+        "orbitTrough": 112.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 73967,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2418,
+        "altSeparation": 135,
+        "silhouette": {
+          "coverage": 0.3527,
+          "touchesBorder": true,
+          "bevelRadius": 30.02
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/peckerel",
+      "name": "peckerel",
+      "set": "monsters",
+      "source": "web/public/art/monsters/peckerel.png",
+      "sourceSha1": "245045407b937564d8a7b838b25f8f125f273446",
+      "sourceBytes": 442487,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 24.698,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/peckerel_normal.png",
+        "height": "web/art-staging/materials/monsters/peckerel_height.png",
+        "ao": "web/art-staging/materials/monsters/peckerel_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.3563,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2865,
+        "orbitMin": 0.1969,
+        "orbitMax": 0.4834,
+        "orbitPeak": 90,
+        "orbitTrough": 270,
+        "orbitSeparation": 180,
+        "orbitSamples": 33695,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1384,
+        "altSeparation": 112.5,
+        "silhouette": {
+          "coverage": 0.1608,
+          "touchesBorder": false,
+          "bevelRadius": 24.7
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/roostVigil",
+      "name": "roostVigil",
+      "set": "monsters",
+      "source": "web/public/art/monsters/roostVigil.png",
+      "sourceSha1": "a351afc3dcf6780a6a3e5fee8044aa4cb838b75e",
+      "sourceBytes": 1081659,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 25.71,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/roostVigil_normal.png",
+        "height": "web/art-staging/materials/monsters/roostVigil_height.png",
+        "ao": "web/art-staging/materials/monsters/roostVigil_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.5549,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2191,
+        "orbitMin": 0.452,
+        "orbitMax": 0.6711,
+        "orbitPeak": 112.5,
+        "orbitTrough": 270,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 93505,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1588,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.4456,
+          "touchesBorder": true,
+          "bevelRadius": 25.71
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/skitterling",
+      "name": "skitterling",
+      "set": "monsters",
+      "source": "web/public/art/monsters/skitterling.png",
+      "sourceSha1": "3f0297f8fecad53c092b7f6df9d1af75b189cdb6",
+      "sourceBytes": 478935,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 55.866,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/skitterling_normal.png",
+        "height": "web/art-staging/materials/monsters/skitterling_height.png",
+        "ao": "web/art-staging/materials/monsters/skitterling_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.4596,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.1583,
+        "orbitMin": 0.3662,
+        "orbitMax": 0.5245,
+        "orbitPeak": 135,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 39228,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2289,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.1871,
+          "touchesBorder": false,
+          "bevelRadius": 55.87
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/stormDrake",
+      "name": "stormDrake",
+      "set": "monsters",
+      "source": "web/public/art/monsters/stormDrake.png",
+      "sourceSha1": "189aa02c079b318142eefc7ab4796e96d227275e",
+      "sourceBytes": 836724,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 36.401,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/stormDrake_normal.png",
+        "height": "web/art-staging/materials/monsters/stormDrake_height.png",
+        "ao": "web/art-staging/materials/monsters/stormDrake_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.3753,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2381,
+        "orbitMin": 0.3476,
+        "orbitMax": 0.5858,
+        "orbitPeak": 135,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 89900,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2816,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.4284,
+          "touchesBorder": false,
+          "bevelRadius": 36.4
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/thunderheadDive",
+      "name": "thunderheadDive",
+      "set": "monsters",
+      "source": "web/public/art/monsters/thunderheadDive.png",
+      "sourceSha1": "553adf4800243edd3e251d0cc19d50881602dbf9",
+      "sourceBytes": 624311,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "bevelRadius": 41.11,
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/thunderheadDive_normal.png",
+        "height": "web/art-staging/materials/monsters/thunderheadDive_height.png",
+        "ao": "web/art-staging/materials/monsters/thunderheadDive_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.3531,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.3246,
+        "orbitMin": 0.3317,
+        "orbitMax": 0.6563,
+        "orbitPeak": 90,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 46620,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.2455,
+        "altSeparation": 135,
+        "silhouette": {
+          "coverage": 0.2224,
+          "touchesBorder": false,
+          "bevelRadius": 41.11
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/abyss_ground",
+      "name": "abyss_ground",
+      "set": "tiles",
+      "source": "web/public/art/tiles/abyss_ground.jpg",
+      "sourceSha1": "727c4e6a059dfa185aa3ff913516cdfb06f5774e",
+      "sourceBytes": 164525,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/abyss_ground_normal.png",
+        "height": "web/art-staging/materials/tiles/abyss_ground_height.png",
+        "ao": "web/art-staging/materials/tiles/abyss_ground_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.145,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": false,
+        "orbitSpread": 0.1661,
+        "orbitMin": 0.2481,
+        "orbitMax": 0.4142,
+        "orbitPeak": 90,
+        "orbitTrough": 270,
+        "orbitSeparation": 180,
+        "orbitSamples": 209716,
+        "controlSpread": 0.3089,
+        "altRig": "directional",
+        "altSpread": 0.062,
+        "altSeparation": 90,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "fail",
+        "note": "baked directional light survived in this art. The derived normals are inverted where the artist painted shading, and the surface will read inside-out as the lantern swings past."
+      }
+    },
+    {
+      "id": "tiles/abyss_wall",
+      "name": "abyss_wall",
+      "set": "tiles",
+      "source": "web/public/art/tiles/abyss_wall.jpg",
+      "sourceSha1": "5c30d9cc22bb832c43cd998a8b21be46168d6526",
+      "sourceBytes": 186744,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/abyss_wall_normal.png",
+        "height": "web/art-staging/materials/tiles/abyss_wall_height.png",
+        "ao": "web/art-staging/materials/tiles/abyss_wall_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.0616,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.012,
+        "orbitMin": 0.2591,
+        "orbitMax": 0.2711,
+        "orbitPeak": 0,
+        "orbitTrough": 135,
+        "orbitSeparation": 135,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0447,
+        "altRig": "directional",
+        "altSpread": 0.0204,
+        "altSeparation": 112.5,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/hollow_ground",
+      "name": "hollow_ground",
+      "set": "tiles",
+      "source": "web/public/art/tiles/hollow_ground.jpg",
+      "sourceSha1": "316de737fa0f8b03db6c8dc8c78f66212e7d8391",
+      "sourceBytes": 304076,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/hollow_ground_normal.png",
+        "height": "web/art-staging/materials/tiles/hollow_ground_height.png",
+        "ao": "web/art-staging/materials/tiles/hollow_ground_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.1061,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0586,
+        "orbitMin": 0.0672,
+        "orbitMax": 0.1258,
+        "orbitPeak": 180,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.1515,
+        "altRig": "directional",
+        "altSpread": 0.0026,
+        "altSeparation": 90,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/hollow_wall",
+      "name": "hollow_wall",
+      "set": "tiles",
+      "source": "web/public/art/tiles/hollow_wall.jpg",
+      "sourceSha1": "c3f4b9c27fb01619035b67d6c2f382a1368f870e",
+      "sourceBytes": 312094,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/hollow_wall_normal.png",
+        "height": "web/art-staging/materials/tiles/hollow_wall_height.png",
+        "ao": "web/art-staging/materials/tiles/hollow_wall_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2329,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.023,
+        "orbitMin": 0.4424,
+        "orbitMax": 0.4654,
+        "orbitPeak": 135,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0383,
+        "altRig": "directional",
+        "altSpread": 0.0347,
+        "altSeparation": 90,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/storm_ground",
+      "name": "storm_ground",
+      "set": "tiles",
+      "source": "web/public/art/tiles/storm_ground.jpg",
+      "sourceSha1": "af8cdebbb382a11b04bea1196fcb8069b819111f",
+      "sourceBytes": 299969,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/storm_ground_normal.png",
+        "height": "web/art-staging/materials/tiles/storm_ground_height.png",
+        "ao": "web/art-staging/materials/tiles/storm_ground_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2974,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0265,
+        "orbitMin": 0.3252,
+        "orbitMax": 0.3518,
+        "orbitPeak": 0,
+        "orbitTrough": 247.5,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0483,
+        "altRig": "directional",
+        "altSpread": 0.0853,
+        "altSeparation": 112.5,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/storm_wall",
+      "name": "storm_wall",
+      "set": "tiles",
+      "source": "web/public/art/tiles/storm_wall.jpg",
+      "sourceSha1": "fb0a6669f9542018794072a091b7a8e64408e805",
+      "sourceBytes": 307554,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/storm_wall_normal.png",
+        "height": "web/art-staging/materials/tiles/storm_wall_height.png",
+        "ao": "web/art-staging/materials/tiles/storm_wall_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2845,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0149,
+        "orbitMin": 0.5617,
+        "orbitMax": 0.5767,
+        "orbitPeak": 90,
+        "orbitTrough": 337.5,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0408,
+        "altRig": "directional",
+        "altSpread": 0.0572,
+        "altSeparation": 112.5,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/sunken_ground",
+      "name": "sunken_ground",
+      "set": "tiles",
+      "source": "web/public/art/tiles/sunken_ground.jpg",
+      "sourceSha1": "075326b33f34a655e9c0b2d674b5a68ae7340f8c",
+      "sourceBytes": 347468,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/sunken_ground_normal.png",
+        "height": "web/art-staging/materials/tiles/sunken_ground_height.png",
+        "ao": "web/art-staging/materials/tiles/sunken_ground_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.5024,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0235,
+        "orbitMin": 0.4784,
+        "orbitMax": 0.5018,
+        "orbitPeak": 202.5,
+        "orbitTrough": 0,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0397,
+        "altRig": "directional",
+        "altSpread": 0.0164,
+        "altSeparation": 135,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/sunken_wall",
+      "name": "sunken_wall",
+      "set": "tiles",
+      "source": "web/public/art/tiles/sunken_wall.jpg",
+      "sourceSha1": "6749326f4dc592c55520b9a12610d30945fd0c9d",
+      "sourceBytes": 370509,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/sunken_wall_normal.png",
+        "height": "web/art-staging/materials/tiles/sunken_wall_height.png",
+        "ao": "web/art-staging/materials/tiles/sunken_wall_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2863,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0383,
+        "orbitMin": 0.5115,
+        "orbitMax": 0.5498,
+        "orbitPeak": 67.5,
+        "orbitTrough": 225,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0324,
+        "altRig": "directional",
+        "altSpread": 0.0603,
+        "altSeparation": 135,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/verdant_ground",
+      "name": "verdant_ground",
+      "set": "tiles",
+      "source": "web/public/art/tiles/verdant_ground.jpg",
+      "sourceSha1": "c713cb6919f9553d4aa577efb7bdf4168e13f6a7",
+      "sourceBytes": 399817,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/verdant_ground_normal.png",
+        "height": "web/art-staging/materials/tiles/verdant_ground_height.png",
+        "ao": "web/art-staging/materials/tiles/verdant_ground_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.1638,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0049,
+        "orbitMin": 0.1791,
+        "orbitMax": 0.1841,
+        "orbitPeak": 270,
+        "orbitTrough": 157.5,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0142,
+        "altRig": "directional",
+        "altSpread": 0.0075,
+        "altSeparation": 135,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "tiles/verdant_wall",
+      "name": "verdant_wall",
+      "set": "tiles",
+      "source": "web/public/art/tiles/verdant_wall.jpg",
+      "sourceSha1": "ef3030eef5dbd49bcfb803f65e9acca8290ecd70",
+      "sourceBytes": 367467,
+      "width": 1024,
+      "height": 1024,
+      "mode": "tiles",
+      "params": {
+        "denoise": 1.4,
+        "detail": 1,
+        "form": 0.55,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/tiles/verdant_wall_normal.png",
+        "height": "web/art-staging/materials/tiles/verdant_wall_height.png",
+        "ao": "web/art-staging/materials/tiles/verdant_wall_ao.png"
+      },
+      "measured": {
+        "tonalRange": 0.2323,
+        "levelsApplied": true,
+        "orbitRig": "point",
+        "orbitPass": true,
+        "orbitSpread": 0.0095,
+        "orbitMin": 0.4377,
+        "orbitMax": 0.4471,
+        "orbitPeak": 315,
+        "orbitTrough": 157.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 209716,
+        "controlSpread": 0.0173,
+        "altRig": "directional",
+        "altSpread": 0.0245,
+        "altSeparation": 180,
+        "silhouette": null
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    }
+  ]
+}
