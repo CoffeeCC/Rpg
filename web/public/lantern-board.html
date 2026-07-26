@@ -135,6 +135,12 @@
     <button data-v="5">Normal</button>
   </div>
 
+  <h2>Piece relief</h2>
+  <label><span class="row">Depth<b id="vRelief">1.00</b></span>
+    <input type="range" id="relief" min="0" max="2.5" step="0.01" value="1" /></label>
+  <p class="note">0 is a flat card — the standee before §15. Raise it and the
+    EDT bevel carves the figure, so the lantern rakes across its form.</p>
+
   <h2>Status</h2>
   <div id="stats">—</div>
   <p id="err"></p>
@@ -282,12 +288,60 @@ try {
     });
   }
 
+
+  /**
+   * Load a DATA texture — a normal map — and do NOT ask for sRGB.
+   *
+   * `loadTexture` above uses SRGB8_ALPHA8 so the hardware decodes colour to
+   * linear. A normal map is three numbers that happen to be stored in a PNG,
+   * and putting them through an sRGB decode bends every one of them: 0.5,
+   * which is the encoding of "no tilt on this axis", would arrive as 0.21.
+   * Every surface would light as though tilted hard.
+   *
+   * This is the same mistake the Blender bake made in the other direction —
+   * see `tools/art/blender/bake.py`, which was writing sRGB-ENCODED normals
+   * until the red channel came out at 185 instead of 128.
+   */
+  async function loadNormal(url) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    try {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error(url)); img.src = url; });
+    } catch { return null; }   // no bake yet is not an error; the piece lights flat
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return tex;
+  }
+
+  /**
+   * The baked relief lives in gitignored staging, which Vite does not serve.
+   * `/@fs/` reaches it in dev without copying anything into `public/` — where
+   * it would be swept into every production build.
+   */
+  const STAGING = '/@fs/C:/Users/Paulw/repos/Rpg/web/art-staging/materials';
+
+  /** Relief depth, read live so the slider does not need a reload. */
+  const pieceRelief = () => Number(($('relief') || {}).value ?? 1);
+
   async function loadGate(name) {
     const ground = await loadTexture(`art/tiles/${name}_ground.jpg`);
     const wall = await loadTexture(`art/tiles/${name}_wall.jpg`);
     const hero = await loadTexture('art/sprites/player.png');
     const merchant = await loadTexture('art/sprites/merchant.png');
     const tamer = await loadTexture('art/sprites/tamer.png');
+    // THE CARVED RELIEF (ENGINE_PLAN §15). EDT beveling derives a height
+    // field from the sprite's ALPHA, so the outline becomes the geometry and
+    // the figure lights as a bas-relief instead of as a flat card.
+    const heroN = await loadNormal(`${STAGING}/sprites/player_normal.png`);
+    const merchantN = await loadNormal(`${STAGING}/sprites/merchant_normal.png`);
+    const tamerN = await loadNormal(`${STAGING}/sprites/tamer_normal.png`);
     materials = new Map([
       ...furniture,
       // `inlay` is what stops the floor reading as one continuous slab of
@@ -295,10 +349,18 @@ try {
       // board resolves into laid pieces the moment the lantern moves.
       ['ground', { id: 'ground', albedo: ground, inlay: 1 }],
       ['wall', { id: 'wall', albedo: wall, inlay: 0.85 }],
-      ['hero', { id: 'hero', albedo: hero }],
-      ['merchant', { id: 'merchant', albedo: merchant }],
-      ['tamer', { id: 'tamer', albedo: tamer }],
+      // No per-material normalStrength on purpose: the renderer's per-material
+      // value OVERRIDES the global one, so leaving it off is what lets the
+      // relief slider reach the pieces while the furniture keeps its own.
+      ['hero', { id: 'hero', albedo: hero, normal: heroN }],
+      ['merchant', { id: 'merchant', albedo: merchant, normal: merchantN }],
+      ['tamer', { id: 'tamer', albedo: tamer, normal: tamerN }],
     ]);
+    // Diagnostic handle: which materials actually got a relief map. A null
+    // normal is silent by design (an unbaked asset must still render), so
+    // without this "the slider does nothing" is indistinguishable from "the
+    // bake never loaded".
+    window.__mats = materials;
   }
 
   /**
@@ -513,6 +575,7 @@ try {
       bloomStrength: Number($('bloom').value),
       bloomThreshold: Number($('thr').value),
       tonemap: current.tonemap,
+      normalStrength: pieceRelief(),
       lit: current.lit,
       debug: current.debug,
       seamWidth: Number($('sw').value),
@@ -539,6 +602,7 @@ try {
     seamWidth: Number($('sw').value),
     seamDarken: Number($('sd').value),
     seamBevel: Number($('sb').value),
+    normalStrength: pieceRelief(),
     ...opts,
   });
   window.boardScene = (t) => buildScene(t);
