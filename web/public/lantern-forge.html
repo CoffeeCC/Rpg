@@ -1,0 +1,336 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Lantern Forge — HDR chain</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  LANTERN FORGE
+  =============
+  The M1 render chain, end to end, on a synthetic scene:
+
+      HDR scene (RGBA16F)  ->  bloom mip chain  ->  AgX  ->  display
+
+  Everything here imports the REAL modules under src/lantern — the same
+  tonemap constants, the same bloom shaders, the same targets the game will
+  use. It is not a mock; if this looks right, that code is right.
+
+  It exists to make the decisions in docs/ENGINE_PLAN.md §9.6 LOOKABLE rather
+  than merely documented. Every one of them has a toggle, and every toggle
+  shows the artifact it was chosen to avoid:
+
+    Tonemap: AgX / ACES / none   watch the flame's hue as Exposure rises.
+                                 ACES walks warm orange to yellow and then to
+                                 white; "none" clips to flat discs.
+    Karis average: on / off      off, the bright specks scintillate and bloom
+                                 into hard dots — fireflies.
+    Knee: soft / hard            hard, a visible ring appears where the
+                                 threshold cuts, and it crawls as you drag
+                                 Exposure.
+
+  Dev-server only: it imports .ts directly, which Vite compiles on the fly.
+-->
+<style>
+  :root { --ink:#e8e3d8; --dim:#9a9384; --edge:#2a2620; --panel:#14120f; --bg:#080706; --gold:#d9a441; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    display:grid; grid-template-columns:280px 1fr; height:100vh; overflow:hidden;
+  }
+  #panel { background:var(--panel); border-right:1px solid var(--edge); padding:14px; overflow-y:auto; }
+  h1 { font-size:15px; margin:0 0 2px; letter-spacing:.04em; color:var(--gold); }
+  .sub { color:var(--dim); font-size:11px; margin-bottom:14px; }
+  h2 { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim);
+       margin:16px 0 8px; border-bottom:1px solid var(--edge); padding-bottom:4px; }
+  label { display:block; margin-bottom:9px; }
+  .row { display:flex; justify-content:space-between; font-size:11px; color:var(--dim); }
+  .row b { color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:var(--gold); }
+  .seg { display:grid; grid-auto-flow:column; gap:4px; margin-bottom:9px; }
+  .seg button { background:#1d1a15; color:var(--ink); border:1px solid var(--edge);
+                border-radius:4px; padding:5px 4px; font:inherit; font-size:11px; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--gold); color:#14120f; border-color:var(--gold); font-weight:600; }
+  #stage { position:relative; display:grid; place-items:center; background:#000; overflow:hidden; }
+  canvas { max-width:100%; max-height:100vh; display:block; }
+  .note { color:var(--dim); font-size:10.5px; line-height:1.45; margin:6px 0 0; }
+  #err { color:#e06d5a; font-size:11px; white-space:pre-wrap; }
+  #stats { font-family:ui-monospace, monospace; font-size:10.5px; color:var(--dim); white-space:pre; }
+</style>
+
+<div id="panel">
+  <h1>Lantern Forge</h1>
+  <div class="sub">M1 render chain · WebGL2 · RGBA16F</div>
+
+  <h2>Tonemap</h2>
+  <div class="seg" id="tm">
+    <button data-v="0" aria-pressed="true">AgX</button>
+    <button data-v="1">ACES</button>
+    <button data-v="2">None</button>
+  </div>
+  <p class="note">Raise Exposure and watch the flame. ACES marches warm orange to
+    yellow, then white. None clips to flat discs.</p>
+
+  <h2>Scene</h2>
+  <label><span class="row">Exposure<b id="vExp">0.0</b></span>
+    <input type="range" id="exp" min="-3" max="6" step="0.05" value="0" /></label>
+  <label><span class="row">Flame intensity<b id="vInt">6.0</b></span>
+    <input type="range" id="int" min="0" max="40" step="0.1" value="6" /></label>
+
+  <h2>Bloom</h2>
+  <div class="seg" id="karis">
+    <button data-v="1" aria-pressed="true">Karis on</button>
+    <button data-v="0">off</button>
+  </div>
+  <div class="seg" id="knee">
+    <button data-v="1" aria-pressed="true">Soft knee</button>
+    <button data-v="0">hard</button>
+  </div>
+  <label><span class="row">Strength<b id="vBloom">0.55</b></span>
+    <input type="range" id="bloom" min="0" max="1.5" step="0.01" value="0.55" /></label>
+  <label><span class="row">Threshold<b id="vThr">1.00</b></span>
+    <input type="range" id="thr" min="0" max="4" step="0.01" value="1" /></label>
+  <label><span class="row">Sparks (fireflies)<b id="vSpk">40</b></span>
+    <input type="range" id="spk" min="0" max="200" step="1" value="40" /></label>
+  <p class="note">Turn Karis off with sparks up: the specks bloom into hard dots
+    instead of dissolving into haze.</p>
+
+  <h2>Tier</h2>
+  <div class="seg" id="tier">
+    <button data-v="floor">Floor</button>
+    <button data-v="mid" aria-pressed="true">Mid</button>
+    <button data-v="ceiling">Ceiling</button>
+  </div>
+
+  <h2>Status</h2>
+  <div id="stats">—</div>
+  <p id="err"></p>
+</div>
+
+<div id="stage"><canvas id="gl" width="1280" height="800"></canvas></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const err = (m) => { $('err').textContent = String(m?.stack || m?.message || m); console.error(m); };
+
+try {
+  const { createDevice } = await import('/src/lantern/gl/device.ts');
+  const { ProgramCache, withDefines } = await import('/src/lantern/gl/program.ts');
+  const { createTarget, bindTarget, drawFullscreen, bindTextures } = await import('/src/lantern/gl/target.ts');
+  const { AGX_GLSL } = await import('/src/lantern/passes/tonemap.ts');
+  const { BLOOM_DOWNSAMPLE_GLSL, BLOOM_UPSAMPLE_GLSL, mipChain } = await import('/src/lantern/passes/bloom.ts');
+  const { TIERS } = await import('/src/lantern/quality.ts');
+
+  const canvas = $('gl');
+  const { device, status, reason } = createDevice(canvas);
+  if (!device) throw new Error(`${status}: ${reason}`);
+  const gl = device.gl;
+  const cache = new ProgramCache(gl);
+
+  // ---------------------------------------------------------------------
+  // The scene. A dark board, a warm lantern, a cool rim light, and a
+  // scattering of tiny very bright sparks — chosen because that combination
+  // is precisely what breaks naive bloom and naive tonemapping.
+  // ---------------------------------------------------------------------
+  const SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 outColor;
+uniform vec2 uRes;
+uniform float uTime, uFlame, uSparks;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+void main() {
+  vec2 uv = vUv;
+  vec2 p = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+
+  // A board: dim, warm, with a grid of tiles so there is structure for the
+  // light to fall across rather than a flat field.
+  vec2 g = fract(uv * vec2(16.0, 10.0));
+  float mortar = smoothstep(0.0, 0.03, min(g.x, g.y)) * smoothstep(0.0, 0.03, min(1.0-g.x, 1.0-g.y));
+  vec3 board = mix(vec3(0.010, 0.009, 0.012), vec3(0.055, 0.042, 0.030), mortar);
+
+  // The lantern: an emitter well above 1.0, which is the entire point of an
+  // HDR pipeline. Its falloff is inverse-square with a smooth window.
+  vec2 lamp = vec2(cos(uTime * 0.4) * 0.28, sin(uTime * 0.31) * 0.16);
+  float d = length(p - lamp);
+  float fall = 1.0 / (1.0 + 26.0 * d * d);
+  vec3 warm = vec3(1.0, 0.62, 0.26);
+  vec3 col = board * warm * fall * uFlame * 0.5;
+  // The flame core itself, small and very bright.
+  col += warm * uFlame * smoothstep(0.055, 0.0, d) * 4.0;
+
+  // A cool fill from the opposite side, so there is a second hue to judge
+  // the tonemapper's hue handling against.
+  float d2 = length(p - vec2(0.42, -0.24));
+  col += vec3(0.30, 0.52, 1.0) * (1.0 / (1.0 + 60.0 * d2 * d2)) * 0.8;
+
+  // Sparks: single very bright texels. These are the fireflies.
+  vec2 cell = floor(uv * 220.0);
+  float h = hash(cell);
+  if (h > 1.0 - uSparks / 4000.0) col += warm * 260.0 * h;
+
+  outColor = vec4(max(col, vec3(0.0)), 1.0);
+}`;
+
+  // The snippets from bloom.ts declare their own uniforms, so the wrappers
+  // must NOT redeclare them — GLSL rejects a redefinition outright. Keeping
+  // the uniforms inside the snippet is what makes it drop-in.
+  const PREFILTER = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 outColor;
+${BLOOM_DOWNSAMPLE_GLSL}
+void main(){ outColor = vec4(bloomPrefilter(bloomDownsample(vUv)), 1.0); }`;
+
+  const DOWN = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 outColor;
+${BLOOM_DOWNSAMPLE_GLSL}
+void main(){ outColor = vec4(bloomDownsample(vUv), 1.0); }`;
+
+  const UP = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 outColor;
+${BLOOM_UPSAMPLE_GLSL}
+void main(){ outColor = vec4(bloomUpsample(vUv), 1.0); }`;
+
+  const COMPOSITE = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 outColor;
+uniform sampler2D uScene, uBloom;
+uniform float uBloomAmount, uExposure;
+uniform int uTonemap;
+${AGX_GLSL}
+vec3 aces(vec3 x){
+  const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+}
+void main() {
+  vec3 col = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uBloomAmount;
+  col *= uExposure;
+  vec3 mapped;
+  if (uTonemap == 0) mapped = agx(col);
+  // ACES and the clipping path both need an sRGB encode; AgX already outputs
+  // display-referred, which is why only these two get the pow().
+  else if (uTonemap == 1) mapped = pow(aces(col), vec3(1.0/2.2));
+  else mapped = pow(clamp(col, 0.0, 1.0), vec3(1.0/2.2));
+  outColor = vec4(mapped, 1.0);
+}`;
+
+  // ---------------------------------------------------------------------
+  let sceneRT = null, mips = [], W = 0, H = 0;
+  const state = { tonemap: 0, karis: 1, knee: 1, tier: 'mid', exposure: 0, flame: 6, bloom: 0.55, thr: 1, sparks: 40 };
+
+  function allocate() {
+    const q = TIERS[state.tier];
+    device.resize(canvas.clientWidth || 1280, canvas.clientHeight || 800, window.devicePixelRatio || 1);
+    ({ width: W, height: H } = device.size());
+    sceneRT?.dispose();
+    for (const m of mips) m.dispose();
+    sceneRT = createTarget(gl, W, H, { format: 'rgba16f' });
+    mips = mipChain(W, H, q.bloomSteps).map((s) => createTarget(gl, s.width, s.height, { format: 'rgba16f' }));
+  }
+
+  const t0 = performance.now();
+  let lastMs = 0;
+
+  function frame() {
+    // The control wiring below calls sync() to seed its labels, and sync()
+    // draws. Guard rather than relying on setup order.
+    if (!sceneRT) return;
+    const start = performance.now();
+    const t = (start - t0) / 1000;
+
+    // 1. Scene -> HDR
+    const scene = cache.get('scene', SCENE);
+    gl.useProgram(scene.handle);
+    bindTarget(gl, sceneRT);
+    gl.uniform2f(scene.u('uRes'), W, H);
+    gl.uniform1f(scene.u('uTime'), t);
+    gl.uniform1f(scene.u('uFlame'), state.flame);
+    gl.uniform1f(scene.u('uSparks'), state.sparks);
+    drawFullscreen(gl);
+
+    // 2. Bloom down. Karis and the knee apply on the FIRST step only.
+    let src = sceneRT;
+    for (let i = 0; i < mips.length; i++) {
+      const prog = cache.get(i === 0 ? 'prefilter' : 'down', i === 0 ? PREFILTER : DOWN);
+      gl.useProgram(prog.handle);
+      bindTarget(gl, mips[i]);
+      bindTextures(gl, prog, { uSrc: src.texture });
+      gl.uniform2f(prog.u('uTexel'), 1 / src.width, 1 / src.height);
+      gl.uniform1i(prog.u('uKaris'), i === 0 ? state.karis : 0);
+      gl.uniform1f(prog.u('uThreshold'), state.thr);
+      gl.uniform1f(prog.u('uKnee'), state.knee ? 0.6 : 0.0001);
+      drawFullscreen(gl);
+      src = mips[i];
+    }
+
+    // 3. Bloom up, accumulating additively so the falloff is multi-scale.
+    const up = cache.get('up', UP);
+    gl.useProgram(up.handle);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    for (let i = mips.length - 1; i > 0; i--) {
+      bindTarget(gl, mips[i - 1]);
+      bindTextures(gl, up, { uSrc: mips[i].texture });
+      gl.uniform2f(up.u('uTexel'), 1 / mips[i].width, 1 / mips[i].height);
+      gl.uniform1f(up.u('uRadius'), 1.0);
+      drawFullscreen(gl);
+    }
+    gl.disable(gl.BLEND);
+
+    // 4. Composite + tonemap to the canvas.
+    const comp = cache.get('composite', COMPOSITE);
+    gl.useProgram(comp.handle);
+    bindTarget(gl, null, W, H);
+    bindTextures(gl, comp, { uScene: sceneRT.texture, uBloom: (mips[0] ?? sceneRT).texture });
+    gl.uniform1f(comp.u('uBloomAmount'), mips.length ? state.bloom : 0);
+    gl.uniform1f(comp.u('uExposure'), Math.pow(2, state.exposure));
+    gl.uniform1i(comp.u('uTonemap'), state.tonemap);
+    drawFullscreen(gl);
+
+    lastMs = performance.now() - start;
+    const q = TIERS[state.tier];
+    $('stats').textContent =
+      `${W}x${H}  RGBA16F\n` +
+      `tier      ${q.name}\n` +
+      `bloom     ${mips.length} mips\n` +
+      `cpu       ${lastMs.toFixed(2)} ms\n` +
+      `programs  ${cache.size}\n` +
+      `gpu       ${(device.caps.renderer ?? '?').slice(0, 30)}`;
+  }
+
+  // Render synchronously on any change, AND on rAF when the pane is visible.
+  // The sync path is what lets this be verified with gl.readPixels in an
+  // environment where requestAnimationFrame never fires.
+  window.forgeFrame = frame;
+  let raf = 0;
+  const loop = () => { frame(); raf = requestAnimationFrame(loop); };
+
+  function seg(id, key, cast = Number) {
+    for (const b of $(id).querySelectorAll('button')) {
+      b.onclick = () => {
+        state[key] = cast(b.dataset.v);
+        for (const o of $(id).querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+        if (key === 'tier') allocate();
+        frame();
+      };
+    }
+  }
+  seg('tm', 'tonemap'); seg('karis', 'karis'); seg('knee', 'knee'); seg('tier', 'tier', String);
+
+  for (const [id, key, out, dp] of [['exp','exposure','vExp',1],['int','flame','vInt',1],
+                                    ['bloom','bloom','vBloom',2],['thr','thr','vThr',2],['spk','sparks','vSpk',0]]) {
+    const el = $(id);
+    const sync = () => { state[key] = parseFloat(el.value); $(out).textContent = state[key].toFixed(dp); frame(); };
+    el.addEventListener('input', sync);
+    sync();
+  }
+
+  allocate();
+  frame();
+  raf = requestAnimationFrame(loop);
+  window.addEventListener('resize', () => { allocate(); frame(); });
+} catch (e) {
+  err(e);
+}
+</script>
