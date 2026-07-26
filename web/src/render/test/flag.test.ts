@@ -206,13 +206,29 @@ describe('the console comes off the DOM and onto the board', () => {
   });
 
   it('leaves the CARDS alone — they are contents, not carpentry', () => {
-    // `.pile-cardback`'s stacked-edge shadows are the pile itself, and the card
-    // render is its own pass. The tray behind them is sized to their box, so
-    // taking their paint here would strip a surface nothing else draws yet.
+    // The card render is its own pass, and that is what decides this list.
+    //
+    // `.pile-cardback` USED TO BE HERE, on the reasoning that taking its paint
+    // "would strip a surface nothing else draws yet". That premise expired the
+    // moment the card pass landed: `cardScene.ts` draws the baked `card_back`
+    // — engine-turned rosette, gilt double border, lit and catching the
+    // lantern — at the pile's own box. Keeping the CSS paint on top would put
+    // a flat painting over a lit surface, which is §1.2 backwards.
+    //
+    // `.hand-fan` left for the same reason. It is not restyled for LOOK — the
+    // card pass needs it because `.hand-zone` is a stacking context
+    // (`position: relative` + `z-index: 1`), so a stage-level canvas painted
+    // card bodies OVER every card's name, art and rules text while reading as
+    // correct in every computed style. The fan's z-index is the fix.
+    //
+    // Everything still listed is genuinely contents or layout: the slots are
+    // geometry the renderer MEASURES rather than replaces, and the counts and
+    // names are text, which §1.2 leaves in the DOM.
+    //
     // Selectors only: the stylesheet's prose says why these are left alone, and
     // a substring search over the whole file would match the explanation.
     const allSels = rules.flatMap((r) => r.sels);
-    for (const untouched of ['.pile-cardback', '.hand-fan', '.hand-slot', '.pile-count-num', '.pile-name']) {
+    for (const untouched of ['.hand-slot', '.pile-count-num', '.pile-name']) {
       expect(allSels.some((s) => s.includes(untouched)), `${untouched} must keep its own paint`).toBe(false);
     }
   });

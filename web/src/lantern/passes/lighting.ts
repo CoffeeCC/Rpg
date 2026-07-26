@@ -314,8 +314,41 @@ const float GLOSS_MIRROR = 220.0;
  * BANDS controls how many spectral cycles the sweep runs through. Too few and
  * it reads as a colour cast; too many and it aliases into the sparkle the
  * grating pitch was chosen to avoid.
+ *
+ * 60, AND THE FIRST VALUE HERE WAS 7 BECAUSE NOTHING HAD A FOIL MASK TO TEST
+ * IT AGAINST. The number is not free: it is one cycle per unit of dot(N, H),
+ * and on a BILLBOARD dot(N, H) barely moves. A card faces the viewer, so its
+ * normal is the view direction; the light has to stand near that axis for the
+ * lobe to fire at all; and what is left for the grating to modulate is the
+ * span the specular exponent has not already crushed to zero. Measured on the
+ * shipping card at the shipping light: the grating swings dot(N, H) between
+ * 0.926 and 0.995, of which the part where the lobe is still above 5% is about
+ * 0.045 wide. At 7 bands that is a third of one cycle — a colour CAST, exactly
+ * as this comment warned, and it read as gold corduroy. At 60 it is a little
+ * under three cycles, which is a rainbow that runs along the grooves.
+ *
+ * Nothing else in the project sets iridescence above zero (the board's material
+ * maps write 0 into B), so this constant is the card set's alone until
+ * something else asks for it.
  */
-const float IRID_BANDS = 7.0;
+const float IRID_BANDS = 60.0;
+/**
+ * HOW MUCH BRIGHTER THE GRATING IS THAN THE LOBE IT RIDES.
+ *
+ * A Blinn-Phong lobe models SCATTERING: the surface takes the light and throws
+ * it back over a cone, so what any one direction receives is a fraction of what
+ * arrived. A diffraction grating does not scatter, it SEPARATES — it sends each
+ * wavelength off in its own direction at close to full strength, which is why a
+ * holo card flashes brighter than the gloss around it rather than dimmer.
+ *
+ * Riding the lobe unscaled was the first version and it is what a lobe says:
+ * peak holo landed at 0.19 in linear light against the gilt's own 0.35, so the
+ * spectral swing arrived as a faint warm shimmer. Measured on the rare's frame
+ * band, blue over red ran 0.284 to 0.665 where plain gilt runs a flat 0.20 —
+ * the colour was genuinely there and it was simply too small to see. 4.0 puts
+ * the swing above the substrate, where a flash belongs.
+ */
+const float HOLO_GAIN = 4.0;
 vec3 iridescence(float ndh) {
   return 0.5 + 0.5 * cos(6.2831853 * (ndh * IRID_BANDS + vec3(0.0, 0.3333, 0.6667)));
 }
@@ -489,6 +522,11 @@ void main() {
   float occl = matx.a;
 
   vec3 lit = vec3(0.0);
+  // THE HOLO IS ACCUMULATED APART FROM THE LIGHT, and the reason is at the
+  // bottom of main(). Zero unless a material map says otherwise, so every
+  // surface in the game that is not foil compiles to the same arithmetic it
+  // had before.
+  vec3 holo = vec3(0.0);
   for (int s = 0; s < BIN_CAPACITY; s++) {
     // Sentinel-terminated, so this costs (lights in this bin) + 1 fetches
     // rather than a flat BIN_CAPACITY. That is what makes a big capacity free
@@ -583,7 +621,7 @@ void main() {
     // rainbow on a face the light cannot reach is the tell of an effect added
     // without one.
     if (irid > 0.0) {
-      contribution += lightColour * iridescence(ndh) * spec * irid * atten * shadow * step(0.001, ndl);
+      holo += lightColour * iridescence(ndh) * spec * irid * atten * shadow * step(0.001, ndl) * HOLO_GAIN;
     }
 
     lit += contribution;
@@ -616,7 +654,28 @@ void main() {
   // bake.py has emitted this pass for every shape since M0 and nothing ever
   // sampled it. This one line is what makes every mitre, bolt head and routed
   // channel on the board's furniture sit DOWN in its timber.
-  vec3 colour = albedo.rgb * (uAmbient * nightTint * occl + lit + uEmissive);
+  // THE HOLO IS ADDED, NOT MULTIPLIED THROUGH THE ALBEDO — the one line that
+  // decides whether foil is a rainbow or a slightly brighter version of
+  // whatever it is stamped on.
+  //
+  // Everything else here is light landing on a surface, so it multiplies the
+  // surface's colour: that is what makes a red wall red. A diffraction grating
+  // is not that. It is a LAYER ON TOP, and the colour it sends back is made by
+  // the grating's own geometry, not by the pigment underneath it.
+  //
+  // Multiplying it was the first version and it silently deleted the feature.
+  // The gilt's albedo is (0.584, 0.361, 0.020) in linear light — TWO PERCENT
+  // blue — so the blue half of every spectral cycle was scaled to nothing and
+  // what came back was gold that got brighter and darker along the grooves.
+  // Measured at 7, 40 and 60 spectral bands and the picture did not change,
+  // which is the tell: if more cycles make no difference, the cycles are not
+  // what is being seen.
+  //
+  // The alternative was to bleach the foil's albedo toward white in the
+  // publisher so the rainbow had somewhere to live. That works and it costs
+  // the card its gold — a rare's frame comes back champagne. This costs
+  // nothing and is the better physics.
+  vec3 colour = albedo.rgb * (uAmbient * nightTint * occl + lit + uEmissive) + holo;
   outColor = vec4(colour, albedo.a);
 }`;
 

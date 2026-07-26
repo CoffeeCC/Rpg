@@ -125,6 +125,37 @@ export interface Sprite {
    * board (LAYER_DECAL) and the table underneath it (LAYER_TABLE).
    */
   layer?: number;
+  /**
+   * TURNED ON SCREEN, in radians, clockwise about the anchor.
+   *
+   * Every quad in this engine is axis-aligned, and that is right for a board:
+   * tiles, walls and pieces stand square to a table you are looking at, and
+   * the whole occluder/shadow argument in `scene.ts` rests on it. A HELD card
+   * is the case that is not on the table — a hand fans, and `battle.css` turns
+   * each slot by up to 3.6 degrees a step from the middle of the hand. Draw a
+   * card's gilt square while the DOM text inside it is turned seven degrees and
+   * the frame's corners stand out past the printing by fifteen pixels.
+   *
+   * Undefined or 0 takes the unrotated path verbatim — same arithmetic, same
+   * floating-point result, which is what makes this safe to add to a renderer
+   * with a board's worth of sprites already in it.
+   *
+   * WHAT IT DOES NOT ROTATE IS THE TANGENT FRAME, and that is a deliberate
+   * limit rather than an oversight. Turning the quad on screen ought to turn
+   * the surface's normal map with it, which needs the angle in the fragment
+   * shader and therefore a fifth vertex attribute. It buys nothing here: the
+   * only thing the card's normal map encodes at an angle is the foil grating,
+   * and the grating appears in NO albedo — nothing on screen says which way the
+   * grooves run, so nothing can disagree with them. The moulding's chamfers do
+   * show, and at these angles a bevel highlight is a few degrees off a bead
+   * three pixels wide. Rotate a quad far enough for that to read and this
+   * comment is the thing to revisit.
+   *
+   * `cullSprites` still measures the unrotated box. A turned quad reaches
+   * further by at most half its diagonal, which is well inside the one tile
+   * `visibleBounds` pads by.
+   */
+  rotate?: number;
 }
 
 /** Standing up off the board, either as a fixed face or as a billboard. */
@@ -247,14 +278,44 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
     const { u0, v0, u1, v1 } = sp.uv;
     const [r, g, b, a] = sp.tint ?? DEFAULT_TINT;
 
-    const corners: [number, number, number, number][] = [
-      [left, top, u0, v0],
-      [right, top, u1, v0],
-      [right, bottom, u1, v1],
-      [left, top, u0, v0],
-      [right, bottom, u1, v1],
-      [left, bottom, u0, v1],
-    ];
+    // The unrotated path is written out rather than falling out of a rotation
+    // by zero, so adding `Sprite.rotate` cannot move a single existing vertex.
+    // See the note on `Sprite.rotate`.
+    const rot = sp.rotate ?? 0;
+    let corners: [number, number, number, number][];
+    if (rot === 0 || !Number.isFinite(rot)) {
+      corners = [
+        [left, top, u0, v0],
+        [right, top, u1, v0],
+        [right, bottom, u1, v1],
+        [left, top, u0, v0],
+        [right, bottom, u1, v1],
+        [left, bottom, u0, v1],
+      ];
+    } else {
+      const c = Math.cos(rot);
+      const s = Math.sin(rot);
+      // Screen y runs DOWN, so a positive angle turns clockwise on screen —
+      // which is what a positive CSS `rotate()` does, and these numbers come
+      // straight off a CSS transform.
+      const turn = (x: number, y: number): [number, number] => {
+        const dx = x - anchor.x;
+        const dy = y - anchor.y;
+        return [anchor.x + dx * c - dy * s, anchor.y + dx * s + dy * c];
+      };
+      const tl = turn(left, top);
+      const tr = turn(right, top);
+      const br = turn(right, bottom);
+      const bl = turn(left, bottom);
+      corners = [
+        [tl[0], tl[1], u0, v0],
+        [tr[0], tr[1], u1, v0],
+        [br[0], br[1], u1, v1],
+        [tl[0], tl[1], u0, v0],
+        [br[0], br[1], u1, v1],
+        [bl[0], bl[1], u0, v1],
+      ];
+    }
     // Board position PER CORNER, so the lighting interpolates across the quad
     // instead of being constant over it.
     //

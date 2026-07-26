@@ -107,6 +107,20 @@ export interface RenderOptions {
    * put a real budget if one is ever needed.
    */
   lightBudget?: number;
+  /**
+   * Let the page through where nothing was drawn.
+   *
+   * The scene target is cleared to zero instead of to `scene.night`, and the
+   * composite carries the coverage it accumulated out to the canvas. MUST be
+   * paired with `createDevice(canvas, { transparent: true })` — a composite
+   * that writes alpha into a buffer with no alpha channel is a no-op, and a
+   * buffer with an alpha channel under a composite that writes 1 is opaque.
+   * Two facts, two switches, because they are set in two different files.
+   *
+   * False is every renderer before this option: the night colour fills the
+   * frame and the canvas is opaque. See `DeviceOptions.transparent`.
+   */
+  transparent?: boolean;
 }
 
 const DEFAULTS: Required<RenderOptions> = {
@@ -140,6 +154,7 @@ const DEFAULTS: Required<RenderOptions> = {
   debug: 0,
   binSize: 2,
   lightBudget: 0,
+  transparent: false,
 };
 
 /**
@@ -160,6 +175,22 @@ out vec4 outColor;
 uniform sampler2D uScene, uBloom;
 uniform float uBloomAmount, uExposure;
 uniform int uTonemap;
+// CARRY THE SCENE'S ALPHA, or force the canvas opaque. 0 is every renderer
+// that existed before this uniform: the buffer is cleared to the night colour,
+// every pixel is written, and the alpha channel is never read. 1 is a canvas
+// that OVERLAYS the game rather than backing it, where the pixels nothing was
+// drawn on have to let the page through.
+//
+// The output is PREMULTIPLIED, because the context is created that way
+// (gl/device.ts, premultipliedAlpha) and the compositor would otherwise put a
+// bright fringe on every alpha edge. At uSceneAlpha 0 the multiply is by
+// exactly 1.0 and cannot move a pixel.
+//
+// Bloom does not extend the alpha, which is a real limit stated rather than
+// discovered: light spilling off a lit card stops at the card's own silhouette
+// instead of glowing onto the page behind it. Widening the alpha to cover the
+// spill would need the bloom chain to carry coverage as well as colour.
+uniform float uSceneAlpha;
 // NOTE: uLut and uLutMix are declared by lutGlsl() below, not here.
 // Redeclaring either is a GLSL redefinition error, and GLSL is not
 // typechecked by the build - it fails at runtime, on the frame that first
@@ -172,7 +203,8 @@ vec3 aces(vec3 x) {
   return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 void main() {
-  vec3 col = texture(uScene, vUv).rgb + texture(uBloom, vUv).rgb * uBloomAmount;
+  vec4 src = texture(uScene, vUv);
+  vec3 col = src.rgb + texture(uBloom, vUv).rgb * uBloomAmount;
   col *= uExposure;
   vec3 mapped;
   // AgX already returns display-referred values. ACES and the clipping path
@@ -183,7 +215,8 @@ void main() {
   // applyLut already fades by uLutMix internally. Wrapping it in a second
   // mix would square the fade, so a half-strength grade would land at a
   // quarter - a bug that looks like "the LUT is too weak" rather than a bug.
-  outColor = vec4(applyLut(mapped), 1.0);
+  float a = mix(1.0, clamp(src.a, 0.0, 1.0), uSceneAlpha);
+  outColor = vec4(applyLut(mapped) * a, a);
 }`;
 }
 
@@ -317,7 +350,11 @@ export class Renderer {
     const batches = batchGroups(sorted);
 
     bindTarget(gl, sceneRT);
-    gl.clearColor(scene.night[0], scene.night[1], scene.night[2], 1);
+    // UNLIT GROUND IS THE NIGHT COLOUR — unless there is no ground, in which
+    // case it is NOTHING. An overlay canvas has to start empty or its clear is
+    // a slab of night painted over whatever it is sitting on.
+    if (opts.transparent) gl.clearColor(0, 0, 0, 0);
+    else gl.clearColor(scene.night[0], scene.night[1], scene.night[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
     // Cull, then BIN. The slice that used to sit here — `.slice(0, 8)` — was
@@ -390,7 +427,16 @@ export class Renderer {
       }
 
       gl.enable(gl.BLEND);
-      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      // SEPARATE, so the target's ALPHA accumulates COVERAGE rather than the
+      // square of it. Straight `blendFunc` blends alpha by the same
+      // (srcA, 1-srcA) pair as the colour, so a fully opaque sprite over an
+      // empty target lands at alpha 1 but two half-covered edges land at 0.75
+      // instead of 0.75 — fine — while an opaque sprite over an opaque one
+      // lands at 1 either way. It only ever mattered once the alpha channel
+      // was read (see `RenderOptions.transparent`); on the opaque path the
+      // target is cleared to alpha 1 and both forms leave it at 1, so this
+      // cannot move a pixel of the map or the arena.
+      gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       this.batcher.upload(buildVertexData(sorted, scene.camera));
       const textures = new Map<string, WebGLTexture>();
       for (const [id, mat] of scene.materials) if (mat.albedo) textures.set(id, mat.albedo);
@@ -415,6 +461,7 @@ export class Renderer {
     gl.uniform1f(comp.u('uExposure'), opts.exposure);
     gl.uniform1f(comp.u('uLutMix'), opts.lutMix);
     gl.uniform1i(comp.u('uTonemap'), TONEMAP_ID[opts.tonemap]);
+    gl.uniform1f(comp.u('uSceneAlpha'), opts.transparent ? 1 : 0);
     drawFullscreen(gl);
 
     this.gpuTimer.end?.();

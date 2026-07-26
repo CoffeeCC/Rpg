@@ -251,3 +251,109 @@ describe('pieces stand up; decals lie down', () => {
     expect(heightOf(noFlag)).toBeCloseTo(CAM.zoom * Math.cos(CAM.tilt), 3);
   });
 });
+
+// =========================================================================
+// A QUAD TURNED ON SCREEN — `Sprite.rotate`.
+//
+// Every quad in this engine is axis-aligned, and for a board that is right.
+// A HELD CARD is the case that is not: `battle.css` fans a hand by 3.6 degrees
+// a slot, and a gilt frame drawn square inside a card turned seven degrees
+// stands a dozen pixels outside its own printing.
+//
+// The tests that matter here are the ones about NOT changing anything else:
+// this option was added to a renderer with a board's worth of sprites already
+// in it, and the unrotated path has to be the same arithmetic it always was.
+// =========================================================================
+describe('turning a quad on screen', () => {
+  const quad = (rotate?: number): Sprite => ({
+    position: { x: 3, y: 4, z: 0.5 },
+    size: { x: 1, y: 1.4 },
+    pivot: { x: 0.5, y: 0.5 },
+    billboard: true,
+    uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+    textureId: 'card',
+    rotate,
+  });
+
+  /** The six vertices' screen x/y, in the winding `buildVertexData` emits. */
+  function corners(sp: Sprite): [number, number][] {
+    const v = buildVertexData([sp], CAM);
+    const out: [number, number][] = [];
+    for (let i = 0; i < VERTICES_PER_SPRITE; i++) {
+      out.push([v[i * FLOATS_PER_VERTEX], v[i * FLOATS_PER_VERTEX + 1]]);
+    }
+    return out;
+  }
+
+  it('is BIT-IDENTICAL to the unrotated path when absent, zero or NaN', () => {
+    // Not "close to": identical. A rotation by zero written as cos/sin would
+    // reassociate the arithmetic and move existing vertices in the last bits,
+    // which is why the unrotated branch is written out longhand.
+    const base = buildVertexData([quad()], CAM);
+    for (const value of [undefined, 0, NaN]) {
+      expect(Array.from(buildVertexData([quad(value)], CAM))).toEqual(Array.from(base));
+    }
+  });
+
+  it('turns CLOCKWISE on screen for a positive angle, like CSS rotate()', () => {
+    // These numbers come straight off a CSS transform matrix, and screen y
+    // runs down. Getting the handedness wrong leans the whole fan the wrong
+    // way — which still looks like a fan, so it survives a glance.
+    const flat = corners(quad(0));
+    const turned = corners(quad(Math.PI / 2));
+    const [ax, ay] = flat[0]; // top-left
+    const [bx, by] = turned[0];
+    const cx = (flat[0][0] + flat[2][0]) / 2;
+    const cy = (flat[0][1] + flat[2][1]) / 2;
+    // A quarter turn clockwise sends the top-left corner to the top-RIGHT.
+    expect(ax - cx).toBeLessThan(0);
+    expect(ay - cy).toBeLessThan(0);
+    expect(bx - cx).toBeGreaterThan(0);
+    expect(by - cy).toBeLessThan(0);
+  });
+
+  it('turns about the ANCHOR, so a centre-pivoted card spins in place', () => {
+    // The alternative is a card that swings from its bottom edge, which is
+    // what a bottom-centre pivot would do and is why a card is placed by its
+    // middle while a figure is placed by its feet.
+    const flat = corners(quad(0));
+    const turned = corners(quad(0.4));
+    const mid = (c: [number, number][]) =>
+      [(c[0][0] + c[2][0]) / 2, (c[0][1] + c[2][1]) / 2] as const;
+    const [fx, fy] = mid(flat);
+    const [tx, ty] = mid(turned);
+    // 3 decimals, not 9: `buildVertexData` writes into a Float32Array, so
+    // seven significant digits is all there is to compare.
+    expect(tx).toBeCloseTo(fx, 3);
+    expect(ty).toBeCloseTo(fy, 3);
+  });
+
+  it('preserves the quad — same edge lengths, still a rectangle', () => {
+    // A rotation that also skewed or scaled would draw a card at the wrong
+    // size at exactly the fan positions where it is hardest to notice.
+    const turned = corners(quad(0.126));
+    const len = (a: [number, number], b: [number, number]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const flat = corners(quad(0));
+    expect(len(turned[0], turned[1])).toBeCloseTo(len(flat[0], flat[1]), 3);
+    expect(len(turned[1], turned[2])).toBeCloseTo(len(flat[1], flat[2]), 3);
+    // Adjacent edges still meet at a right angle.
+    const e1 = [turned[1][0] - turned[0][0], turned[1][1] - turned[0][1]];
+    const e2 = [turned[2][0] - turned[1][0], turned[2][1] - turned[1][1]];
+    expect(e1[0] * e2[0] + e1[1] * e2[1]).toBeCloseTo(0, 2);
+  });
+
+  it('leaves the UVs and the board coordinates alone', () => {
+    // The rotation is a SCREEN transform. Turning the world position with it
+    // would move the card to a different place on the board and light it as
+    // though it were there; turning the UVs would rotate the texture inside a
+    // quad that had already been turned.
+    const flat = buildVertexData([quad(0)], CAM);
+    const turned = buildVertexData([quad(0.3)], CAM);
+    for (let i = 0; i < VERTICES_PER_SPRITE; i++) {
+      const o = i * FLOATS_PER_VERTEX;
+      for (const f of [2, 3, 8, 9, 10, 11]) {
+        expect(turned[o + f]).toBe(flat[o + f]);
+      }
+    }
+  });
+});

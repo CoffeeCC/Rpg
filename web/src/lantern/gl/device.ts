@@ -77,9 +77,32 @@ export interface DeviceResult {
  * one, shipped without anybody noticing. Better to refuse and let the DOM
  * renderer keep the game running.
  */
-export function createDevice(canvas: HTMLCanvasElement): DeviceResult {
+export interface DeviceOptions {
+  /**
+   * Give the drawing buffer an alpha channel, so the page shows through where
+   * nothing was drawn.
+   *
+   * OFF BY DEFAULT, AND THAT IS THE RIGHT DEFAULT. A board renderer owns its
+   * whole box: the map and the arena both paint a table under everything and
+   * an opaque buffer is measurably cheaper to composite, which is why
+   * `alpha: false` was chosen in the first place.
+   *
+   * The case that needs the other answer is a canvas that OVERLAYS the game
+   * rather than backing it. `render/LanternCards.tsx` spans the entire battle
+   * stage because a hand card rides up over the battlefield, and it draws about
+   * eight cards in that box — with an opaque buffer the other 90% of it is a
+   * flat slab of `scene.night` painted over the whole fight.
+   *
+   * Costs one branch here and `RenderOptions.transparent` in the renderer,
+   * which must be set to match: the buffer having an alpha channel and the
+   * composite writing one are two separate facts.
+   */
+  transparent?: boolean;
+}
+
+export function createDevice(canvas: HTMLCanvasElement, options: DeviceOptions = {}): DeviceResult {
   const gl = canvas.getContext('webgl2', {
-    alpha: false,
+    alpha: options.transparent === true,
     antialias: false,
     depth: false,
     stencil: false,
