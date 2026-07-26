@@ -1219,26 +1219,9 @@ h2.title {
   }
 }
 
-/* --- v12: click-to-move readability — reachable tiles, hero ring, engage --- */
-.map-cell.reachable {
-  cursor: pointer;
-  box-shadow: inset 0 0 0 2px rgba(224, 200, 120, 0.28);
-}
-.map-cell.reachable::before {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 4px;
-  background: radial-gradient(circle, rgba(224, 200, 120, 0.16), transparent 70%);
-  pointer-events: none;
-  z-index: 1;
-}
-.map-cell.reachable:hover {
-  box-shadow: inset 0 0 0 2px rgba(240, 210, 130, 0.85);
-}
-.map-cell.reachable:hover::before {
-  background: radial-gradient(circle, rgba(240, 210, 130, 0.4), transparent 72%);
-}
+/* --- v12: click-to-move readability — hero ring, engage --- */
+/* The `.reachable` gold that used to live here is gone with floor.css §6: the
+   lantern's reach IS the move range now, so the light draws it. */
 
 /* the hero: a clear glowing ring so you can always find yourself */
 .hero-ring {

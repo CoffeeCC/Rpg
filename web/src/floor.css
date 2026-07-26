@@ -314,56 +314,18 @@
   opacity: 0.6;
 }
 
-/* --- 6 · Reachable: UNMISTAKABLE breathing gold (v18 #9) --------------------- */
-/* Paul couldn't tell where he could move. Each reachable tile now carries a
-   bright center dot + gold fill + 2px rim, all breathing together; hover
-   snaps to a solid high-contrast "this one" state. Dot radius rides --cell
-   so it scales with the war-table/mobile tile sizes. The overlay lives on
-   ::before (threat owns ::after — a tile can be both) at z1, under cell
-   content (z2), pointer-transparent. */
-.map-grid .map-cell.reachable,
-.map-grid .map-cell.reachable:hover {
-  box-shadow: none; /* overlay lives on ::before so it can breathe via opacity */
-}
-.map-grid .map-cell.reachable::before {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 6px;
-  background:
-    radial-gradient(
-      circle,
-      rgba(255, 234, 158, 0.95) calc(var(--cell, 48px) * 0.045),
-      rgba(255, 234, 158, 0) calc(var(--cell, 48px) * 0.045 + 3px)
-    ),
-    radial-gradient(circle, rgba(246, 214, 122, 0.34), rgba(246, 214, 122, 0.08) 74%);
-  box-shadow:
-    inset 0 0 0 2px rgba(252, 224, 130, 0.85),
-    inset 0 0 14px rgba(252, 224, 130, 0.38),
-    0 0 8px rgba(226, 188, 96, 0.3);
-  pointer-events: none;
-  z-index: 1;
-  animation: reachBreathe 1.5s ease-in-out infinite;
-}
-.map-grid .map-cell.reachable:hover::before {
-  animation: none;
-  opacity: 1;
-  background:
-    radial-gradient(
-      circle,
-      #fff3c6 calc(var(--cell, 48px) * 0.06),
-      rgba(255, 243, 198, 0) calc(var(--cell, 48px) * 0.06 + 3px)
-    ),
-    radial-gradient(circle, rgba(255, 230, 150, 0.55), rgba(255, 230, 150, 0.16) 78%);
-  box-shadow:
-    inset 0 0 0 3px #ffe9a2,
-    inset 0 0 18px rgba(255, 234, 158, 0.55),
-    0 0 14px rgba(255, 220, 120, 0.6);
-}
-@keyframes reachBreathe {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
+/* --- 6 · Reachable: the light says it, not a chip (see lightresponse.css) --- */
+/* WAS: "UNMISTAKABLE breathing gold" — a bright dot + gold fill + 2px rim on
+   every reachable tile, breathing, added in v18 #9 because Paul couldn't tell
+   where he could move. That was a patch over a real problem: the map carried
+   two circles that disagreed (Lantern radius = what you can see, MOV budget =
+   where you can walk), so the move range had to be annotated on top of the
+   lighting.
+
+   The lantern now reaches exactly as far as the hero can walk (FloorScreen
+   passes `reachCells={movLeft + ...}`), so the two are one claim and the
+   annotation has nothing left to say. What survives is hover, in
+   lightresponse.css §5 — enough to confirm which tile takes the click. */
 
 @media (min-height: 501px) {
   .map-cell.engageable::after {

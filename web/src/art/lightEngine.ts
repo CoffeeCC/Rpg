@@ -110,6 +110,165 @@ export function fractalNoise(t: number, octaves = 4): number {
   return sum / norm;
 }
 
+/** Tileable 2D value noise. Periodic on `period` so the tile seams vanish. */
+function hash2(x: number, y: number, period: number): number {
+  const xi = ((x % period) + period) % period;
+  const yi = ((y % period) + period) % period;
+  const s = Math.sin(xi * 127.1 + yi * 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
+
+function tileNoise2D(x: number, y: number, period: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy, period);
+  const b = hash2(ix + 1, iy, period);
+  const c = hash2(ix, iy + 1, period);
+  const d = hash2(ix + 1, iy + 1, period);
+  return (a * (1 - ux) + b * ux) * (1 - uy) + (c * (1 - ux) + d * ux) * uy;
+}
+
+// -------------------------------------------------------------------------
+// Murk — what makes the dark a place rather than an absence
+// -------------------------------------------------------------------------
+
+/**
+ * Bake one tileable cloud of murk.
+ *
+ * Paul: "I would really like the shadows to look and act more like shadows.
+ * Maybe kind of swirly and mysterious. It's just kind of black right now."
+ *
+ * He is right, and the reason is physical rather than artistic: a shadow
+ * rendered as flat darkness is a shadow in a VACUUM. Real dark has air in it —
+ * dust, damp, smoke off the lantern — and that air is what a shadow is
+ * actually made of. It drifts, so the dark drifts, and the eye reads depth
+ * from the drifting.
+ *
+ * Baked ONCE into a repeating tile rather than evaluated per pixel per frame:
+ * 3-octave 2D noise over a screenful, every frame, is six figures of
+ * `Math.sin` and would eat the entire budget. A tile scrolled under a
+ * transform costs one `fillRect` and the GPU does the rest. The swirl comes
+ * from compositing two copies moving against each other (see `drawMurk`) —
+ * that counter-motion is what stops it reading as wallpaper sliding past.
+ */
+export function bakeMurk(size = 160, seed = 0): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const g = c.getContext('2d');
+  if (!g) return c;
+  const img = g.createImageData(size, size);
+  const PERIOD = 8;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = (x / size) * PERIOD + seed;
+      const v = (y / size) * PERIOD + seed;
+      // Three octaves: big slow banks of murk with finer wisps riding on them.
+      let n =
+        tileNoise2D(u, v, PERIOD) * 0.6 +
+        tileNoise2D(u * 2, v * 2, PERIOD * 2) * 0.28 +
+        tileNoise2D(u * 4, v * 4, PERIOD * 4) * 0.12;
+      // Push it toward wisps rather than an even fog: a gentle curve leaves
+      // most of the tile thin and a few places genuinely thick, which is how
+      // haze in a still room actually distributes.
+      n = Math.pow(n, 1.7);
+      const i = (y * size + x) * 4;
+      img.data[i] = 255;
+      img.data[i + 1] = 255;
+      img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(n * 255);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+/**
+ * Two counter-drifting copies of the murk, composited into whatever darkness
+ * is already on the canvas.
+ *
+ * `source-atop` is the whole trick. It draws ONLY where the canvas already has
+ * something — which, by the time this runs, is exactly the night and the
+ * shadows and nothing else. The lit pool has been cut to transparent, so the
+ * murk cannot touch it. Nothing has to be masked and no second buffer exists:
+ * the darkness is its own mask, and the shadows get their swirl for free
+ * because a shadow IS darkness by this point in the frame.
+ *
+ * One pass is lighter than the night and one is darker. That is the difference
+ * between "fog" and "murk": a single lightening pass just greys the shadow
+ * out, but a lightening pass and a deepening pass drifting through each other
+ * make the dark look like it has a near side and a far side.
+ */
+export function drawMurk(
+  ctx: CanvasRenderingContext2D,
+  murk: MurkTiles,
+  width: number,
+  height: number,
+  t: number,
+  strength: number,
+): void {
+  const passes: [CanvasImageSource, number, number, number, number][] = [
+    // tile, scale, drift x px/s, drift y px/s, alpha share
+    [murk.haze, 1.0, 5.5, -3.2, 0.62],
+    [murk.deep, 1.7, -3.1, 2.4, 0.75],
+  ];
+  ctx.globalCompositeOperation = 'source-atop';
+  for (const [tile, scale, dx, dy, share] of passes) {
+    const s = murk.size * scale;
+    ctx.save();
+    // Wrap the offset into one tile so the transform never grows without
+    // bound over a long session (a float that keeps climbing eventually
+    // loses the precision the pattern needs and the murk starts to judder).
+    const ox = ((t * dx) % s + s) % s;
+    const oy = ((t * dy) % s + s) % s;
+    ctx.globalAlpha = strength * share;
+    ctx.translate(ox - s, oy - s);
+    for (let y = 0; y < height + s * 2; y += s) {
+      for (let x = 0; x < width + s * 2; x += s) {
+        ctx.drawImage(tile, x, y, s, s);
+      }
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+export interface MurkTiles {
+  /** Lighter than the night: haze the lantern is catching from the far side. */
+  haze: HTMLCanvasElement;
+  /** Deeper than the night: the places the air is thick. */
+  deep: HTMLCanvasElement;
+  size: number;
+}
+
+/** Colour one baked murk tile through its own alpha. Done once, not per frame. */
+function tintMurk(src: HTMLCanvasElement, colour: string): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = src.width;
+  c.height = src.height;
+  const g = c.getContext('2d');
+  if (!g) return c;
+  g.drawImage(src, 0, 0);
+  g.globalCompositeOperation = 'source-in';
+  g.fillStyle = colour;
+  g.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+
+/** Bake the pair once. Two different seeds, or they drift in lockstep. */
+export function bakeMurkTiles(size = 160): MurkTiles {
+  return {
+    haze: tintMurk(bakeMurk(size), 'rgb(122, 138, 175)'),
+    deep: tintMurk(bakeMurk(size, 1.9), 'rgb(2, 3, 8)'),
+    size,
+  };
+}
+
 // -------------------------------------------------------------------------
 // Shadow geometry
 // -------------------------------------------------------------------------
@@ -226,7 +385,9 @@ export function renderLight(
   ambient: number = AMBIENT_FLOOR,
   /** How dark unlit ground gets, 0..1. Never 1 — see NIGHT. */
   maxDarkness: number = 0.62,
-): { flicker: number; lean: number; bob: number; casters: number } {
+  /** Baked once by the caller. Omit and the dark is flat. */
+  murk?: MurkTiles,
+): { flicker: number; lean: number; bob: number; casters: number; src: Vec2 } {
   ctx.clearRect(0, 0, width, height);
 
   // --- flicker ---------------------------------------------------------
@@ -293,7 +454,7 @@ export function renderLight(
   // painted lantern bobbing on its own CSS animation while its pool guttered
   // on a different clock would be two lights pretending to be one — the very
   // disagreement this engine exists to remove.
-  const out = { flicker, lean, bob, casters: 0 };
+  const out = { flicker, lean, bob, casters: 0, src };
 
   // Only what the light can actually reach. Distance to the box, not to its
   // centre, so a long wall running past the hero is not dropped because its
@@ -304,7 +465,6 @@ export function renderLight(
     return dx * dx + dy * dy <= reach * reach;
   });
   out.casters = near.length;
-  if (!near.length) return out;
 
   // --- shadows ----------------------------------------------------------
   // Shadows PUT NIGHT BACK, now that the layer is darkness. Same identity as
@@ -323,20 +483,28 @@ export function renderLight(
     ctx.globalAlpha = cutAlpha;
     for (const o of near) {
       for (const [a, bEdge] of facingEdges(o, sample)) {
-        const quad = shadowQuad(a, bEdge, sample, SHADOW_LENGTH);
+        const mid = { x: (a.x + bEdge.x) / 2, y: (a.y + bEdge.y) / 2 };
+        // Each shadow REACHES on its own clock. Bounce light is not a constant
+        // — the lantern gutters, and the distance at which the fill light wins
+        // moves with it — so a scene of shadows that all end at exactly the
+        // same radius, frozen, is the tell that they were drawn rather than
+        // cast. Seeded off the edge's own midpoint so neighbouring walls
+        // breathe out of step instead of pulsing together like one animation.
+        const seed = (mid.x * 0.31 + mid.y * 0.17) % 97;
+        const far = SHADOW_LENGTH * (animate ? 0.78 + fractalNoise(timeSeconds * 0.55 + seed, 3) * 0.44 : 1);
+        const quad = shadowQuad(a, bEdge, sample, far);
         // The shadow FADES along its own length rather than ending on a hard
         // line. Bounce light does not switch on at a fixed distance, and a
         // shadow quad filled flat leaves a visible straight edge across the
         // scene where the polygon stops.
-        const mid = { x: (a.x + bEdge.x) / 2, y: (a.y + bEdge.y) / 2 };
         const dx = mid.x - sample.x;
         const dy = mid.y - sample.y;
         const len = Math.hypot(dx, dy) || 1;
         const fade = ctx.createLinearGradient(
           mid.x,
           mid.y,
-          mid.x + (dx / len) * SHADOW_LENGTH,
-          mid.y + (dy / len) * SHADOW_LENGTH,
+          mid.x + (dx / len) * far,
+          mid.y + (dy / len) * far,
         );
         fade.addColorStop(0, `rgba(${night}, ${maxDarkness.toFixed(3)})`);
         fade.addColorStop(0.45, `rgba(${night}, ${(maxDarkness * 0.72).toFixed(3)})`);
@@ -352,6 +520,13 @@ export function renderLight(
   }
 
   ctx.globalAlpha = 1;
+
+  // --- murk -------------------------------------------------------------
+  // Last, and only into what is already dark. See `drawMurk`: the lit pool was
+  // cut to transparent several steps ago, so `source-atop` cannot reach it and
+  // the shadows — which by now ARE the darkness — get the swirl for nothing.
+  if (murk) drawMurk(ctx, murk, width, height, animate ? timeSeconds : 0, 0.5);
+
   ctx.globalCompositeOperation = 'source-over';
   return out;
 }

@@ -1,0 +1,129 @@
+/* =========================================================================
+   THINGS THE LIGHT LANDS ON.
+
+   Paul: "I really really want our lighting to shine here. Reflect off
+   objects, twinkle on something to pick up. Stuff like that."
+
+   components/LightLayer.tsx writes three numbers onto every element matching
+   its `responderSelector`, every fourth frame:
+
+     --lit      how much light is reaching it, on the SAME inverse-square
+                curve the canvas cuts the night with. So nothing here can
+                claim to be lit when the pool around it is dark.
+     --lx/--ly  a unit vector pointing at the flame.
+     --twinkle  a sharp spike, phased per object, gated on --lit.
+
+   Everything below is a function of those. Nothing is keyframed against the
+   clock, which is the whole point: a painted highlight points the same way
+   from every angle, and that is what makes painted shine read as a sticker.
+   Walk around a chest here and the sheen walks around the chest.
+
+   All of it degrades to nothing when the props are absent (`var(--lit, 0)`),
+   so any screen that does not run a LightLayer is untouched.
+   ========================================================================= */
+
+/* --- 1 · Sheen: the face turned toward the flame ------------------------- */
+/* A highlight offset TOWARD the light, not centred. The offset is the whole
+   effect — a centred glow is a glow, an offset one is a lit surface. */
+.lit-obj::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  background: radial-gradient(
+    circle at calc(50% + var(--lx, 0) * 30%) calc(50% + var(--ly, 0) * 30%),
+    rgba(255, 226, 168, calc(var(--lit, 0) * 0.42)),
+    rgba(255, 196, 116, calc(var(--lit, 0) * 0.10)) 46%,
+    rgba(255, 180, 100, 0) 72%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* --- 2 · Rim: light catching the silhouette's edge ----------------------- */
+/* `drop-shadow` follows the sprite's actual alpha, so this traces the shape
+   of the thing rather than its box — the one filter that gives a flat sprite
+   a lit EDGE. Offset toward the flame by a couple of px so it reads as the
+   near side catching light, not as a uniform outer glow. */
+.lit-obj .cell-top,
+.lit-obj .unit-token {
+  filter: drop-shadow(
+    calc(var(--lx, 0) * 2.5px) calc(var(--ly, 0) * 2.5px) calc(2px + var(--lit, 0) * 4px)
+      rgba(255, 206, 130, calc(var(--lit, 0) * 0.85))
+  );
+}
+
+/* --- 3 · Glint: a point highlight that CATCHES --------------------------- */
+/* Two crossed spikes, which is what a point highlight does to any real lens
+   or wet surface, scaled by --twinkle. It spends most of its cycle at zero:
+   a glint that fades in and out is a pulsing light, a glint that snaps is
+   something catching the lantern for a moment as the flame leans. */
+.lit-glint {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: calc(var(--cell, 48px) * 0.5);
+  height: calc(var(--cell, 48px) * 0.5);
+  margin: calc(var(--cell, 48px) * -0.25) 0 0 calc(var(--cell, 48px) * -0.25);
+  pointer-events: none;
+  z-index: 3;
+  opacity: var(--twinkle, 0);
+  background:
+    linear-gradient(to right, rgba(255, 244, 214, 0) 44%, #fffaf0 50%, rgba(255, 244, 214, 0) 56%),
+    linear-gradient(to bottom, rgba(255, 244, 214, 0) 44%, #fffaf0 50%, rgba(255, 244, 214, 0) 56%),
+    radial-gradient(circle, rgba(255, 246, 220, 0.9), rgba(255, 226, 160, 0) 60%);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 0%, transparent 70%);
+  transform: scale(calc(0.55 + var(--twinkle, 0) * 0.6));
+}
+
+/* --- 4 · Beyond the light ------------------------------------------------ */
+/* Revealed ground the lantern does not reach this turn. NOT hidden — the
+   threat read v18 fought for stays intact — just outside. This is what
+   replaced the breathing gold chips: the boundary of the light IS the
+   boundary of the move, so there is nothing left to annotate.
+
+   A flat veil rather than a blur: blurring costs a filter pass per cell, and
+   the thing being communicated is "out of reach", not "out of focus". */
+.map-grid .map-cell.beyond::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 7, 15, 0.46);
+  pointer-events: none;
+  z-index: 2;
+}
+/* Threat owns ::after on its own tiles (floor.css) and a tile can be both, so
+   a threatened tile beyond the light dims via a box-shadow instead of
+   fighting over the pseudo-element. */
+.map-grid .map-cell.beyond.threat::after {
+  background: none;
+}
+.map-grid .map-cell.beyond.threat {
+  box-shadow: inset 0 0 0 999px rgba(5, 7, 15, 0.46);
+}
+
+/* --- 5 · Reachable: no chips, only a click affordance -------------------- */
+/* What is left of `.reachable` after the gold came off. The light says where
+   you can go; this only confirms that the thing under the cursor is the one
+   that will take the click. */
+.map-grid .map-cell.reachable {
+  cursor: pointer;
+}
+.map-grid .map-cell.reachable:hover::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px rgba(255, 236, 176, 0.7), inset 0 0 16px rgba(255, 226, 150, 0.2);
+  pointer-events: none;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The light stays, the movement goes — the same bargain lighting.css §9
+     makes. A glint is pure movement, so it goes entirely. */
+  .lit-glint {
+    display: none;
+  }
+}

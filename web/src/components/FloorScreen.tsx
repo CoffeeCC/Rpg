@@ -3,6 +3,7 @@ import { LightLayer } from './LightLayer';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
+import { BALANCE } from '../engine/data/balance';
 import { getCard } from '../engine/data/cards';
 import {
   isOpened,
@@ -505,7 +506,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                     return (
                       <span
                         key={x}
-                        className={`map-cell floor-tile unit-cell ${engage ? 'engageable' : ''} ${reach ? 'reachable-unit' : ''}${litHere ? '' : ' unit-unlit'}`}
+                        className={`map-cell floor-tile unit-cell lit-obj ${engage ? 'engageable' : ''} ${reach ? 'reachable-unit' : ''}${litHere ? '' : ' unit-unlit'}`}
                         title={engage ? `${unit.label} — click to engage` : unit.label}
                         onClick={() => handleTileTap(x, y)}
                       >
@@ -528,12 +529,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   }
                   if (tile === TILE.SECRET) {
                     return (
-                      <span key={x} className="map-cell special secret" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
+                      <span key={x} className="map-cell special secret lit-obj" title="Something behind the stone..." onClick={() => handleTileTap(x, y)}>
                         {!tex && <TileFill gateId={exp.gateId} tile="." vx={x} vy={y} size={96} />}
                         {fogFringe(x, y)}
                         <span className="cell-top">
                           <Icon name="secret" emoji="✨" size={ART.object} />
                         </span>
+                        <span className="lit-glint" aria-hidden="true" />
                       </span>
                     );
                   }
@@ -550,10 +552,21 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   // the room. Once read it stops being marked — the paragraph
                   // is the reward and there is nothing to come back for.
                   const hasLeaving = tile === TILE.FLOOR && leavings.has(`${x},${y}`) && !isOpened(exp, x, y);
+                  // Things worth walking to catch the lantern: they take a
+                  // directional sheen and a rim, and the ones you can pick up
+                  // catch a glint as the flame leans. Bare floor does not —
+                  // if every tile shines, none of them do.
+                  const catchesLight = tile !== TILE.FLOOR && tile !== TILE.WALL;
+                  const isPickup = tile === TILE.CHEST || tile === TILE.SHRINE || tile === TILE.EVENT || hasLeaving;
+                  // Beyond the light is beyond the move. This replaced the gold
+                  // chips: the pool's edge is the move's edge, so out-of-reach
+                  // ground just sits further into the night. Never the tile the
+                  // hero is on, and never fog (which is already nothing).
+                  const beyond = !isReachable && !(x === exp.x && y === exp.y);
                   return (
                     <span
                       key={x}
-                      className={`map-cell ${view.cls}${danger ? ' threat' : ''}${isReachable ? ' reachable' : ''}`}
+                      className={`map-cell ${view.cls}${danger ? ' threat' : ''}${isReachable ? ' reachable' : ''}${beyond ? ' beyond' : ''}${catchesLight || isPickup ? ' lit-obj' : ''}`}
                       style={ch === '#' ? wallStyle(x, y) : undefined}
                       title={danger ? 'A hostile can reach this tile next turn' : isReachable ? 'Click to move here' : undefined}
                       onClick={() => handleTileTap(x, y)}
@@ -578,6 +591,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                           <TilePropArt prop={prop} size={ART.prop} />
                         </span>
                       )}
+                      {isPickup && <span className="lit-glint" aria-hidden="true" />}
                     </span>
                   );
                 })}
@@ -597,11 +611,23 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           <LightLayer
             occluderSelector=".map-grid .map-cell.wall"
             anchorSelector=".map-grid .map-cell.player"
-            reach={430}
+            responderSelector=".map-grid .map-cell.lit-obj"
+            /* THE LIGHT IS THE MOVE RANGE. The map used to carry two circles
+               that meant different things — the Lantern's radius (what you can
+               see) and the MOV budget (where you can walk) — and because they
+               disagreed, v18 had to paint breathing gold chips on every
+               reachable tile so Paul could tell where he could go at all.
+
+               Reach measured in TILES, off the hero's own cell, makes them the
+               same claim: the pool ends exactly where the walk ends. Spend
+               movement and the light closes in around you; take your last step
+               and you are standing in a pinprick with the floor about to move.
+               The lantern-luck perk still widens it, now as reach per step. */
+            reachCells={exp.movLeft + 0.7 + (lanternRadius(player) - BALANCE.lanternRadius)}
             intensity={0.72}
             flameSize={22}
             ambient={0.18}
-            version={`${exp.gateId}:${exp.floorIndex}:${exp.x},${exp.y}`}
+            version={`${exp.gateId}:${exp.floorIndex}:${exp.x},${exp.y}:${exp.movLeft}`}
           />
         </div>
 
