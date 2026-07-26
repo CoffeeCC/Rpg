@@ -112,7 +112,121 @@
   display: none !important;
 }
 
+/* --- 2b · THE PHYSICAL CARD ----------------------------------------------
+   Paul: "can we model the Actual Cards to they can bounce light?" /
+   "Physical card, Physical Borders, Needs to have some shiny aspects like the
+   borders and the backs".
+
+   `tools/art/blender/bake.py` has modelled the stock, the gilt, the back and a
+   foil mask per rarity since the card bake landed, and nothing drew any of it.
+   `render/LanternCards.tsx` does now, on its own canvas over the whole stage —
+   the hand fan rides 118px up over the battlefield (`.hand-fan`'s negative
+   margin below), so a canvas clipped to `.hand-zone` would cut the top off
+   every card.
+
+   THE HAND ITSELF IS UNTOUCHED. The fan, the arc, the hover lift, the idle
+   breathe, the selection ring, the number keys and every hit target are exactly
+   what they were. What comes off is the card's PAINTED BODY, and only that —
+   see below. */
+
+/* IT LIVES INSIDE `.hand-zone`, AND THAT IS NOT A PLACEMENT PREFERENCE.
+
+   `battle.css` gives `.hand-zone` `position: relative` AND `z-index: 1`, which
+   makes it a stacking context. Everything inside it — `.hand-fan` at 4, the two
+   pile columns at 2 — is therefore sealed in, and the whole zone competes with
+   `.battlefield` (also `z-index: 1`, also `isolation: isolate`) as a single
+   layer at the stage level, winning on document order. Nothing placed BESIDE
+   the zone can land between its background and the cards sitting on it.
+
+   The first cut put the canvas at stage level on z-index 3, which reads as
+   correct in every computed style — the canvas at 3, the fan at 4 — and paints
+   the card bodies straight over the name, the art and the rules text of every
+   card in the hand. The tell was that hiding the canvas brought all of it back.
+
+   So: a child of the zone at 3, which is above the zone's own background and
+   below the fan.
+
+   IT REACHES UP OUT OF THE ZONE, because the hand does. `.hand-fan` carries a
+   `margin-top: -118px` so the cards ride over the battlefield, a hovered slot
+   lifts another 48px, and 1.16x scaling on a 241px card adds ~19px above its
+   own centre. 118 + 48 + 19 is 185; 240 is that with room for a breakpoint to
+   move any of the three. The zone does not clip, and the overflow paints above
+   `.battlefield` for the same document-order reason the DOM cards already do. */
+.lantern-battle .hand-zone > .lantern-cards {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: -240px;
+  z-index: 3;
+  /* Transparent to the pointer, like the arena's. Every click, hover and
+     `elementFromPoint` probe belongs to the `.hand-slot` above it. */
+  pointer-events: none;
+}
+
+.lantern-battle .lantern-cards > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The hand and the pile columns move up so the canvas can sit under them.
+   They were at 3 and 2 respectively, both below the canvas's 3; 4 puts the
+   printing back on top of the card it is printed on. */
+.lantern-battle .hand-fan {
+  z-index: 4 !important;
+}
+.lantern-battle .hand-left,
+.lantern-battle .hand-right {
+  z-index: 4 !important;
+}
+
+/* THE CARD'S BODY, which is now a surface the GPU draws.
+
+   THE BORDER LOSES ITS COLOUR AND KEEPS ITS BOX, and that distinction is
+   load-bearing. `bake.py` measured every panel on the card against the resolved
+   CSS — the name plate at (33, 11), the art window at (17, 36.4) — and those
+   numbers include `.playing-card`'s own 3px border. Take the border out of the
+   layout with `border: none` and every panel inside shifts three pixels up and
+   left while the baked gilt stays where it was.
+
+   The drop shadow is deliberately LEFT ALONE. It falls outside the border box,
+   so it never lands on the drawn card, and it is what stops a lit card looking
+   pasted onto the hand zone.
+
+   SCOPED TO THE HAND. `.playing-card` is shared with the codex, the deck
+   screen, the reward screen and the inspect overlay, none of which has a canvas
+   behind it — the same trap `battle.css` records paying for when a short
+   viewport shrank every card in the game. */
+.lantern-battle .hand-fan .playing-card {
+  background: none !important;
+  border-color: transparent !important;
+}
+
+/* The face-down cards on the pile widgets. Hidden, not removed: the `<img>`
+   holds its exact resolved size in flow and `LanternCards` MEASURES that box to
+   stand a lit card back in it. `display: none` would collapse the widget to its
+   count and the renderer would faithfully draw the pile at the wrong size —
+   the same mechanism, and the same trap, as the figures above.
+
+   THIS REPLACES A PAINTING, which is worth flagging rather than slipping
+   through: `art/cards/back_lantern.jpg` is authored art, and what stands in
+   for it is `bake.py`'s engine-turned rosette under a gilt double border. The
+   trade is a flat picture of a card back for a lit one that catches the hand's
+   lantern as it swings, which is the whole argument of §1.2 — but it IS a
+   trade, and reverting it is this one rule.
+
+   SCOPED TO THE PILES. `CardBack` also draws the rival tamer's hand at 22px
+   inside the portrait chip, where the bake has nothing to offer — see
+   `PILE_SELECTOR` in `LanternCards.tsx`. */
+.lantern-battle .pile-cardback > img,
+.lantern-battle .pile-cardback > svg {
+  visibility: hidden !important;
+}
+
 /* --- 3 · The flag's own chrome ------------------------------------------- */
+.lantern-battle .lantern-cards .lantern-hud,
+.lantern-battle .lantern-cards .lantern-error,
 .lantern-battle .lantern-arena .lantern-hud,
 .lantern-battle .lantern-arena .lantern-error {
   position: absolute;
@@ -122,6 +236,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.lantern-battle .lantern-cards .lantern-hud,
 .lantern-battle .lantern-arena .lantern-hud {
   right: 8px;
   top: 6px;
@@ -135,6 +250,14 @@
   padding: 5px 8px;
 }
 
+/* The card HUD would land on top of the arena's, so it goes to the other
+   corner. Both are `?r=lantern&debug=1` only. */
+.lantern-battle .lantern-cards .lantern-hud {
+  right: auto;
+  left: 8px;
+}
+
+.lantern-battle .lantern-cards .lantern-error,
 .lantern-battle .lantern-arena .lantern-error {
   left: 50%;
   top: 50%;

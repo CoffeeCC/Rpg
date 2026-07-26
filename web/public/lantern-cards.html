@@ -1,0 +1,225 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Lantern Cards — the physical card</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  LANTERN CARDS — the card bake, at the size a card is actually drawn.
+  ===================================================================
+  Fifth of the lantern lab pages, and the same contract as lantern-board.html:
+  it OWNS NOTHING. It lays out DOM cards, measures them exactly the way
+  `render/LanternCards.tsx` measures the real hand, and calls the real
+  `buildCardScene` and the real `Renderer`. If this draws, the assembly works.
+
+  WHY IT EXISTS. The alternative is to reach a card by playing the game: new
+  character, into the gates, walk the floor until something attacks. That is
+  about forty seconds an iteration, it cannot show a rare card at all until the
+  run produces one, and it cannot show four rarities side by side ever. Every
+  number in `cardScene.ts` was tuned against this page.
+
+  THE MAGNIFIER IS THE POINT, and it is the same method `tools/art/blender/
+  cards.mjs` uses on the bake: draw at TRUE size, then blow it up with nearest
+  neighbour. Judging a 132x185 card on a 3x canvas is how you end up with foil
+  that looks like a rainbow at 400% and like sparkle at 100%.
+
+  Dev-server only: imports .ts directly, which Vite compiles on the fly.
+-->
+<style>
+  :root { --ink:#e8e3d8; --dim:#9a9384; --edge:#2a2620; --panel:#14120f; --bg:#080706; --gold:#d9a441; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); overflow-y:auto;
+    font:13px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid var(--edge); display:flex; gap:16px; align-items:baseline; }
+  h1 { font-size:15px; margin:0; letter-spacing:.04em; color:var(--gold); }
+  .sub { color:var(--dim); font-size:11px; }
+  button { background:#1d1a15; color:var(--ink); border:1px solid var(--edge);
+           border-radius:4px; padding:4px 10px; font:inherit; font-size:11px; cursor:pointer; }
+  h2 { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim);
+       margin:18px 16px 8px; border-bottom:1px solid var(--edge); padding-bottom:4px; }
+  #err { color:#e06d5a; padding:0 16px; white-space:pre-wrap; font-family:ui-monospace, monospace; font-size:11px; }
+  #hud { color:var(--dim); font-family:ui-monospace, monospace; font-size:11px; white-space:pre; padding:0 16px; }
+
+  /* THE STAGE. `position:relative` and nothing else, so the canvas can sit
+     under the cards exactly as it does inside `.hand-zone`. */
+  #stage { position:relative; margin:0 16px; padding:24px 0 32px; }
+  #host { position:absolute; inset:0; z-index:1; pointer-events:none; }
+  #host > canvas { display:block; width:100%; height:100%; }
+  #row { position:relative; z-index:2; display:flex; gap:22px; align-items:flex-end; }
+
+  /* A stand-in for `.playing-card` with its body taken off, which is exactly
+     what `lanternBattle.css` does to the real one: the 3px border keeps its
+     BOX (every panel in the bake was measured against a layout that includes
+     it) and loses its paint. */
+  .card { position:relative; width:132px; height:185px; border:3px solid transparent;
+          border-radius:8px; overflow:hidden; display:flex; flex-direction:column; }
+  .card .tag { position:absolute; bottom:-20px; left:0; right:0; text-align:center;
+               font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); }
+  .back { width:84px; height:118px; }
+  #mag { display:block; margin:0 16px 24px; image-rendering:pixelated; border:1px solid var(--edge); }
+</style>
+
+<header>
+  <h1>Lantern Cards</h1>
+  <span class="sub">the bake, at 132&times;185 — the size two of five breakpoints draw a hand card</span>
+  <button id="pause">pause</button>
+  <button id="step">+0.5s</button>
+</header>
+<div id="err"></div>
+
+<h2>True size &mdash; the four rarities, then the back</h2>
+<div id="stage">
+  <div id="host"></div>
+  <div id="row"></div>
+</div>
+
+<h2>3&times;, nearest neighbour &mdash; judge the foil here, never at true size alone</h2>
+<canvas id="mag"></canvas>
+<div id="hud"></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const fail = (m) => { $('err').textContent = String(m?.stack || m?.message || m); console.error(m); };
+
+try {
+  // Cache-bust every import — same reason lantern-board.html does it: Vite's
+  // HMR socket does not connect here, so a plain reload silently keeps running
+  // the OLD module while the file on disk has moved on.
+  const V = `?v=${Date.now()}`;
+  const { createDevice } = await import('/src/lantern/gl/device.ts' + V);
+  const { Renderer } = await import('/src/lantern/renderer.ts' + V);
+  const { formatHud } = await import('/src/lantern/debug/hud.ts' + V);
+  const { buildCardScene, cardCamera, composeTransforms, decomposeTransform }
+    = await import('/src/render/cardScene.ts' + V);
+  const { createCardMaterialLibrary, requestCardFurniture }
+    = await import('/src/render/cardMaterials.ts' + V);
+
+  // The four rarities the engine can select, then a face-down card. `star` is
+  // baked and has no member in `CardRarity`, so nothing can ask for it.
+  const RARITIES = ['starter', 'common', 'uncommon', 'rare'];
+  const row = $('row');
+  for (const r of RARITIES) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.rarity = r;
+    el.innerHTML = `<span class="tag">${r}</span>`;
+    row.appendChild(el);
+  }
+  const back = document.createElement('div');
+  back.className = 'card back';
+  back.dataset.rarity = '';
+  back.innerHTML = '<span class="tag">back</span>';
+  row.appendChild(back);
+
+  const host = $('host');
+  const canvas = document.createElement('canvas');
+  host.appendChild(canvas);
+  // `transparent`, because this canvas overlays the page exactly as the real
+  // one overlays the hand zone. An opaque buffer would clear the night colour
+  // over the whole stage and the labels under each card would vanish.
+  const result = createDevice(canvas, { transparent: true });
+  if (!result.device) throw new Error(result.reason ?? result.status);
+  const device = result.device;
+  const renderer = new Renderer(device);
+  const lib = createCardMaterialLibrary(device.gl);
+  requestCardFurniture(lib);
+
+  const LOOK = { exposure: 1, bloomStrength: 0.18, bloomThreshold: 1.45, tonemap: 'agx',
+                 specular: 0.9, transparent: true };
+
+  let paused = false;
+  let clock = 0;
+  let last = performance.now();
+  $('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? 'run' : 'pause'; };
+  $('step').onclick = () => { clock += 0.5; frame(); };
+
+  /**
+   * The same read `LanternCards.measure` does, minus the pile selector.
+   *
+   * Deliberately a COPY rather than an import: the component's version is
+   * wired to React refs and to `.hand-slot`, and a rig that shared it could
+   * not be laid out any other way. What must not diverge is the MATHS, and
+   * that lives in `cardScene.ts` where both call it.
+   */
+  function measure(scale) {
+    const hostRect = host.getBoundingClientRect();
+    const cards = [];
+    let baseWidth = null;
+    for (const el of row.children) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      const t = composeTransforms(decomposeTransform(getComputedStyle(el).transform));
+      cards.push({
+        key: el.dataset.rarity || 'back',
+        cx: (r.left - hostRect.left + r.width / 2) * scale,
+        cy: (r.top - hostRect.top + r.height / 2) * scale,
+        w: el.offsetWidth * t.scale * scale,
+        h: el.offsetHeight * t.scale * scale,
+        rotate: t.rotate,
+        rarity: el.dataset.rarity || null,
+      });
+      const w = el.offsetWidth * scale;
+      if (el.dataset.rarity && (baseWidth === null || w < baseWidth)) baseWidth = w;
+    }
+    return { cards, cardWidthPx: baseWidth };
+  }
+
+  const mag = $('mag');
+  const mctx = mag.getContext('2d');
+  const Z = 3;
+  let magPick = [0, 3];
+  // Click a card at true size to put it in the magnifier's right-hand slot,
+  // against the starter baseline on the left.
+  [...row.children].forEach((el, i) => {
+    el.style.cursor = 'pointer';
+    el.onclick = () => { magPick = [0, i]; };
+  });
+
+  function frame() {
+    const cssW = Math.max(64, host.clientWidth);
+    const cssH = Math.max(64, host.clientHeight);
+    device.resize(cssW, cssH, window.devicePixelRatio || 1);
+    const dev = device.size();
+    const scale = dev.width / cssW;
+    const { cards, cardWidthPx } = measure(scale);
+    const cam = cardCamera({ x: dev.width, y: dev.height }, cardWidthPx);
+    const stats = renderer.render(
+      buildCardScene({ camera: cam, time: clock, materials: lib.materials, cards }),
+      LOOK,
+    );
+    // MAGNIFY IN THE SAME TASK. `preserveDrawingBuffer` is false, so the buffer
+    // is gone by the next one and `drawImage` would copy a blank canvas.
+    // TWO AT A TIME, because 3x of five cards is 2000px and a comparison you
+    // have to scroll between is not a comparison. The default pair is the one
+    // that matters: the baseline with no foil against the top tier with it.
+    const cw = 132, ch = 185;
+    const pair = magPick.map((i) => cards[i]).filter(Boolean);
+    if (mag.width !== (cw * Z + 6) * Math.max(1, pair.length)) {
+      mag.width = (cw * Z + 6) * Math.max(1, pair.length);
+      mag.height = ch * Z;
+    }
+    mctx.imageSmoothingEnabled = false;
+    mctx.fillStyle = '#080706';
+    mctx.fillRect(0, 0, mag.width, mag.height);
+    pair.forEach((b, i) => {
+      mctx.drawImage(canvas, Math.round(b.cx - b.w / 2), Math.round(b.cy - b.h / 2),
+        Math.round(b.w), Math.round(b.h), i * (cw * Z + 6), 0, Math.round(b.w) * Z, Math.round(b.h) * Z);
+    });
+    $('hud').textContent = formatHud(stats) + `\nt ${clock.toFixed(2)}s   materials ${lib.materials.size}/7`;
+  }
+
+  function loop() {
+    const now = performance.now();
+    if (!paused) clock += (now - last) / 1000;
+    last = now;
+    frame();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // Same headless contract as `window.__lanternCards`: a synchronous render
+  // that PINS THE CLOCK, so two measurements are two comparable frames.
+  window.__cards = {
+    frame: (t) => { if (t !== undefined) clock = t; frame(); },
+    canvas, mag, boxes: () => measure(device.size().width / Math.max(64, host.clientWidth)).cards,
+  };
+} catch (e) { fail(e); }
+</script>

@@ -25,6 +25,7 @@ import { useNavScope, useNavInputMode, useRefocusOn, navItem, focusFirstIn, getI
 import { DrillCoach } from './DrillCoach';
 import { renderDebug, renderMode } from '../render/flag';
 import { LanternBattlefield, type BattleFigureRef } from '../render/LanternBattlefield';
+import { LanternCards, type HandCardRef } from '../render/LanternCards';
 import { heroTextureId, monsterTextureId } from '../render/battleScene';
 
 // ===========================================================================
@@ -852,6 +853,30 @@ export function BattleStage({ view }: { view: BattleView | null }) {
       ]
     : [];
 
+  /**
+   * The hand, for the renderer — WHICH FOIL, never where.
+   *
+   * Same arrangement as `lanternFigures` one field up, and the same reason for
+   * it: the boxes are measured off the live `.hand-slot` rects in the frame
+   * loop, so all this list carries is the one thing the DOM cannot be asked
+   * for. Rarity IS on the element as `rarity-card-${rarity}`, and reading it
+   * back out of a class name would be the HUD-reads-world path §8 item 9 spent
+   * a milestone deleting.
+   *
+   * INDEX ORDER, matching `slotRefs`, because that map is keyed by hand index
+   * and it is also the order the fan stacks in.
+   */
+  const lanternHand: HandCardRef[] = lantern
+    ? view.hand.map((inst) => {
+        const card = getCard(inst.cardId);
+        return {
+          uid: inst.uid,
+          rarity: card?.rarity ?? 'common',
+          dim: !card || card.cost > view.energy || locked,
+        };
+      })
+    : [];
+
   // The rail chips read as "how is my SIDE doing" / "how is the OPPOSING side
   // doing" — a single lead unit's sliver used to stand in for the whole squad,
   // so a fresh boss at full HP could sit over a chip that looked untouched
@@ -1649,6 +1674,26 @@ export function BattleStage({ view }: { view: BattleView | null }) {
       )}
 
       <div className="hand-zone">
+        {/* THE CARDS' OWN CANVAS. It draws each card's physical body —
+            chamfered stock, gilt moulding, the rarity's foil — behind the DOM
+            card that keeps the name, the cost, the rules text, the art window
+            and every hit target. ENGINE_PLAN §1.2 again, one screen down from
+            the battlefield: the GPU draws the surface, the DOM draws the text.
+            The fan, the arc, the hover lift and the idle breathe are untouched;
+            `render/LanternCards.tsx` measures them and follows.
+
+            INSIDE THE HAND ZONE, and it has to be. `battle.css` gives
+            `.hand-zone` a `z-index: 1`, which makes it a STACKING CONTEXT — so
+            `.hand-fan`'s own z-index is sealed inside it and no canvas placed
+            beside the zone can ever get between the zone's background and the
+            cards on it. Measured rather than reasoned about: the first cut put
+            it at stage level on z-index 3, and it painted over every card's
+            name, art and rules text while looking perfectly correct in the
+            computed styles. It reaches UP out of the zone to cover the fan's
+            overhang — see `lanternBattle.css`. */}
+        {lantern && (
+          <LanternCards stageRef={stageRef} slotRefs={slotRefs} hand={lanternHand} debug={lanternDebug} />
+        )}
         <div className="hand-left">{pileWidget('draw')}</div>
 
         <div className="hand-fan" key={view.handKey} style={{ ['--n' as string]: view.hand.length }}>

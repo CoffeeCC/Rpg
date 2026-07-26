@@ -114,4 +114,45 @@ describe('the lit shader and the vertex format agree', () => {
     expect(LIT_SPRITE_FRAG).toContain('in vec2 vWorld');
     expect(LIT_SPRITE_FRAG).toContain('flat in float vUpright');
   });
+
+  /**
+   * THE GAP THIS CLOSES, named by the commit that paid for it: "the
+   * shaderSource guard checks for backticks and uniform redeclaration but not
+   * for identifiers that do not resolve. A varying typo is the same class of
+   * silent failure and is not covered."
+   *
+   * The bug was one character — the material map sampled at `vUv` where the
+   * varying is `vUV` — and it took the WHOLE lit program down, so the board
+   * rendered black. Neither existing guard could see it: `tsc` cannot look
+   * inside a template literal, and no unit test compiles GLSL. It was
+   * misdiagnosed as a room lamp that had just been turned down, which is
+   * exactly what an unlit board looks like.
+   */
+  it('reads no varying the vertex stage does not write', () => {
+    const declared = new Set<string>();
+    for (const m of LIT_SPRITE_FRAG.matchAll(/^\s*(?:flat\s+)?in\s+\w+\s+(\w+)\s*;/gm)) {
+      declared.add(m[1]);
+    }
+    expect(declared.size, 'the fragment shader declares no varyings at all').toBeGreaterThan(0);
+
+    // Everything this project names in the vN convention. Types (`vec3`) and
+    // built-ins do not match, because the second character must be uppercase.
+    const used = new Set(
+      [...LIT_SPRITE_FRAG.matchAll(/\bv[A-Z]\w*/g)].map((m) => m[0]),
+    );
+    const undeclaredUses = [...used].filter((name) => !declared.has(name));
+    expect(
+      undeclaredUses,
+      `the fragment shader reads ${undeclaredUses.join(', ')}, which no "in" declares — ` +
+        'this is a GLSL compile error that fails at RUNTIME as a black canvas',
+    ).toEqual([]);
+
+    // And the vertex stage writes every one of them, or they arrive as zero.
+    const written = new Set<string>();
+    for (const m of LIT_SPRITE_VERT.matchAll(/^\s*(?:flat\s+)?out\s+\w+\s+(\w+)\s*;/gm)) {
+      written.add(m[1]);
+    }
+    const unwritten = [...declared].filter((name) => !written.has(name));
+    expect(unwritten, `the vertex shader never writes: ${unwritten.join(', ')}`).toEqual([]);
+  });
 });

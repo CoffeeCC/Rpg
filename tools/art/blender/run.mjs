@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
-import { publishBoard } from './publish.mjs';
+import { publishAll } from './publish.mjs';
 
 const FALLBACK_ROOTS = [
   'C:/Program Files/Blender Foundation',
@@ -63,9 +63,11 @@ const args = ['--background', '--python', script, '--', ...process.argv.slice(2)
 console.log(`[art:board] ${blender}`);
 const run = spawnSync(blender, args, { stdio: 'inherit' });
 if (run.status === 0) {
-  // Staging is gitignored and unreachable from a build; publish the two maps
-  // the renderer samples into web/public/ so `npm run art:board` alone is
-  // enough to make new furniture visible in-game.
-  publishBoard();
+  // Staging is gitignored and unreachable from a build; publish the maps the
+  // renderer samples into web/public/ so one command is enough to make new
+  // furniture — or a new card layer — visible in-game. `publishAll` publishes
+  // whichever staging trees exist, so this is right whether the bake that just
+  // finished was the board's or the card set's.
+  publishAll();
 }
 process.exit(run.status ?? 1);
