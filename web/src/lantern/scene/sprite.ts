@@ -21,6 +21,35 @@
 // =========================================================================
 import { project, sortKey, type Camera, type Vec2, type Vec3 } from './camera';
 
+/**
+ * PAINTER LAYERS — what a board is made of, in the order you would build it.
+ *
+ * Sorting purely by board `y` is right for things that all live at the same
+ * elevation, and wrong the moment something is *printed on* the board rather
+ * than *made of* it. The case that forces this is a contact shadow: a disc
+ * lying under a piece at y = 7.8 spills forward into tile row 8, and tile row
+ * 8 sorts AFTER it — so the front third of every shadow got sliced off by a
+ * hard horizontal line wherever a piece stood in the far half of its tile.
+ * (Which is 45% of the time, so it was not a corner case.)
+ *
+ * Layers fix it by saying what the y-sort cannot: the whole board surface is
+ * laid down first, then everything resting on it, then everything standing up
+ * off it. Within a layer, `y` still decides.
+ *
+ * This is safe against the old behaviour rather than merely different from it.
+ * A lying quad at row r and a standing quad at row u can only overlap on
+ * screen when `u - r < 1 + sin(tilt)/cos(tilt)` — about 2.4 rows at the
+ * shipping tilt — and only when the lying one is BEHIND. Which is exactly the
+ * case the layer order already gets right.
+ */
+export const LAYER_TABLE = -1;
+/** The board's own top surface: tiles, the inlaid border, the frame. */
+export const LAYER_BOARD = 0;
+/** Printed on or resting on the board: contact shadows, piece bases, decals. */
+export const LAYER_DECAL = 1;
+/** Standing up off the board: pieces, wall front faces. */
+export const LAYER_PIECE = 2;
+
 export interface UVRect {
   u0: number;
   v0: number;
@@ -66,6 +95,21 @@ export interface Sprite {
    * reason the camera is tilted at all.
    */
   upright?: boolean;
+  /**
+   * Which coat of paint this belongs to. See the LAYER_ constants.
+   *
+   * Defaults to `LAYER_PIECE` for upright quads and `LAYER_BOARD` for flat
+   * ones, which is exactly the old y-only behaviour for every sprite that
+   * existed before layers — so nothing has to be migrated. Set it explicitly
+   * only for the cases the default cannot know about: a shadow lying on the
+   * board (LAYER_DECAL) and the table underneath it (LAYER_TABLE).
+   */
+  layer?: number;
+}
+
+/** The layer a sprite sorts in, with the default applied. */
+export function spriteLayer(s: Sprite): number {
+  return s.layer ?? (s.upright ? LAYER_PIECE : LAYER_BOARD);
 }
 
 const DEFAULT_PIVOT: Vec2 = { x: 0.5, y: 1 };
@@ -81,7 +125,9 @@ const DEFAULT_TINT: Tint = [1, 1, 1, 1];
  * whatever order the scene builder gave them.
  */
 export function sortForPainting(sprites: readonly Sprite[]): Sprite[] {
-  return [...sprites].sort((a, b) => sortKey(a.position) - sortKey(b.position));
+  return [...sprites].sort(
+    (a, b) => spriteLayer(a) - spriteLayer(b) || sortKey(a.position) - sortKey(b.position),
+  );
 }
 
 export interface SpriteBatch {

@@ -306,7 +306,7 @@ export class Renderer {
       const textures = new Map<string, WebGLTexture>();
       for (const [id, mat] of scene.materials) if (mat.albedo) textures.set(id, mat.albedo);
       drawCalls = useLighting
-        ? this.drawLit(prog, batches, scene, textures)
+        ? this.drawLit(prog, batches, scene, textures, opts)
         : this.batcher.draw(prog, batches, textures);
       gl.disable(gl.BLEND);
     }
@@ -431,12 +431,21 @@ export class Renderer {
    * visibly enough to notice it needs baking. Leaving the previous batch's
    * normal bound would be the alternative, and that shades the hero with the
    * wall's bricks, which is a memorable bug to debug.
+   *
+   * EVERY per-material uniform is set on EVERY batch, never conditionally.
+   * The conditional version reads as an optimisation and is a leak: a batch
+   * that does not set a uniform inherits whatever the previous batch left
+   * there, so one material's normal strength (or inlay) silently applies to
+   * the next one, and which materials are affected depends on paint order —
+   * i.e. on where the hero is standing. Exactly the same trap the flat-normal
+   * fallback above exists to close, one uniform along.
    */
   private drawLit(
     prog: Program,
     batches: Parameters<SpriteBatcher['draw']>[1],
     scene: Scene,
     textures: ReadonlyMap<string, WebGLTexture>,
+    opts: Required<RenderOptions>,
   ): number {
     const gl = this.device.gl;
     const flat = this.ensureFlatNormal();
@@ -446,7 +455,7 @@ export class Renderer {
       gl.bindTexture(gl.TEXTURE_2D, mat?.normal ?? flat);
       gl.uniform1i(prog.u('uNormal'), 1);
       gl.uniform1i(prog.u('uHasNormal'), mat?.normal ? 1 : 0);
-      if (mat?.normalStrength != null) gl.uniform1f(prog.u('uNormalStrength'), mat.normalStrength);
+      gl.uniform1f(prog.u('uNormalStrength'), mat?.normalStrength ?? opts.normalStrength);
     });
   }
 

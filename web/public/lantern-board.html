@@ -94,6 +94,28 @@
   <p class="note">Flame size is the penumbra: at 0 the shadows are knife-edged,
     because a light with no width cannot cast a soft edge.</p>
 
+  <h2>Pieces</h2>
+  <label><span class="row">Base radius<b id="vBase">0.40</b></span>
+    <input type="range" id="base" min="0" max="0.8" step="0.01" value="0.4" /></label>
+  <label><span class="row">Base height<b id="vThick">0.11</b></span>
+    <input type="range" id="thick" min="0" max="0.4" step="0.01" value="0.11" /></label>
+  <label><span class="row">Contact shadow<b id="vShad">0.85</b></span>
+    <input type="range" id="shad" min="0" max="1" step="0.01" value="0.85" /></label>
+  <label><span class="row">Piece lift<b id="vLift">0.00</b></span>
+    <input type="range" id="lift" min="0" max="1.5" step="0.01" value="0" /></label>
+  <p class="note">Drag Piece lift and watch the shadow WIDEN AND FADE together.
+    Widening alone reads as the piece growing; the fade is what reads as a lift.</p>
+
+  <h2>Debug</h2>
+  <div class="seg" id="dbg" style="grid-auto-flow:row; grid-template-columns:repeat(3,1fr); grid-auto-rows:auto;">
+    <button data-v="0" aria-pressed="true">Off</button>
+    <button data-v="1">Board</button>
+    <button data-v="2">N·L</button>
+    <button data-v="3">Atten</button>
+    <button data-v="4">Shadow</button>
+    <button data-v="5">Normal</button>
+  </div>
+
   <h2>Status</h2>
   <div id="stats">—</div>
   <p id="err"></p>
@@ -119,6 +141,10 @@ try {
   const { makeCamera, clampTilt } = await import('/src/lantern/scene/camera.ts' + V);
   const { makeScene, makeOccluderGrid, setSolid } = await import('/src/lantern/scene/scene.ts' + V);
   const { formatHud } = await import('/src/lantern/debug/hud.ts' + V);
+  const { LAYER_DECAL } = await import('/src/lantern/scene/sprite.ts' + V);
+  const { createRGBATexture } = await import('/src/lantern/gl/procedural.ts' + V);
+  const { contactShadowPixels, baseDiscPixels, baseDiscNormalPixels, pieceBaseSprites, contactShadowSprite }
+    = await import('/src/lantern/scene/piece.ts' + V);
 
   const canvas = $('gl');
   const { device, status, reason } = createDevice(canvas);
@@ -170,14 +196,42 @@ try {
   let materials = new Map();
   let gate = 'hollow';
 
+  // ---------------------------------------------------------------------
+  // FURNITURE, made by arithmetic.
+  //
+  // There is no art file for the shadow under a piece or the bevel on its
+  // base, and there should not be: they are geometry, not painting. The
+  // generators live in `lantern/scene/piece.ts` as pure functions over byte
+  // arrays, so the falloff is unit-tested rather than eyeballed, and this
+  // page only does the upload.
+  // ---------------------------------------------------------------------
+  const furniture = new Map([
+    // Alpha-only, so no sRGB decode: this texture is a mask, not a colour.
+    ['shadow', { id: 'shadow', albedo: createRGBATexture(gl, 96, contactShadowPixels(96), { mipmap: true }) }],
+    ['base', {
+      id: 'base',
+      albedo: createRGBATexture(gl, 128, baseDiscPixels(128), { srgb: true, mipmap: true }),
+      // NOT sRGB. A normal map is three numbers that happen to be stored in a
+      // colour texture; decoding it as colour bends every vector toward +z and
+      // silently flattens the bevel.
+      normal: createRGBATexture(gl, 128, baseDiscNormalPixels(128), { mipmap: true }),
+      normalStrength: 1.0,
+    }],
+  ]);
+
   async function loadGate(name) {
     const ground = await loadTexture(`art/tiles/${name}_ground.jpg`);
     const wall = await loadTexture(`art/tiles/${name}_wall.jpg`);
     const hero = await loadTexture('art/sprites/player.png');
+    const merchant = await loadTexture('art/sprites/merchant.png');
+    const tamer = await loadTexture('art/sprites/tamer.png');
     materials = new Map([
+      ...furniture,
       ['ground', { id: 'ground', albedo: ground }],
       ['wall', { id: 'wall', albedo: wall }],
       ['hero', { id: 'hero', albedo: hero }],
+      ['merchant', { id: 'merchant', albedo: merchant }],
+      ['tamer', { id: 'tamer', albedo: tamer }],
     ]);
   }
 
@@ -235,19 +289,55 @@ try {
       }
     }
 
-    // The hero, walking a small circuit, standing up off the board.
+    // ---------------------------------------------------------------------
+    // THE PIECES.
+    //
+    // Three things, not one, and the order matters: contact shadow, then the
+    // plinth it sits on, then the figure standing on that. A standing sprite
+    // with no contact shadow reads as a STICKER however well it is lit — the
+    // eye decides "on the board" versus "in front of the board" almost
+    // entirely from the darkening where the two meet.
+    // ---------------------------------------------------------------------
+    const baseR = Number($('base').value);
+    const thick = Number($('thick').value);
+    const shadeS = Number($('shad').value);
+    const lift = Number($('lift').value);
+
+    function piece(x, y, textureId, size) {
+      const at = { x, y };
+      if (baseR > 0.01) {
+        sprites.push(
+          ...pieceBaseSprites(at, 'base', 'shadow', {
+            radius: baseR,
+            thickness: thick,
+            shadow: { strength: shadeS, height: lift },
+          }),
+        );
+      } else {
+        sprites.push(contactShadowSprite(at, 'shadow', { radius: 0.45, strength: shadeS, height: lift }));
+      }
+      sprites.push({
+        // The figure stands on TOP of its plinth, so its feet start at the
+        // plinth's height, plus whatever the piece has been lifted by.
+        position: { x, y, z: thick + lift },
+        size,
+        pivot: { x: 0.5, y: 1 },
+        // A piece, not a decal. Without this it lies face-up on the board
+        // like a printed counter.
+        upright: true,
+        uv: UV,
+        textureId,
+      });
+    }
+
+    // The hero, walking a small circuit.
     const hx = W / 2 + Math.cos(t * 0.35) * 4.2;
     const hy = H / 2 + Math.sin(t * 0.35) * 2.6;
-    sprites.push({
-      position: { x: hx, y: hy, z: 0 },
-      size: { x: 1.1, y: 1.7 },
-      pivot: { x: 0.5, y: 1 },
-      // A piece, not a decal. Without this the hero lies face-up on the board
-      // like a printed counter.
-      upright: true,
-      uv: UV,
-      textureId: 'hero',
-    });
+    piece(hx, hy, 'hero', { x: 1.1, y: 1.7 });
+    // Two more pieces, standing still, so the board reads as a board with
+    // several pieces on it rather than as one figure on a lit plane.
+    piece(W / 2 - 3.5, H / 2 + 3.2, 'merchant', { x: 1.1, y: 1.7 });
+    piece(W / 2 + 2.5, H / 2 - 1.4, 'tamer', { x: 1.1, y: 1.7 });
 
     return makeScene(camera, {
       sprites,
@@ -278,12 +368,39 @@ try {
       bloomThreshold: Number($('thr').value),
       tonemap: current.tonemap,
       lit: current.lit,
+      debug: current.debug,
     });
     $('stats').textContent = formatHud(stats);
   }
   window.boardFrame = frame;
+  // Enough of the guts to drive ONE deterministic frame and read pixels back.
+  //
+  // rAF does not fire when this page is not compositing, so every visual check
+  // goes through `boardFrame()` — but `boardFrame` reads the clock, so two
+  // calls are two different frames and nothing can be compared. `boardOnce(t)`
+  // pins the time, which is what makes "render this exact scene twice with one
+  // uniform changed and diff the pixels" possible at all.
+  window.boardOnce = (t, opts = {}) => renderer.render(buildScene(t), {
+    exposure: Math.pow(2, Number($('exp').value)),
+    bloomStrength: Number($('bloom').value),
+    bloomThreshold: Number($('thr').value),
+    tonemap: current.tonemap,
+    lit: current.lit,
+    debug: current.debug,
+    ...opts,
+  });
+  window.boardScene = (t) => buildScene(t);
+  window.boardGL = gl;
 
-  const current = { tonemap: 'agx', lit: true };
+  const current = { tonemap: 'agx', lit: true, debug: 0 };
+
+  for (const b of $('dbg').querySelectorAll('button')) {
+    b.onclick = () => {
+      current.debug = Number(b.dataset.v);
+      for (const o of $('dbg').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      frame();
+    };
+  }
 
   for (const b of $('litseg').querySelectorAll('button')) {
     b.onclick = () => {
@@ -311,7 +428,9 @@ try {
                                 ['exp','vExp',(v)=>Number(v).toFixed(1)],['bloom','vBloom',(v)=>Number(v).toFixed(2)],
                                 ['thr','vThr',(v)=>Number(v).toFixed(2)],
                                 ['lamp','vLamp',(v)=>Number(v).toFixed(1)],['reach','vReach',(v)=>Number(v).toFixed(1)],
-                                ['rad','vRad',(v)=>Number(v).toFixed(2)],['amb','vAmb',(v)=>Number(v).toFixed(3)]]) {
+                                ['rad','vRad',(v)=>Number(v).toFixed(2)],['amb','vAmb',(v)=>Number(v).toFixed(3)],
+                                ['base','vBase',(v)=>Number(v).toFixed(2)],['thick','vThick',(v)=>Number(v).toFixed(2)],
+                                ['shad','vShad',(v)=>Number(v).toFixed(2)],['lift','vLift',(v)=>Number(v).toFixed(2)]]) {
     const el = $(id);
     const sync = () => { $(out).textContent = fmt(el.value); frame(); };
     el.addEventListener('input', sync);
@@ -320,7 +439,13 @@ try {
 
   await loadGate(gate);
   const resize = () => {
-    canvas.width = Math.min(1400, canvas.clientWidth || 1280);
+    // Measured off the STAGE, not off the canvas. A canvas is sized by its
+    // own width attribute, so `canvas.clientWidth` under `max-width:100%` is
+    // self-referential: it reports the 300px default and then locks the
+    // canvas to it forever. Costs nothing to get right and it is invisible
+    // until the page is loaded in a context whose layout settles late.
+    const stage = $('stage');
+    canvas.width = Math.max(640, Math.min(1400, stage.clientWidth || 1280));
     canvas.height = Math.round(canvas.width * 0.625);
     frame();
   };
