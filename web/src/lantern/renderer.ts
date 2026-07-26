@@ -29,6 +29,8 @@ import type { Device } from './gl/device';
 import { ProgramCache, type Program } from './gl/program';
 import { bindTarget, createTarget, drawFullscreen, type Target } from './gl/target';
 import { SpriteBatcher, SPRITE_FRAG, SPRITE_VERT } from './gl/spriteBatcher';
+import { LIT_SPRITE_FRAG, LIT_SPRITE_VERT, MAX_LIGHTS } from './passes/lighting';
+import { withDefines } from './gl/program';
 import { createIdentityLut, lutGlsl } from './gl/lut';
 import { AGX_GLSL } from './passes/tonemap';
 import { mipChain, BLOOM_DOWNSAMPLE_GLSL, BLOOM_UPSAMPLE_GLSL } from './passes/bloom';
@@ -51,6 +53,21 @@ export interface RenderOptions {
   tonemap?: TonemapName;
   /** 0 bypasses the grade, 1 applies it fully. */
   lutMix?: number;
+  /**
+   * Light the scene, rather than drawing flat albedo.
+   *
+   * On by default now that M2 exists. `false` is the M1 path, kept because it
+   * is the only way to see what the lighting is actually contributing — and
+   * because a flat render is the right fallback if a scene arrives with no
+   * lights at all.
+   */
+  lit?: boolean;
+  /** Global multiplier on the normal map's strength. Per-material overrides win. */
+  normalStrength?: number;
+  specular?: number;
+  gloss?: number;
+  /** False-colour overlay: 0 off, 1 board pos, 2 N.L, 3 attenuation, 4 shadow, 5 normal. */
+  debug?: number;
 }
 
 const DEFAULTS: Required<RenderOptions> = {
@@ -61,6 +78,11 @@ const DEFAULTS: Required<RenderOptions> = {
   karis: true,
   tonemap: 'agx',
   lutMix: 0,
+  lit: true,
+  normalStrength: 1,
+  specular: 0.25,
+  gloss: 24,
+  debug: 0,
 };
 
 /**
@@ -141,6 +163,11 @@ export class Renderer {
   private width = 0;
   private height = 0;
   private disposed = false;
+  /** The occupancy grid, as an R8 texture. Re-uploaded only when it changes. */
+  private occupancy: WebGLTexture | null = null;
+  private occupancyKey = '';
+  /** A 1x1 flat normal, so the lit shader has something valid to sample. */
+  private flatNormal: WebGLTexture | null = null;
 
   constructor(device: Device) {
     this.device = device;
@@ -163,6 +190,11 @@ export class Renderer {
     for (const m of this.mips) m.dispose();
     this.mips = [];
     this.lut = createIdentityLut(gl);
+    // Dead handles after a context loss. Null them so the next frame
+    // re-uploads rather than binding a texture the driver has forgotten.
+    this.occupancy = null;
+    this.occupancyKey = '';
+    this.flatNormal = null;
     this.width = 0;
     this.height = 0;
   }
@@ -221,17 +253,61 @@ export class Renderer {
     gl.clearColor(scene.night[0], scene.night[1], scene.night[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
+    const lights = cullLights(scene.lights, bounds).slice(0, MAX_LIGHTS);
+    const useLighting = opts.lit && lights.length > 0 && scene.occluders !== null;
+
     let drawCalls = 0;
     if (sorted.length) {
-      const prog = this.cache.get('sprite', SPRITE_FRAG, SPRITE_VERT);
+      const q = this.device.quality();
+      const prog = useLighting
+        ? this.cache.get(
+            'lit-sprite',
+            // Shadow cost is the quality dial's business, and it is a compile
+            // constant because a loop bound must be one in GLSL ES. The cache
+            // keys on source text, so each tier gets its own program rather
+            // than one program branching per pixel.
+            withDefines(LIT_SPRITE_FRAG, {
+              SHADOW_STEPS: q.name === 'floor' ? 12 : 24,
+              SHADOW_SAMPLES: q.name === 'ceiling' ? 5 : 3,
+            }),
+            LIT_SPRITE_VERT,
+          )
+        : this.cache.get('sprite', SPRITE_FRAG, SPRITE_VERT);
       gl.useProgram(prog.handle);
       gl.uniform2f(prog.u('uViewport'), sceneRT.width, sceneRT.height);
+
+      if (useLighting) {
+        const grid = scene.occluders!;
+        const occ = this.ensureOccupancy(scene);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, occ);
+        gl.uniform1i(prog.u('uOccupancy'), 2);
+        gl.uniform2f(prog.u('uGridSize'), grid.width, grid.height);
+
+        gl.uniform1i(prog.u('uLightCount'), lights.length);
+        for (let i = 0; i < lights.length; i++) {
+          const l = lights[i];
+          gl.uniform3f(prog.u(`uLightPos[${i}]`), l.position.x, l.position.y, l.position.z);
+          gl.uniform3f(prog.u(`uLightColour[${i}]`), l.colour[0], l.colour[1], l.colour[2]);
+          gl.uniform3f(prog.u(`uLightParams[${i}]`), l.intensity, l.reach, l.radius);
+        }
+        gl.uniform1f(prog.u('uAmbient'), scene.ambient);
+        gl.uniform3f(prog.u('uNight'), scene.night[0], scene.night[1], scene.night[2]);
+        gl.uniform1f(prog.u('uNormalStrength'), opts.normalStrength);
+        gl.uniform1f(prog.u('uSpecular'), opts.specular);
+        gl.uniform1f(prog.u('uGloss'), opts.gloss);
+        gl.uniform1f(prog.u('uTilt'), scene.camera.tilt);
+        gl.uniform1i(prog.u('uDebug'), opts.debug);
+      }
+
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       this.batcher.upload(buildVertexData(sorted, scene.camera));
       const textures = new Map<string, WebGLTexture>();
       for (const [id, mat] of scene.materials) if (mat.albedo) textures.set(id, mat.albedo);
-      drawCalls = this.batcher.draw(prog, batches, textures);
+      drawCalls = useLighting
+        ? this.drawLit(prog, batches, scene, textures)
+        : this.batcher.draw(prog, batches, textures);
       gl.disable(gl.BLEND);
     }
 
@@ -253,7 +329,7 @@ export class Renderer {
     drawFullscreen(gl);
 
     this.gpuTimer.end?.();
-    return this.stats(drawCalls, cullLights(scene.lights, bounds).length, sorted.length, start);
+    return this.stats(drawCalls, lights.length, sorted.length, start, useLighting);
   }
 
   private bloom(sceneRT: Target, opts: Required<RenderOptions>): void {
@@ -292,6 +368,88 @@ export class Renderer {
     gl.disable(gl.BLEND);
   }
 
+  /**
+   * Upload the occupancy grid, but only when it actually changed.
+   *
+   * The grid is per-floor, not per-frame — it changes when a wall is broken
+   * or the hero takes stairs, which is a handful of times a minute against
+   * sixty uploads a second. Keyed on dimensions plus a cheap checksum rather
+   * than comparing the whole array: a floor is a few hundred bytes, so the
+   * checksum is far cheaper than the upload it avoids.
+   */
+  private ensureOccupancy(scene: Scene): WebGLTexture | null {
+    const gl = this.device.gl;
+    const grid = scene.occluders;
+    if (!grid) return null;
+    let sum = 0;
+    for (let i = 0; i < grid.solid.length; i++) sum = (sum + grid.solid[i] * (i + 1)) | 0;
+    const key = `${grid.width}x${grid.height}:${sum}`;
+    if (key === this.occupancyKey && this.occupancy) return this.occupancy;
+
+    if (!this.occupancy) this.occupancy = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.occupancy);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    // Expand 0/1 to 0/255. R8 is a UNORM format, so the shader receives
+    // value/255 — uploading a literal 1 arrives as 0.0039 and fails every
+    // sensible threshold, which makes shadows silently never cast.
+    const bytes = new Uint8Array(grid.solid.length);
+    for (let i = 0; i < grid.solid.length; i++) bytes[i] = grid.solid[i] ? 255 : 0;
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, grid.width, grid.height, 0, gl.RED, gl.UNSIGNED_BYTE, bytes);
+    // NEAREST, always. A tile is solid or it is not, and filtering the grid
+    // would invent half-solid tiles at every wall edge — which reads as light
+    // bleeding through the first half-tile of every wall.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    // Clamp: sampling past the edge returns the edge tile, and the border of
+    // a floor is wall, so off-grid reads as solid. Same claim `isSolid` makes
+    // on the CPU, and the two must not disagree.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.occupancyKey = key;
+    return this.occupancy;
+  }
+
+  /** A single flat-normal texel, so the lit shader never samples a null. */
+  private ensureFlatNormal(): WebGLTexture {
+    const gl = this.device.gl;
+    if (this.flatNormal) return this.flatNormal;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    // (0.5, 0.5, 1.0) decodes to (0, 0, 1) — straight out of the surface.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 255, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    this.flatNormal = tex;
+    return tex;
+  }
+
+  /**
+   * The lit draw: same batches, plus each material's normal map on unit 1.
+   *
+   * A material without a normal gets the 1x1 flat one rather than being
+   * skipped, so an un-baked asset still lights — flatly, but correctly, and
+   * visibly enough to notice it needs baking. Leaving the previous batch's
+   * normal bound would be the alternative, and that shades the hero with the
+   * wall's bricks, which is a memorable bug to debug.
+   */
+  private drawLit(
+    prog: Program,
+    batches: Parameters<SpriteBatcher['draw']>[1],
+    scene: Scene,
+    textures: ReadonlyMap<string, WebGLTexture>,
+  ): number {
+    const gl = this.device.gl;
+    const flat = this.ensureFlatNormal();
+    return this.batcher.draw(prog, batches, textures, (textureId) => {
+      const mat = scene.materials.get(textureId);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, mat?.normal ?? flat);
+      gl.uniform1i(prog.u('uNormal'), 1);
+      gl.uniform1i(prog.u('uHasNormal'), mat?.normal ? 1 : 0);
+      if (mat?.normalStrength != null) gl.uniform1f(prog.u('uNormalStrength'), mat.normalStrength);
+    });
+  }
+
   private bind(program: Program, textures: Record<string, WebGLTexture | null>): void {
     const gl = this.device.gl;
     let unit = 0;
@@ -303,7 +461,7 @@ export class Renderer {
     }
   }
 
-  private stats(drawCalls: number, lightCount: number, _sprites: number, start: number): HudStats {
+  private stats(drawCalls: number, lightCount: number, _sprites: number, start: number, lit = false): HudStats {
     const frameMs = performance.now() - start;
     this.cpuTimer.push(frameMs);
     return {
@@ -314,6 +472,7 @@ export class Renderer {
       drawCalls,
       lightCount,
       gpuMs: this.gpuTimer.available ? this.gpuTimer.ms : null,
+      lit,
     };
   }
 
@@ -325,7 +484,12 @@ export class Renderer {
     this.scene?.dispose();
     for (const m of this.mips) m.dispose();
     this.mips = [];
-    if (this.lut) this.device.gl.deleteTexture(this.lut);
+    const gl = this.device.gl;
+    if (this.lut) gl.deleteTexture(this.lut);
+    if (this.occupancy) gl.deleteTexture(this.occupancy);
+    if (this.flatNormal) gl.deleteTexture(this.flatNormal);
     this.lut = null;
+    this.occupancy = null;
+    this.flatNormal = null;
   }
 }

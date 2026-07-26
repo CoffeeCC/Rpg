@@ -78,6 +78,22 @@
   <label><span class="row">Threshold<b id="vThr">1.20</b></span>
     <input type="range" id="thr" min="0" max="4" step="0.01" value="1.2" /></label>
 
+  <h2>Lighting</h2>
+  <div class="seg" id="litseg">
+    <button data-v="1" aria-pressed="true">Lit</button>
+    <button data-v="0">Albedo (M1)</button>
+  </div>
+  <label><span class="row">Lantern<b id="vLamp">9.0</b></span>
+    <input type="range" id="lamp" min="0" max="30" step="0.1" value="9" /></label>
+  <label><span class="row">Reach (tiles)<b id="vReach">7.0</b></span>
+    <input type="range" id="reach" min="2" max="20" step="0.5" value="7" /></label>
+  <label><span class="row">Flame size<b id="vRad">0.18</b></span>
+    <input type="range" id="rad" min="0" max="1.2" step="0.01" value="0.18" /></label>
+  <label><span class="row">Ambient<b id="vAmb">0.06</b></span>
+    <input type="range" id="amb" min="0" max="0.5" step="0.005" value="0.06" /></label>
+  <p class="note">Flame size is the penumbra: at 0 the shadows are knife-edged,
+    because a light with no width cannot cast a soft edge.</p>
+
   <h2>Status</h2>
   <div id="stats">—</div>
   <p id="err"></p>
@@ -90,11 +106,19 @@ const $ = (id) => document.getElementById(id);
 const fail = (m) => { $('err').textContent = String(m?.stack || m?.message || m); console.error(m); };
 
 try {
-  const { createDevice } = await import('/src/lantern/gl/device.ts');
-  const { Renderer } = await import('/src/lantern/renderer.ts');
-  const { makeCamera, clampTilt } = await import('/src/lantern/scene/camera.ts');
-  const { makeScene, makeOccluderGrid, setSolid } = await import('/src/lantern/scene/scene.ts');
-  const { formatHud } = await import('/src/lantern/debug/hud.ts');
+  // Cache-bust every import.
+  //
+  // This browser HTTP-caches module URLs, and Vite's HMR websocket does not
+  // connect here, so nothing invalidates them: edit a source file, reload, and
+  // the page silently keeps running the OLD module while `fetch` of the same
+  // URL returns the new one. That cost an hour of chasing a lighting bug that
+  // was really a stale `formatHud`. A dev harness can afford the query string.
+  const V = `?v=${Date.now()}`;
+  const { createDevice } = await import('/src/lantern/gl/device.ts' + V);
+  const { Renderer } = await import('/src/lantern/renderer.ts' + V);
+  const { makeCamera, clampTilt } = await import('/src/lantern/scene/camera.ts' + V);
+  const { makeScene, makeOccluderGrid, setSolid } = await import('/src/lantern/scene/scene.ts' + V);
+  const { formatHud } = await import('/src/lantern/debug/hud.ts' + V);
 
   const canvas = $('gl');
   const { device, status, reason } = createDevice(canvas);
@@ -230,13 +254,14 @@ try {
       materials,
       occluders: grid,
       time: t,
+      ambient: Number($('amb').value),
       lights: [
         {
           position: { x: hx, y: hy, z: 0.9 },
           colour: [1, 0.62, 0.28],
-          intensity: 9,
-          radius: 0.18,
-          reach: 7,
+          intensity: Number($('lamp').value),
+          radius: Number($('rad').value),
+          reach: Number($('reach').value),
         },
       ],
     });
@@ -252,13 +277,21 @@ try {
       bloomStrength: Number($('bloom').value),
       bloomThreshold: Number($('thr').value),
       tonemap: current.tonemap,
+      lit: current.lit,
     });
-    $('stats').textContent = formatHud(stats) + `\nsprites    ${buildSpriteCount}`;
+    $('stats').textContent = formatHud(stats);
   }
   window.boardFrame = frame;
 
-  const current = { tonemap: 'agx' };
+  const current = { tonemap: 'agx', lit: true };
 
+  for (const b of $('litseg').querySelectorAll('button')) {
+    b.onclick = () => {
+      current.lit = b.dataset.v === '1';
+      for (const o of $('litseg').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      frame();
+    };
+  }
   for (const b of $('tm').querySelectorAll('button')) {
     b.onclick = () => {
       current.tonemap = b.dataset.v;
@@ -276,7 +309,9 @@ try {
   }
   for (const [id, out, fmt] of [['tilt','vTilt',(v)=>`${v}°`],['zoom','vZoom',(v)=>String(v)],
                                 ['exp','vExp',(v)=>Number(v).toFixed(1)],['bloom','vBloom',(v)=>Number(v).toFixed(2)],
-                                ['thr','vThr',(v)=>Number(v).toFixed(2)]]) {
+                                ['thr','vThr',(v)=>Number(v).toFixed(2)],
+                                ['lamp','vLamp',(v)=>Number(v).toFixed(1)],['reach','vReach',(v)=>Number(v).toFixed(1)],
+                                ['rad','vRad',(v)=>Number(v).toFixed(2)],['amb','vAmb',(v)=>Number(v).toFixed(3)]]) {
     const el = $(id);
     const sync = () => { $(out).textContent = fmt(el.value); frame(); };
     el.addEventListener('input', sync);

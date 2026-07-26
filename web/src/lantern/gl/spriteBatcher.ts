@@ -74,6 +74,10 @@ export class SpriteBatcher {
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, STRIDE, 8);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 4, gl.FLOAT, false, STRIDE, 16);
+    // Board position + upright flag, for the lighting pass. Every light
+    // calculation happens in board space; see FLOATS_PER_VERTEX.
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, STRIDE, 32);
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
@@ -105,7 +109,21 @@ export class SpriteBatcher {
    * `program` must already be bound (`gl.useProgram`) with `uViewport` set.
    * Returns the draw call count, for the debug HUD.
    */
-  draw(program: Program, batches: readonly SpriteBatch[], textures: ReadonlyMap<string, WebGLTexture>): number {
+  draw(
+    program: Program,
+    batches: readonly SpriteBatch[],
+    textures: ReadonlyMap<string, WebGLTexture>,
+    /**
+     * Called once per batch, before its draw, with that batch's material id.
+     *
+     * Exists so the lit path can bind a per-material NORMAL map without this
+     * class having to learn what a material is. Duplicating the loop in the
+     * caller was the alternative, and two copies of "walk the batches while
+     * tracking the vertex offset" is exactly the kind of thing that stays in
+     * sync right up until it quietly does not.
+     */
+    onBatch?: (textureId: string) => void,
+  ): number {
     const gl = this.gl;
     gl.bindVertexArray(this.vao);
     let offset = 0;
@@ -116,7 +134,13 @@ export class SpriteBatcher {
       if (tex && offset + count <= this.vertexCount) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, tex);
+        // The unlit shader calls it uAtlas and the lit one calls it uAlbedo.
+        // A missing uniform resolves to null and setting null is a no-op, so
+        // both are safe to set and neither program needs to know about the
+        // other's naming.
         gl.uniform1i(program.u('uAtlas'), 0);
+        gl.uniform1i(program.u('uAlbedo'), 0);
+        onBatch?.(batch.textureId);
         gl.drawArrays(gl.TRIANGLES, offset, count);
         calls++;
       }

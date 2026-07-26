@@ -110,7 +110,18 @@ export function batchGroups(sorted: readonly Sprite[]): SpriteBatch[] {
 }
 
 /** x, y (screen px), u, v, r, g, b, a. */
-export const FLOATS_PER_VERTEX = 8;
+/**
+ * x, y (screen px), u, v, r, g, b, a, worldX, worldY, upright.
+ *
+ * The last three exist for the lighting pass. Every light calculation happens
+ * in BOARD space, so the fragment shader needs to know which tile it is
+ * standing on — and it cannot recover that by inverting the projection,
+ * because an upright quad's screen position maps to a whole column of board
+ * positions rather than to one. Carrying it costs 12 bytes a vertex and
+ * removes an entire class of "the lighting is subtly offset from the geometry"
+ * bug.
+ */
+export const FLOATS_PER_VERTEX = 11;
 /** Two triangles, no index buffer — simplest thing that works at M1 sprite counts. */
 export const VERTICES_PER_SPRITE = 6;
 
@@ -150,7 +161,38 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
       [right, bottom, u1, v1],
       [left, bottom, u0, v1],
     ];
-    for (const [x, y, u, v] of corners) {
+    // Board position PER CORNER, so the lighting interpolates across the quad
+    // instead of being constant over it.
+    //
+    // Carrying the sprite's anchor on every vertex was the first attempt and
+    // it lit each tile as a single flat unit — the pool around the lantern
+    // came out as a staircase of whole tiles rather than a circle. A tile is
+    // a whole board unit across, so a light a few tiles away varies
+    // noticeably from one edge of it to the other.
+    //
+    // The Y axis is the exception, and it is why this is not simply "use the
+    // corner". A quad standing UP spans height, not depth: every part of a
+    // wall's front face stands on the SAME floor tile, and that tile is what
+    // decides how far the lantern is and what shadows it. Interpolating Y
+    // there would light the top of the face as though it were a tile further
+    // back, which bends every wall away from the light.
+    const upright = sp.upright ? 1 : 0;
+    const wx0 = sp.position.x - sp.size.x * pivot.x;
+    const wx1 = wx0 + sp.size.x;
+    const wy0 = sp.upright ? sp.position.y : sp.position.y - sp.size.y * pivot.y;
+    const wy1 = sp.upright ? sp.position.y : wy0 + sp.size.y;
+    // Same winding as `corners`: left/top, right/top, right/bottom, left/top,
+    // right/bottom, left/bottom.
+    const world: [number, number][] = [
+      [wx0, wy0],
+      [wx1, wy0],
+      [wx1, wy1],
+      [wx0, wy0],
+      [wx1, wy1],
+      [wx0, wy1],
+    ];
+    for (let c = 0; c < corners.length; c++) {
+      const [x, y, u, v] = corners[c];
       out[o++] = x;
       out[o++] = y;
       out[o++] = u;
@@ -159,6 +201,9 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
       out[o++] = g;
       out[o++] = b;
       out[o++] = a;
+      out[o++] = world[c][0];
+      out[o++] = world[c][1];
+      out[o++] = upright;
     }
   }
   return out;

@@ -124,6 +124,14 @@ export interface HudStats {
   lightCount: number;
   /** null when EXT_disjoint_timer_query_webgl2 is unavailable or no result has arrived yet. */
   gpuMs: number | null;
+  /**
+   * Whether the LIT path ran this frame, rather than flat albedo.
+   *
+   * Reported because "the lighting looks like it is not doing anything" and
+   * "the lighting pass did not run" are indistinguishable on screen, and
+   * chasing the first when it is the second is an hour gone.
+   */
+  lit?: boolean;
 }
 
 /** Plain text, matching the block `lantern-forge.html`'s `#stats` panel already renders. */
@@ -135,6 +143,7 @@ export function formatHud(s: HudStats): string {
     `p50 / p99  ${s.p50.toFixed(2)} / ${s.p99.toFixed(2)} ms\n` +
     `draws      ${s.drawCalls}\n` +
     `lights     ${s.lightCount}\n` +
+    `path       ${s.lit ? 'lit' : 'albedo only'}\n` +
     `gpu        ${gpu}`
   );
 }
