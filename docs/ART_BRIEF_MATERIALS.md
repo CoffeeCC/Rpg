@@ -163,3 +163,35 @@ produces a flat bulge; art drawn as a figure produces a figure.
 The existing painted style is the strength and should not become 3D-render
 pastiche. The instruction is "paint this creature as a figurine someone owns",
 not "make it look computer-generated".
+
+### The matte must be HARD — measured, 2026-07-26
+
+Added after Paul asked why the pieces look "ghostly transparent" on the lit
+board. They are. Measured on the shipped sprites:
+
+| sprite | fully opaque | partial alpha | mean alpha |
+|---|---|---|---|
+| `player.png` | 41% | 59% | 184/255 |
+| `merchant.png` | 76% | 24% | 238/255 |
+| `tamer.png` | **23%** | **77%** | **148/255** |
+
+A figure that is 58% opaque on average is a ghost by construction.
+
+**Why nobody noticed until now:** the old DOM map put these on a DARK
+background, where partial alpha still reads as solid. The lit board is bright
+underneath, so every soft pixel blends toward the floor. The lighting did not
+cause this — it exposed it.
+
+**And it costs geometry, not just looks.** The EDT bevel derives the relief
+height field from the ALPHA channel, so a soft matte produces a soft, mushy
+bulge. `tamer`, the softest matte of the three, also produced the flattest
+relief. A vague outline is a vague figure.
+
+**Requirement:** the figure is OPAQUE. Alpha is a cutout, not a fade. Only a
+one-to-two pixel antialiasing band at the true silhouette edge may be partial.
+No feathered edges, no soft glow bleeding outward, no semi-transparent robes,
+smoke or aura — if something should glow, it belongs in the emissive channel,
+which the engine composites as LIGHT rather than as transparency.
+
+A quick check: the fraction of non-clear pixels that are fully opaque should be
+**above 90%**. The current best is 76% and the worst is 23%.
