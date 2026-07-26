@@ -856,3 +856,79 @@ like a board" was never going to fall out of it.
 
 M3 is now that list, in that order. The camera tilt and wall front faces that
 M3 originally owned both landed early, during M1 and M2.
+
+---
+
+## 12. The art direction, stated by Paul (2026-07-26)
+
+> *"the flat top down tile based movement we are moving away from can manifest
+> as the tiles that are walls can just be blocky wall game pieces with textures
+> on them. and our character piece and enemy pieces travel around the board in
+> turns. but with the character being our only source of significant light.
+> there can be wall sconces and glowing things that give off faint bits of
+> light though. maybe some floaty beings kind of like what ocarina of time has
+> in the forest that also give off very small bits of luminescence maybe some
+> glowing mushrooms. the occasional lit torch."*
+
+This is the whole game's look in one paragraph, so it belongs in the plan
+verbatim rather than paraphrased. Three things follow from it.
+
+### 12.1 Walls are pieces, not floor
+
+A wall tile is a **block sitting on the board** — top face, front face, a hint
+of side so corners read as volume — with a contact shadow at its base like any
+other piece. Not a textured floor tile with a front face bolted on. A wall
+block and a hero piece become the same kind of object at different sizes,
+which means they share the base/shadow machinery rather than each having their
+own.
+
+### 12.2 One bright light, many faint ones — and this is the cheap case
+
+The hero's lantern is the only significant light. Everything else is a
+whisper: sconces, a lit torch, glowing mushrooms, drifting luminescent
+beings (the Lost Woods wisps). Faint means **small reach**, and small reach is
+what makes this affordable — a mushroom lighting two tiles touches about a
+dozen tiles and costs nothing anywhere else on the board.
+
+It also gives the lighting engine the one thing it has been missing: something
+to *contrast against*. A single light in a void has no scale. A pinprick of
+green at the end of a corridor is what tells you how dark the corridor is.
+
+### 12.3 The consequence: M2's light cap is now the blocker
+
+**This is a real limit that has to be lifted before the direction above can
+exist.** `renderer.ts` culls lights once per frame against the viewport and
+then takes the first `MAX_LIGHTS = 8`. So the ceiling is **eight lights on
+screen, total** — not eight per tile. One corridor of sconces and mushrooms
+exhausts it, and the failure mode is silent: lights past the eighth simply do
+not appear.
+
+**The fix is per-tile light binning (clustered forward), not cascades.** Worth
+stating plainly because the temptation is to reach for M5:
+
+- **Cascades buy BOUNCE.** They are O(1) in lights as a side effect, but that
+  is not what they are for and they are the milestone with real research risk.
+- **Binning buys COUNT**, which is what this art direction actually needs, and
+  it is a contained, well-understood piece of work: bin light indices into a
+  coarse grid over the board, upload it as a texture, and have each fragment
+  read only the handful of lights whose reach covers its tile.
+
+Binning also makes M5 cheaper rather than competing with it — the cascade
+solver wants the same spatial structure to seed from.
+
+**So the order changes:** light binning + emitters slots in as its own step
+before the tilt/board work is finished, because a board full of blocks with a
+single 8-light budget cannot show what the direction is asking for.
+
+### 12.4 Emitters this unlocks, roughly in order of cheapness
+
+| emitter | notes |
+|---|---|
+| wall sconce / lit torch | static, warm, tiny reach. The easiest, and the one that makes corridors legible |
+| glowing mushroom | static, cool green, very faint. Clusters well |
+| drifting wisp | MOVING emissive sprite. The showcase — a light that is also a thing you can watch |
+| ember cracks (abyss gate) | already has emissive art planned in the re-shoot brief |
+
+All of these are `indirectOnly` candidates in the `Light` type — they should
+not cast sharp shadows, both because it is physically right for a dim source
+and because it keeps them off the expensive vector path.
