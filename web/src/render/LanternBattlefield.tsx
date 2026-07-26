@@ -32,10 +32,16 @@ import { formatHud, type HudStats } from '../lantern/debug/hud';
 import {
   ARENA_BORDER,
   ARENA_DEPTH,
+  HUD_PORTRAIT_ENEMY,
+  HUD_PORTRAIT_HERO,
+  MIN_FURNITURE_PX,
   arenaCamera,
   buildBattleScene,
+  portraitBezelBox,
   type FieldAnchors,
   type FigureBox,
+  type FurnitureBox,
+  type MeasuredBox,
 } from './battleScene';
 import {
   createBattleMaterialLibrary,
@@ -43,6 +49,7 @@ import {
   requestBackdrop,
   requestBoardFurniture,
   requestFigureArt,
+  requestHudFurniture,
   type BattleMaterialLibrary,
 } from './battleMaterials';
 import './lanternBattle.css';
@@ -87,6 +94,17 @@ export interface LanternBattlefieldProps {
    * the same call for the same reason.
    */
   figureRefs: React.RefObject<Map<string, HTMLElement>>;
+  /**
+   * The HUD boxes §19.1's fittings sit behind, keyed by anchor
+   * (`battleScene.HUD_*`).
+   *
+   * A ref map rather than props, for the same two reasons `figureRefs` is one:
+   * the boxes are read in the frame loop so no measurement re-renders the
+   * fight, and one map means a new fitting is a new key rather than a new prop
+   * threaded through `BattleScreen`. Missing keys are the normal case — the
+   * enemy chip does not exist in every fight — and a missing key draws nothing.
+   */
+  hudRefs?: React.RefObject<Map<string, HTMLElement>>;
   figures: readonly BattleFigureRef[];
   /** §8 item 9's explicit uniform: how much of the rail is still burning. */
   energy: number;
@@ -103,6 +121,7 @@ export interface LanternBattlefieldProps {
 
 export function LanternBattlefield({
   figureRefs,
+  hudRefs,
   figures,
   energy,
   maxEnergy,
@@ -163,10 +182,14 @@ export function LanternBattlefield({
       border: ARENA_BORDER,
     });
     libRef.current = lib;
-    // The frame-fixed furniture (§19.1): sockets, the rail strip, the
-    // near-left corner. Requested once per fight — nothing here changes
-    // between frames, unlike the backdrop or the figures' painted art.
+    // The frame-fixed furniture (§19.1): sockets, the rail strip and its
+    // brass, the far-left corner. Requested once per fight — nothing here
+    // changes between frames, unlike the backdrop or the figures' painted art.
     requestBoardFurniture(lib);
+    // And the fittings that go behind a measured HUD box. Same lifetime, same
+    // idempotence; separate call because they are answering a different
+    // question — see `requestHudFurniture`.
+    requestHudFurniture(lib);
 
     let raf = 0;
     let disposed = false;
@@ -180,7 +203,11 @@ export function LanternBattlefield({
      * to a single layout pass instead of a read/write thrash — and there are
      * about ten boxes, not three hundred.
      */
-    function measure(scale: number): { anchors: FieldAnchors; boxes: FigureBox[] } {
+    function measure(scale: number): {
+      anchors: FieldAnchors;
+      boxes: FigureBox[];
+      furniture: FurnitureBox[];
+    } {
       const hostRect = host!.getBoundingClientRect();
       const boxes: FigureBox[] = [];
       let enemyFeet: number | null = null;
@@ -214,6 +241,36 @@ export function LanternBattlefield({
       // HUD's candles and read as two rails — and made board furniture a
       // function of HUD layout, so the narrow breakpoint moved them. It is
       // authored against the frame now: `battleScene.CANDLE_FRAME_X`.
+      //
+      // §19.1'S FITTINGS ARE THE OPPOSITE CASE and are measured, because a
+      // bezel exists to frame one specific widget — where that widget lands is
+      // the answer, not an input to be overridden. Read in this SAME SWEEP,
+      // between the figure rects and the return, so the whole frame is still
+      // one layout pass: nothing above or below writes a style, a class or an
+      // attribute, and a `getBoundingClientRect` after a write is what turns a
+      // dozen cheap reads into a dozen forced reflows.
+      const furniture: FurnitureBox[] = [];
+      const fit = (key: string, make: (r: MeasuredBox) => FurnitureBox): void => {
+        const el = hudRefs?.current?.get(key);
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        // Guarded HERE as well as in `placeFurniture`, and it is not
+        // redundant: this is the boundary the DOM's numbers cross, and a
+        // mid-transition chip is a zero rect several times per fight (the
+        // `.stage-entering` wipe alone is 700ms of it).
+        if (r.width < MIN_FURNITURE_PX || r.height < MIN_FURNITURE_PX) return;
+        furniture.push(
+          make({
+            cx: (r.left - hostRect.left + r.width / 2) * scale,
+            cy: (r.top - hostRect.top + r.height / 2) * scale,
+            w: r.width * scale,
+            h: r.height * scale,
+          }),
+        );
+      };
+      fit(HUD_PORTRAIT_ENEMY, portraitBezelBox);
+      fit(HUD_PORTRAIT_HERO, portraitBezelBox);
+
       return {
         anchors: {
           viewport: { x: hostRect.width * scale, y: hostRect.height * scale },
@@ -221,6 +278,7 @@ export function LanternBattlefield({
           partyFeet,
         },
         boxes,
+        furniture,
       };
     }
 
@@ -238,7 +296,7 @@ export function LanternBattlefield({
       // conversion and the class of bug that comes with it.
       const scale = dev.width / cssW;
 
-      const { anchors, boxes } = measure(scale);
+      const { anchors, boxes, furniture } = measure(scale);
       const cam = arenaCamera(anchors);
       camRef.current = cam;
 
@@ -247,6 +305,7 @@ export function LanternBattlefield({
         time: (nowMs - start) / 1000,
         materials: lib.materials,
         figures: boxes,
+        furniture,
         vigor: vigorRef.current,
         enemyVigor: foeVigorRef.current,
       });

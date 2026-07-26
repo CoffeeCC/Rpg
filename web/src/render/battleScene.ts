@@ -63,7 +63,7 @@
 
 import { DEFAULT_TILT, unproject, type Camera, type Vec2, type Vec3 } from '../lantern/scene/camera';
 import { makeOccluderGrid, makeScene, type Light, type Material, type Scene } from '../lantern/scene/scene';
-import { LAYER_BOARD, type Sprite, type UVRect } from '../lantern/scene/sprite';
+import { LAYER_BOARD, LAYER_DECAL, type Sprite, type UVRect } from '../lantern/scene/sprite';
 import { contactShadowSprite, pieceBaseSprites } from '../lantern/scene/piece';
 import { boardSlabSprites } from '../lantern/scene/board';
 import { emitterLight, flicker, glowLightPosition } from '../lantern/scene/emitters';
@@ -420,8 +420,22 @@ export const CANDLE_WIDTH = 0.2;
 export const RAIL_STRIP_WIDTH = 0.56;
 export const RAIL_STRIP_REPEAT_UNIT = 2.0;
 
-/** Board fixture ids that are not yet requested by anything — see ENGINE_PLAN §21.7. */
 export const MAT_RAIL_STRIP = 'railStrip';
+/**
+ * The rail strip's BRASS HALF.
+ *
+ * `bake.py`'s `split()` emits `candle_rail_strip` and `candle_rail_strip_brass`
+ * from ONE assembly at ONE frame, for the reason §19.1 states: the renderer's
+ * specular is per-material, so a single quad carrying both oiled timber and a
+ * brass edge can only be shiny or matte. Both rows therefore share a width, a
+ * height and a centre, and the engine draws them at the IDENTICAL rect — which
+ * is what makes the fitting incapable of sitting crooked on its own timber.
+ *
+ * The wood half has been drawn since §21.7; the brass half was baked and
+ * published in the same pass and never asked for. It tiles on the same axis and
+ * takes the same repeat UV, so it is the same quad with a second texture.
+ */
+export const MAT_RAIL_STRIP_BRASS = 'railStripBrass';
 export const MAT_CORNER_BRASS = 'cornerBrass';
 
 /**
@@ -449,6 +463,305 @@ export function cornerBrassCentre(extent: { width: number; height: number; borde
 export const CORNER_BRASS_SIZE = 0.6;
 
 // -------------------------------------------------------------------------
+// HUD-ANCHORED FURNITURE (§19.1) — a fitting behind a measured DOM box
+// -------------------------------------------------------------------------
+//
+// Everything above this line is authored against the FRAME: the sockets, the
+// rail strip, the corner brass all sit at board coordinates this file chose,
+// and need nothing from the DOM. §19.1's remaining fittings are the opposite
+// case — each one exists to frame a specific widget, so where it goes is
+// wherever the flexbox put that widget, and the only way to know is to measure.
+//
+// WHICH IS THE SAME PROBLEM `placeFigure` ALREADY SOLVES, pointed at a
+// different element, and it is solved the same way rather than a second way:
+// unproject the box through the camera the rank solve produced. The one
+// difference is the orientation constant, and it is the whole difference —
+// `buildVertexData` scales a STANDING quad's height by `zoom * sin` and a
+// LYING one's by `zoom * cos`, so `placeFigure` divides by sin and this
+// divides by cos. Getting that backwards is a 1.4x error at the shipping tilt
+// that looks like a fitting that is merely "a bit too tall".
+//
+// A FITTING IS A LYING QUAD, and it covers its DOM box exactly. Both halves of
+// that are decisions:
+//
+//   LYING, because every other piece of board furniture is (socket, rail
+//   strip, corner brass) and because §19 puts the console ON the table rather
+//   than standing up off it.
+//
+//   COVERING THE BOX, because a frame that does not line up with the thing it
+//   frames is not a frame. The cost is worth stating: a lying quad stretched
+//   by 1/cos in board y projects back to its DOM box's own aspect, so a round
+//   bezel comes out CIRCULAR on screen rather than as the ellipse a real ring
+//   lying on a tilted table would present. For a fitting whose whole job is to
+//   surround a straight-on HUD widget that is the right trade; for anything
+//   authored against the board it would be wrong, which is why the frame-fixed
+//   furniture above does not go through here.
+//
+// -------------------------------------------------------------------------
+// WHAT IS NOT WIRED, AND IT IS A MEASUREMENT RATHER THAN AN OMISSION
+// -------------------------------------------------------------------------
+//
+// §21.7 listed five DOM anchors. Only the two portrait chips are fitted here,
+// and the other three are blocked on things a placement function cannot fix.
+// Measured live at 1280x820 in a real Hollow Gate fight rather than reasoned
+// about, because §21.7's near/far corner mistake is what happens otherwise:
+//
+//   THE CANVAS DOES NOT REACH THREE OF THEM. `.lantern-arena` is `inset: 0`
+//   inside `.battlefield`, which measured x 37..1233, y 111..517. The discard
+//   and exhaust piles (y 633..771) and the End Turn lantern (y 653..775) are
+//   in `.hand-zone`, a SIBLING of `.battlefield` that starts 30px below the
+//   canvas ends. A fitting placed behind them unprojects to board y past the
+//   near edge and is clipped — drawn, correct, and never once visible. Reaching
+//   them means moving the renderer's host up to `.battle-stage` and taking the
+//   opaque command bar's own painted surface off, which is §19's player
+//   console, not a placement.
+//
+//   AND THE BAKES ARE FRAMED FOR A HORIZONTAL CONSOLE. `log_well` is 2.50 x
+//   1.40 board units — a wide panel, because §19's console runs along the
+//   bottom of the board. The Chronicle it would dress (`.battle-log-rail`,
+//   216 x 394 px) is a TALL right-hand rail. Covering it needs a 5.7x
+//   anisotropic stretch, and `log_well_brass.png` is a thin rectangular
+//   escutcheon with corner brackets — so the stretch lands entirely on the
+//   brass banding and turns square joinery into lopsided bars. `pile_tray`
+//   (2.1x) and `lantern_cradle` (2.5x) are the same failure, smaller.
+//   `brass_strap` is open for §21.7's original reason, unchanged: it straps
+//   the CONSOLE's seams and there is still no console to seam.
+//
+// The bezels are the ones that work, and they work for a reason worth keeping:
+// they are ROUND framing something ROUND, and `bake.py` authored the ratio the
+// engine needs rather than leaving it to be eyeballed. See `BEZEL_BORE`.
+
+/**
+ * The anchor keys, stated here so `BattleScreen` and the builder cannot
+ * disagree about them — the same argument the MATERIAL IDS block at the top of
+ * this file makes. A typo in either half is otherwise a fitting that silently
+ * never draws, which is indistinguishable from a bake that never loaded.
+ */
+export const HUD_PORTRAIT_ENEMY = 'portrait-enemy';
+export const HUD_PORTRAIT_HERO = 'portrait-hero';
+
+export const MAT_BEZEL = 'portraitBezel';
+export const MAT_BEZEL_SMALL = 'portraitBezelSmall';
+
+/**
+ * What the two bezel bakes were framed at, in board units (`bake.py` SHAPES).
+ *
+ * They are ONE DESIGN at two sizes, not two designs — `build_portrait_bezel`
+ * says so outright ("EVERY DIMENSION IS A FRACTION OF `frame_w`, which is what
+ * actually makes the two sizes one design rather than two"). So the choice
+ * between them is not a look choice, it is a TEXEL AND AO choice: the small
+ * row carries a shorter AO distance because a fitting a third the size with a
+ * distance tuned for the big one reads as sitting in a hole. Pick the bake
+ * whose own frame is nearest the size actually being drawn and both stay in
+ * the register they were authored for. See `pickAuthoredSize`.
+ */
+export const BEZEL_FRAME = 0.96;
+export const BEZEL_SMALL_FRAME = 0.66;
+
+/**
+ * The bore, as a fraction of the bezel's own quad — 2/3, and it is AUTHORED
+ * rather than measured off the PNG.
+ *
+ * `build_portrait_bezel`: *"the bore is exactly TWO THIRDS of the frame width
+ * in both sizes ... That ratio is the deliverable as much as the geometry is:
+ * the art the engine puts behind this is the bezel's own quad scaled by 2/3
+ * about the same centre, at either size, with no table to look up."*
+ *
+ * Read the other way round, which is the direction this file needs it: to put
+ * the bore ON a widget, draw the bezel at 3/2 of that widget's box. That is
+ * `FurnitureBox.scale`, and it is why a bezel is the one fitting in §19.1's
+ * table that needs no eyeballing — the bake and the engine agree on one number.
+ */
+export const BEZEL_BORE = 2 / 3;
+
+/**
+ * The smallest box worth drawing behind, in px.
+ *
+ * Same threshold `measure()` already applies to a `.bf-figure`, and it exists
+ * for the same reason: a mid-transition layout hands back a zero-size rect, and
+ * a zero divided into a board size is either a degenerate quad or — once it
+ * reaches `unproject` with a zero zoom — a NaN. A NaN vertex does not draw
+ * badly, it blanks the canvas for the rest of the session, which is why every
+ * guard on this path returns NO SPRITE rather than a clamped one.
+ */
+export const MIN_FURNITURE_PX = 2;
+
+/** One measured HUD box, and the fitting that goes behind it. */
+export interface FurnitureBox {
+  /** Material id of the fitting — or of its TIMBER half, when it is split. */
+  id: string;
+  /**
+   * The brass half, drawn at the IDENTICAL rect. `bake.py`'s `split()` emits
+   * both rows from one assembly at one frame precisely so this is legal.
+   */
+  brassId?: string;
+  /**
+   * Alternative authored sizes of the SAME fitting. When present the builder
+   * replaces `id` with whichever of these was baked closest to the size being
+   * drawn — see `BEZEL_FRAME` for why that is the right axis to choose on.
+   */
+  sizes?: readonly { id: string; frame: number }[];
+  /** Centre of the measured box, px from the field's left / top edge. */
+  cx: number;
+  cy: number;
+  /** The measured box, in the same px. */
+  w: number;
+  h: number;
+  /**
+   * How much bigger than the box the QUAD is. 1 covers the box exactly; a
+   * bezel is 1/BEZEL_BORE so its bore lands on the box instead of its rim.
+   */
+  scale?: number;
+}
+
+export interface FurniturePlacement {
+  /** Centre of the fitting, in tiles. */
+  at: Vec2;
+  /** Quad size in tiles. */
+  width: number;
+  height: number;
+}
+
+/**
+ * A measured HUD box, as a fitting lying on the board.
+ *
+ * The exact inverse of what `buildVertexData` does to a LYING quad, for the
+ * same reason `placeFigure` is the inverse for a standing one: `width` divides
+ * by `zoom` and `height` by `zoom * cos(tilt)` because those are precisely the
+ * two factors it will multiply back.
+ *
+ * RETURNS NULL RATHER THAN A DEGENERATE PLACEMENT. Every caller is in a frame
+ * loop reading a live layout, so "the box is not there yet" is the ordinary
+ * case and not an error — a fitting that skips one frame is invisible for
+ * 16ms, where a NaN that reaches the camera is a dead canvas until reload.
+ */
+export function placeFurniture(f: FurnitureBox, cam: Camera): FurniturePlacement | null {
+  if (!Number.isFinite(f.w) || !Number.isFinite(f.h)) return null;
+  if (f.w < MIN_FURNITURE_PX || f.h < MIN_FURNITURE_PX) return null;
+  if (!Number.isFinite(f.cx) || !Number.isFinite(f.cy)) return null;
+  if (!Number.isFinite(cam.zoom) || cam.zoom <= 0) return null;
+  const cos = Math.cos(cam.tilt);
+  if (!Number.isFinite(cos) || cos <= 1e-3) return null;
+  const scale = Number.isFinite(f.scale) && (f.scale as number) > 0 ? (f.scale as number) : 1;
+  const at = unproject({ x: f.cx, y: f.cy }, cam, 0);
+  if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
+  const width = (f.w * scale) / cam.zoom;
+  const height = (f.h * scale) / (cam.zoom * cos);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width <= 0 || height <= 0) return null;
+  return { at, width, height };
+}
+
+/**
+ * Of several authored sizes of one shape, the one baked closest to the size
+ * being drawn.
+ *
+ * Pure and separate from the placement so the rule can be asserted without a
+ * camera. Both branches are live at shipping breakpoints, which is the thing
+ * that makes this a rule rather than dead generality: `--bf-chip` is
+ * `calc(96 * var(--bf-scale))` against a ladder that CLAMPS at both ends while
+ * `zoom` keeps growing with the viewport, so the chip's size in TILES moves a
+ * long way across the band — the large bake wins at the desktop layout and the
+ * small one wins once the scale ladder bottoms out on a short viewport.
+ */
+export function pickAuthoredSize(
+  sizes: readonly { id: string; frame: number }[],
+  widthTiles: number,
+): string | null {
+  let best: { id: string; frame: number } | null = null;
+  for (const s of sizes) {
+    if (!Number.isFinite(s.frame)) continue;
+    if (!best || Math.abs(s.frame - widthTiles) < Math.abs(best.frame - widthTiles)) best = s;
+  }
+  return best ? best.id : null;
+}
+
+/**
+ * The measured fittings, as sprites.
+ *
+ * `has` gates every one, exactly as the frame-fixed furniture is gated: a bake
+ * that has not loaded (or does not exist) costs its own fitting and nothing
+ * else, which is the same asynchrony rule `battleMaterials.ts` states at the
+ * top. §21.7's lesson is that a gate nobody ever supplies a material to is a
+ * gate that has never been exercised, so this one has a test that turns it off.
+ *
+ * `LAYER_DECAL`, not `LAYER_BOARD`, and it is not a formality. A fitting is
+ * something RESTING on the surface rather than part of it — the same category
+ * as a contact shadow or a piece's base, which is exactly what that layer was
+ * introduced for. On `LAYER_BOARD` a fitting would sort against the floor tiles
+ * by `y` and a tile one row nearer would slice its front edge off, which is the
+ * defect `sprite.ts`'s layer comment already records happening to shadows.
+ *
+ * The brass half is pushed AFTER its timber at the identical rect. Both are on
+ * one layer at one position, and `sortForPainting` is documented as stable, so
+ * insertion order is the paint order and the fitting lands on its own panel.
+ */
+export function furnitureSprites(
+  boxes: readonly FurnitureBox[],
+  cam: Camera,
+  has: (id: string) => boolean,
+): Sprite[] {
+  const out: Sprite[] = [];
+  for (const box of boxes) {
+    const p = placeFurniture(box, cam);
+    if (!p) continue;
+    const chosen = box.sizes && box.sizes.length > 0 ? pickAuthoredSize(box.sizes, p.width) : box.id;
+    if (!chosen) continue;
+    const ids = box.brassId ? [chosen, box.brassId] : [chosen];
+    for (const id of ids) {
+      if (!has(id)) continue;
+      out.push({
+        position: { x: p.at.x, y: p.at.y, z: 0 },
+        size: { x: p.width, y: p.height },
+        pivot: { x: 0.5, y: 0.5 },
+        uv: FULL_UV,
+        textureId: id,
+        layer: LAYER_DECAL,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The portrait chips' fittings, from whatever the component measured.
+ *
+ * Both chips take the SAME pair of bakes and the same bore scale — §19.1 asks
+ * for "two sizes", and the two sizes are the two the layout produces at
+ * different breakpoints, not one per combatant. A hero frame and an enemy
+ * frame that differed would need `build_portrait_bezel` to be two designs, and
+ * it is deliberately one.
+ */
+export const BEZEL_SIZES: readonly { id: string; frame: number }[] = [
+  { id: MAT_BEZEL, frame: BEZEL_FRAME },
+  { id: MAT_BEZEL_SMALL, frame: BEZEL_SMALL_FRAME },
+];
+
+/**
+ * A HUD box as the component hands it over: centred, and already relative to
+ * the field's own top-left corner rather than the page's.
+ */
+export interface MeasuredBox {
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+/** A measured portrait chip, as a `FurnitureBox`. */
+export function portraitBezelBox(rect: MeasuredBox): FurnitureBox {
+  return {
+    id: MAT_BEZEL,
+    sizes: BEZEL_SIZES,
+    scale: 1 / BEZEL_BORE,
+    cx: rect.cx,
+    cy: rect.cy,
+    w: rect.w,
+    h: rect.h,
+  };
+}
+
+// -------------------------------------------------------------------------
 // THE BUILD
 // -------------------------------------------------------------------------
 
@@ -459,6 +772,13 @@ export interface BattleSceneOptions {
   /** Only ids present here are drawn — an unloaded texture is silently skipped. */
   materials: Map<string, Material>;
   figures: readonly FigureBox[];
+  /**
+   * The HUD boxes §19.1's fittings sit behind, measured this frame.
+   *
+   * Omitted or empty draws no fittings at all, which is what the flag-off path
+   * and every existing test get — the arena is exactly what it was.
+   */
+  furniture?: readonly FurnitureBox[];
   /** The explicit uniform that replaces `lighting.css`'s `:has()` count. */
   vigor: { lit: number; total: number };
   /**
@@ -636,6 +956,15 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
     });
   }
 
+  // --- the HUD-anchored fittings (§19.1) ---------------------------------
+  //
+  // Before the pieces, so a combatant standing in front of one is drawn over
+  // it — which the LAYER_DECAL/LAYER_PIECE split already guarantees, and the
+  // ordering here only makes obvious.
+  if (o.furniture && o.furniture.length > 0) {
+    sprites.push(...furnitureSprites(o.furniture, cam, has));
+  }
+
   // --- the pieces --------------------------------------------------------
   for (const f of o.figures) {
     const p = placeFigure(f, cam);
@@ -680,14 +1009,21 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
     // The timber the sockets are cut into — always drawn, whether or not this
     // side has any vigor, because it is joinery on the frame rather than a
     // readout of state. See `RAIL_STRIP_WIDTH`'s comment for the tiling.
-    if (has(MAT_RAIL_STRIP)) {
-      const length = RAIL_NEAR - RAIL_FAR;
+    //
+    // TWO QUADS AT ONE RECT, timber then brass. `bake.py`'s `split()` gives
+    // both rows the same width, height and centre for exactly this — see
+    // `MAT_RAIL_STRIP_BRASS`. They are pushed in that order and never sorted
+    // apart, because `sortForPainting` is stable and they share a layer, a
+    // position and a size.
+    const length = RAIL_NEAR - RAIL_FAR;
+    for (const stripId of [MAT_RAIL_STRIP, MAT_RAIL_STRIP_BRASS]) {
+      if (!has(stripId)) continue;
       sprites.push({
         position: { x: railX, y: (RAIL_NEAR + RAIL_FAR) / 2, z: 0 },
         size: { x: RAIL_STRIP_WIDTH, y: length },
         pivot: { x: 0.5, y: 0.5 },
         uv: { u0: 0, v0: 0, u1: 1, v1: length / RAIL_STRIP_REPEAT_UNIT },
-        textureId: MAT_RAIL_STRIP,
+        textureId: stripId,
         layer: LAYER_BOARD,
       });
     }

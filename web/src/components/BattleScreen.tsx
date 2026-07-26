@@ -25,7 +25,12 @@ import { useNavScope, useNavInputMode, useRefocusOn, navItem, focusFirstIn, getI
 import { DrillCoach } from './DrillCoach';
 import { renderDebug, renderMode } from '../render/flag';
 import { LanternBattlefield, type BattleFigureRef } from '../render/LanternBattlefield';
-import { heroTextureId, monsterTextureId } from '../render/battleScene';
+import {
+  HUD_PORTRAIT_ENEMY,
+  HUD_PORTRAIT_HERO,
+  heroTextureId,
+  monsterTextureId,
+} from '../render/battleScene';
 
 // ===========================================================================
 // THE ONE BATTLEFIELD.
@@ -433,6 +438,28 @@ export function BattleStage({ view }: { view: BattleView | null }) {
     (uid: string) => (el: HTMLDivElement | null) => {
       if (el) figureRefs.current.set(uid, el);
       else figureRefs.current.delete(uid);
+    },
+    [],
+  );
+  /**
+   * The HUD boxes §19.1's fittings sit behind, by anchor key.
+   *
+   * Exactly `figureRefs` again, and deliberately so: same shape, same reason
+   * (the renderer reads these in its frame loop, so measuring one can never
+   * re-render the fight), and populated on every path whether or not the flag
+   * is on, because a ref callback writes nothing to the DOM and a branch here
+   * would be a second place for the two paths to drift.
+   *
+   * The elements themselves are NOT touched. No class, no `title`, no ARIA, no
+   * `data-*`, no layout — `render/battleScene.ts` draws BEHIND these boxes, it
+   * does not replace them, and `nav/`, `elementFromPoint` and the aim line all
+   * still see exactly what they always saw.
+   */
+  const hudRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const hudRef = useCallback(
+    (key: string) => (el: HTMLElement | null) => {
+      if (el) hudRefs.current.set(key, el);
+      else hudRefs.current.delete(key);
     },
     [],
   );
@@ -1124,6 +1151,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         {lantern && (
           <LanternBattlefield
             figureRefs={figureRefs}
+            hudRefs={hudRefs}
             figures={lanternFigures}
             energy={view.energy}
             maxEnergy={view.maxEnergy}
@@ -1167,7 +1195,12 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             <div
               className={`bf-portrait bf-top ${boss ? 'bf-boss' : ''} ${portrait.kind === 'tamer' ? flashing[portrait.uid] ?? '' : ''}`}
             >
-              <div className="bf-ring">
+              {/* The chip the enemy portrait bezel is fitted around. The ring
+                  rather than `.bf-portrait` itself: `bake.py` frames the bezel
+                  round a BORE, the ring is the round hole that bore has to land
+                  on, and `.bf-portrait` is the taller column that also carries
+                  the HP text underneath. Ref only — nothing else here moves. */}
+              <div className="bf-ring" ref={hudRef(HUD_PORTRAIT_ENEMY)}>
                 {hpRing(portrait.kind === 'beast' ? enemyHpFrac : portrait.hero.hp / portrait.hero.maxHp)}
                 <span className="bf-art">
                   {portrait.kind === 'beast' ? (
@@ -1243,7 +1276,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           </div>
           <div className="bf-rail-cap bf-rail-bottom">
           <div className="bf-portrait bf-bottom">
-            <div className="bf-ring">
+            <div className="bf-ring" ref={hudRef(HUD_PORTRAIT_HERO)}>
               {hpRing(heroHpFrac)}
               <span className="bf-art">
                 <HeroImage className={hero.className} size={78} />

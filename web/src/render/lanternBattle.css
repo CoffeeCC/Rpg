@@ -102,6 +102,52 @@
   display: none !important;
 }
 
+/* THE LEFT RAIL'S PAINTED SURFACE (§19.1). `battle.css` draws `.bf-rail` as a
+   bar of oiled timber with a lit edge, a filigree line and two recessed caps —
+   a very good FAKE of the thing the renderer now makes for real. It is also
+   fully opaque (`linear-gradient(96deg, #1a1410 ...)`), so with it left on the
+   portrait bezels are drawn, correct, and behind a wall.
+
+   §1.2 is the rule and this is the ordinary application of it: THE GPU DRAWS
+   EVERY SURFACE, THE DOM DRAWS TEXT AND HIT TARGETS. The rail's BOX is
+   untouched — same width, same flex column, same caps, same children, same
+   ARIA label — and every pixel it used to paint moves to the renderer. Same
+   move `.vigor-candles` and `.stage-backdrop` already made above.
+
+   What is deliberately LEFT ALONE: `.bf-ring-svg` and its track/fill circles.
+   That ring is the HP readout, which is data, and §1.2 gives data to the DOM.
+   The bezel's bore is sized to land exactly on it (`battleScene.BEZEL_BORE`),
+   so the brass surrounds the ring rather than covering it.
+
+   0,3,0 plus `!important`, for the reason stated in this file's header: v5.css
+   and v16.css both select these boxes and load in an order this file cannot
+   control. Every selector is under `.lantern-battle`, which does not exist
+   with the flag off. */
+.lantern-battle .battlefield .bf-rail {
+  background: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The filigree down the lit edge and the hairline cap seams. Both are joinery
+   painted in CSS, and the board has real joinery underneath them now. */
+.lantern-battle .battlefield .bf-rail::before,
+.lantern-battle .battlefield .bf-rail-cap::after {
+  display: none !important;
+}
+
+.lantern-battle .battlefield .bf-rail-cap {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+/* The chip's fake socket — an inset shadow pretending the portrait is recessed
+   into the bar. The bezel IS that recess now, modelled and lit, and leaving
+   the pretend one on draws a soft dark ring across the real one's inner bead. */
+.lantern-battle .battlefield .bf-rail .bf-ring::after {
+  display: none !important;
+}
+
 /* THE CHEAT ITSELF (§8 item 9). `lighting.css:762-815` lights the arena from a
    CSS `:has()` count of lit candles — a HUD-reads-world path that exists
    nowhere in TypeScript. It is an explicit uniform now (`buildBattleScene`'s

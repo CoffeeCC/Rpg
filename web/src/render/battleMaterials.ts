@@ -48,10 +48,13 @@ import { BAKED_ROOT, PIECE_RELIEF, bakedRef } from './materials';
 import {
   MAT_ARENA,
   MAT_BACKDROP,
+  MAT_BEZEL,
+  MAT_BEZEL_SMALL,
   MAT_BLANK,
   MAT_CANDLE,
   MAT_CORNER_BRASS,
   MAT_RAIL_STRIP,
+  MAT_RAIL_STRIP_BRASS,
   MAT_SOCKET,
 } from './battleScene';
 
@@ -501,15 +504,50 @@ export function requestFigureArt(
 
 /**
  * The Blender-baked board furniture (§19.1) that has a fixed position on the
- * arena's own frame — no DOM measuring, unlike the portrait bezels, lantern
- * cradle, log well and pile trays, which need a `.bf-*` rect to sit behind and
- * are not requested here (ENGINE_PLAN §21.7).
+ * arena's own frame — no DOM measuring.
  *
  * Idempotent and safe to call every frame's mount effect: `requestFurniture`
  * no-ops once the id is loaded or already in flight, same as `request`.
+ *
+ * THE RAIL STRIP IS TWO ROWS, and the brass one was baked in the same pass as
+ * the timber and then never asked for. `bake.py`'s `split()` publishes
+ * `candle_rail_strip` and `candle_rail_strip_brass` from one assembly at one
+ * frame, so both take the SAME `repeat: true` — the wrap is a property of the
+ * shared frame's registered height axis, not of either material — and
+ * `buildBattleScene` draws them at one rect. Requesting only the timber is why
+ * a rail that §19.1 asks to be "fairly reflective" has had no metal on it.
  */
 export function requestBoardFurniture(lib: BattleMaterialLibrary): void {
   lib.requestFurniture(MAT_SOCKET, 'candle_socket');
   lib.requestFurniture(MAT_RAIL_STRIP, 'candle_rail_strip', { repeat: true });
+  lib.requestFurniture(MAT_RAIL_STRIP_BRASS, 'candle_rail_strip_brass', { repeat: true });
   lib.requestFurniture(MAT_CORNER_BRASS, 'board_corner_brass');
+}
+
+/**
+ * The fittings that sit behind a MEASURED DOM box (§19.1, ENGINE_PLAN §21.7).
+ *
+ * Split from `requestBoardFurniture` because the two have genuinely different
+ * lifetimes in the argument, not merely in the code: frame-fixed furniture is
+ * carpentry the arena always has, while these exist only because a widget does
+ * and would go away with it. Both are requested from the same mount effect
+ * today, and keeping them separate is what makes it obvious which list a new
+ * shape belongs on.
+ *
+ * BOTH BEZEL SIZES, always. They are one design at two authored sizes
+ * (`battleScene.BEZEL_FRAME`), the chip's size in tiles moves across the
+ * `--bf-scale` ladder, and the pick happens per frame in the scene builder —
+ * so which one is needed is not known here and asking for one would make the
+ * choice a load order rather than a measurement. Six fetches, once per fight.
+ *
+ * NOT REQUESTED: `log_well`, `pile_tray`, `exhaust_grate`, `lantern_cradle`,
+ * `brass_strap`. Every one is published and none of them is wired, for reasons
+ * that are measurements rather than oversights — see the block above
+ * `HUD_PORTRAIT_ENEMY` in `battleScene.ts`. Asking for a texture nothing draws
+ * would only put six phantom requests in the network log, which is exactly the
+ * evidence someone would use to conclude the feature works.
+ */
+export function requestHudFurniture(lib: BattleMaterialLibrary): void {
+  lib.requestFurniture(MAT_BEZEL, 'portrait_bezel');
+  lib.requestFurniture(MAT_BEZEL_SMALL, 'portrait_bezel_small');
 }

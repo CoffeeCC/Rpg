@@ -33,8 +33,15 @@ import {
   MAT_BACKDROP,
   MAT_BLANK,
   MAT_CANDLE,
+  BEZEL_BORE,
+  BEZEL_FRAME,
+  BEZEL_SIZES,
+  BEZEL_SMALL_FRAME,
+  MAT_BEZEL,
+  MAT_BEZEL_SMALL,
   MAT_CORNER_BRASS,
   MAT_RAIL_STRIP,
+  MAT_RAIL_STRIP_BRASS,
   MAT_SOCKET,
   MAX_ARENA_ZOOM,
   MIN_ARENA_ZOOM,
@@ -52,10 +59,16 @@ import {
   cornerBrassCentre,
   heroTextureId,
   lanternForVigor,
+  furnitureSprites,
   monsterTextureId,
+  pickAuthoredSize,
   placeFigure,
+  placeFurniture,
+  portraitBezelBox,
   type FigureBox,
+  type FurnitureBox,
 } from '../battleScene';
+import { LAYER_DECAL, LAYER_PIECE } from '../../lantern/scene/sprite';
 
 /** Every id the builder can ask for, so nothing is skipped for want of art. */
 function allMaterials(extra: string[] = []): Map<string, Material> {
@@ -397,6 +410,307 @@ describe('the candle rail is §8 item 9, as geometry', () => {
     // somewhere on the left band, and not the near corner either.
     expect(expected.x).toBeLessThan(0);
     expect(expected.y).toBeLessThan(0);
+  });
+
+  it('draws the rail strip BRASS at the identical rect as its timber', () => {
+    // `bake.py`'s `split()` gives `candle_rail_strip` and
+    // `candle_rail_strip_brass` one frame precisely so this holds. If either
+    // row ever drifts — a different width, a stretched UV instead of a tiled
+    // one — the fitting sits crooked on its own timber and it is very hard to
+    // see by eye on a 0.56-tile strip.
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_RAIL_STRIP, MAT_RAIL_STRIP_BRASS]),
+      figures: [] as FigureBox[],
+      vigor: { lit: 1, total: 3 },
+    });
+    const wood = scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP);
+    const brass = scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP_BRASS);
+    expect(wood).toHaveLength(2);
+    expect(brass).toHaveLength(2);
+    for (let i = 0; i < wood.length; i++) {
+      expect(brass[i].position).toEqual(wood[i].position);
+      expect(brass[i].size).toEqual(wood[i].size);
+      expect(brass[i].uv).toEqual(wood[i].uv);
+    }
+  });
+
+  it('draws the timber rail alone when only its half of the split has loaded', () => {
+    // The two halves arrive as two independent fetches. Whichever lands first
+    // must draw on its own rather than waiting for its partner, which is the
+    // same asynchrony rule `battleMaterials.ts` states at the top.
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_RAIL_STRIP]),
+      figures: [] as FigureBox[],
+      vigor: { lit: 1, total: 3 },
+    });
+    expect(scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP)).toHaveLength(2);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_RAIL_STRIP_BRASS)).toHaveLength(0);
+  });
+});
+
+// =========================================================================
+// §19.1'S HUD-ANCHORED FITTINGS
+//
+// The half of §19.1 that cannot be authored against the frame, because each
+// fitting exists to surround a widget the flexbox placed. Same solve as
+// `placeFigure`, one orientation constant apart — and that constant is what
+// most of this block is checking, since `sin` and `cos` differ by only 1.4x at
+// the shipping tilt and a fitting that is 40% too tall reads as a bad bake.
+// =========================================================================
+
+/** A portrait chip, as the component would hand it over. */
+function chip(over: Partial<FurnitureBox> = {}): FurnitureBox {
+  return { ...portraitBezelBox({ cx: 90, cy: 120, w: 68, h: 68 }), ...over };
+}
+
+describe('the inverse again: a fitting covers its own DOM box', () => {
+  it('round-trips the box centre back to the pixel it was measured at', () => {
+    const cam = camera();
+    for (const [cx, cy] of [
+      [90, 120],
+      [90, 360],
+      [512, 210],
+      [960, 400],
+    ] as const) {
+      const p = placeFurniture(chip({ cx, cy }), cam)!;
+      const back = project({ x: p.at.x, y: p.at.y, z: 0 }, cam);
+      expect(back.x).toBeCloseTo(cx, 6);
+      expect(back.y).toBeCloseTo(cy, 6);
+    }
+  });
+
+  it('divides height by cos, NOT sin — a lying quad is not a standing one', () => {
+    // THE TEST THAT REJECTS THE WRONG IMPLEMENTATION. `buildVertexData` scales
+    // a lying quad by `zoom * cos` and a standing one by `zoom * sin`, so
+    // reusing `placeFigure`'s divisor here would come out 1.43x short at the
+    // 55-degree default. Asserted as the round trip through the exact factor
+    // the vertex builder applies, not as a formula restated.
+    const cam = camera();
+    const cos = Math.cos(cam.tilt);
+    const sin = Math.sin(cam.tilt);
+    expect(sin / cos).toBeGreaterThan(1.4); // the error this would hide
+    for (const [w, h] of [
+      [68, 68],
+      [216, 394],
+      [40, 130],
+    ] as const) {
+      const p = placeFurniture(chip({ w, h, scale: 1 }), cam)!;
+      expect(p.width * cam.zoom).toBeCloseTo(w, 6);
+      expect(p.height * cam.zoom * cos).toBeCloseTo(h, 6);
+      expect(p.height * cam.zoom * sin).not.toBeCloseTo(h, 2);
+    }
+  });
+
+  it('scales the bezel so its BORE lands on the chip, not its rim', () => {
+    // `build_portrait_bezel`: "the bore is exactly TWO THIRDS of the frame
+    // width in both sizes ... the art the engine puts behind this is the
+    // bezel's own quad scaled by 2/3 about the same centre". Read backwards,
+    // that is this number. Drawing the bezel AT the chip's box instead — the
+    // obvious thing — would put brass over the outer third of the portrait.
+    const cam = camera();
+    const box = portraitBezelBox({ cx: 90, cy: 120, w: 68, h: 68 });
+    const p = placeFurniture(box, cam)!;
+    expect(p.width * cam.zoom * BEZEL_BORE).toBeCloseTo(68, 6);
+    expect(p.height * cam.zoom * Math.cos(cam.tilt) * BEZEL_BORE).toBeCloseTo(68, 6);
+    // And it is genuinely bigger than the chip, in the right direction.
+    expect(p.width * cam.zoom).toBeGreaterThan(68);
+  });
+
+  it('draws a round chip as a CIRCLE on screen, not a board-true ellipse', () => {
+    // The trade this file's header records, pinned as a number so it cannot be
+    // changed silently. A square DOM box becomes a board rect 1/cos taller
+    // than wide, which projects back to a square — so the bezel frames the ring
+    // it is fitted to. A board-square quad (the frame-fixed convention the
+    // socket and corner brass use) would project to a 1:cos ellipse and frame
+    // nothing.
+    const cam = camera();
+    const p = placeFurniture(chip(), cam)!;
+    const screenW = p.width * cam.zoom;
+    const screenH = p.height * cam.zoom * Math.cos(cam.tilt);
+    expect(screenW).toBeCloseTo(screenH, 6);
+    expect(p.height / p.width).toBeCloseTo(1 / Math.cos(cam.tilt), 6);
+  });
+});
+
+describe('a degenerate measurement produces no sprite, never a NaN', () => {
+  // A NaN vertex does not draw badly — it blanks the canvas for the rest of
+  // the session. Every one of these is a layout state the frame loop genuinely
+  // sees: a chip mid-`.stage-entering` wipe, a camera on the first paint.
+  const cam = camera();
+  const cases: [string, FurnitureBox | null, Camera | null][] = [
+    ['a zero-size rect', chip({ w: 0, h: 0 }), null],
+    ['a rect one pixel short of the floor', chip({ w: 1.5, h: 68 }), null],
+    ['a collapsed height', chip({ h: 0 }), null],
+    ['a NaN centre', chip({ cx: Number.NaN }), null],
+    ['a NaN size', chip({ w: Number.NaN }), null],
+    ['an infinite size', chip({ h: Number.POSITIVE_INFINITY }), null],
+    ['a zero zoom', null, { ...cam, zoom: 0 }],
+    ['a negative zoom', null, { ...cam, zoom: -40 }],
+    ['a NaN zoom', null, { ...cam, zoom: Number.NaN }],
+    ['an edge-on tilt', null, { ...cam, tilt: Math.PI / 2 }],
+    ['a NaN tilt', null, { ...cam, tilt: Number.NaN }],
+  ];
+  for (const [name, box, over] of cases) {
+    it(`returns null for ${name}`, () => {
+      expect(placeFurniture(box ?? chip(), over ?? cam)).toBeNull();
+    });
+  }
+
+  it('emits nothing at all for a degenerate box rather than a NaN quad', () => {
+    const sprites = furnitureSprites([chip({ w: 0, h: 0 })], cam, () => true);
+    expect(sprites).toHaveLength(0);
+  });
+
+  it('never lets a NaN reach a sprite from any of these', () => {
+    for (const [, box, over] of cases) {
+      for (const s of furnitureSprites([box ?? chip()], over ?? cam, () => true)) {
+        for (const v of [s.position.x, s.position.y, s.position.z, s.size.x, s.size.y]) {
+          expect(Number.isFinite(v)).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+describe('the fittings, as sprites', () => {
+  it('draws nothing when the bake has not loaded', () => {
+    // The §21.7 lesson, applied before the same mistake can be made twice: a
+    // `has()` gate that nothing ever supplies a material to has never been
+    // exercised. `allMaterials()` deliberately omits both bezel ids.
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials(),
+      figures: [] as FigureBox[],
+      furniture: [chip()],
+      vigor: { lit: 2, total: 3 },
+    });
+    expect(scene.sprites.filter((s) => s.textureId === MAT_BEZEL)).toHaveLength(0);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_BEZEL_SMALL)).toHaveLength(0);
+  });
+
+  it('draws no fittings at all when none were measured', () => {
+    // The flag-off shape and every pre-existing test: `furniture` omitted must
+    // leave the arena byte-for-byte what it was.
+    const opts = {
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_BEZEL, MAT_BEZEL_SMALL]),
+      figures: [] as FigureBox[],
+      vigor: { lit: 2, total: 3 },
+    };
+    const without = buildBattleScene(opts);
+    const empty = buildBattleScene({ ...opts, furniture: [] });
+    expect(without.sprites.map((s) => s.textureId)).toEqual(empty.sprites.map((s) => s.textureId));
+    expect(without.sprites.some((s) => s.textureId === MAT_BEZEL)).toBe(false);
+  });
+
+  it('stands the fitting where the measured box stands, on the decal layer', () => {
+    const cam = camera();
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials([MAT_BEZEL, MAT_BEZEL_SMALL]),
+      figures: [] as FigureBox[],
+      furniture: [chip({ cx: 90, cy: 120 })],
+      vigor: { lit: 2, total: 3 },
+    });
+    const fitted = scene.sprites.filter(
+      (s) => s.textureId === MAT_BEZEL || s.textureId === MAT_BEZEL_SMALL,
+    );
+    expect(fitted).toHaveLength(1);
+    const s = fitted[0];
+    // Centre pivot, so the quad's own centre is the measured box's centre —
+    // and it projects straight back to it.
+    expect(s.pivot).toEqual({ x: 0.5, y: 0.5 });
+    const back = project(s.position, cam);
+    expect(back.x).toBeCloseTo(90, 6);
+    expect(back.y).toBeCloseTo(120, 6);
+    // LYING, not standing: a fitting is on the table, not a piece on it.
+    expect(s.upright).toBeUndefined();
+    expect(s.billboard).toBeUndefined();
+    // DECAL, not BOARD — otherwise a floor tile one row nearer slices its
+    // front edge off, which is the defect `sprite.ts`'s layer note records.
+    expect(s.layer).toBe(LAYER_DECAL);
+    expect(s.layer).toBeLessThan(LAYER_PIECE);
+  });
+
+  it('puts the brass half on top of its own timber at one rect', () => {
+    const cam = camera();
+    const box: FurnitureBox = { id: 'wood', brassId: 'brass', cx: 200, cy: 150, w: 80, h: 60 };
+    const sprites = furnitureSprites([box], cam, () => true);
+    expect(sprites.map((s) => s.textureId)).toEqual(['wood', 'brass']);
+    expect(sprites[1].position).toEqual(sprites[0].position);
+    expect(sprites[1].size).toEqual(sprites[0].size);
+  });
+
+  it('draws the timber alone when its brass half is missing, and vice versa', () => {
+    const cam = camera();
+    const box: FurnitureBox = { id: 'wood', brassId: 'brass', cx: 200, cy: 150, w: 80, h: 60 };
+    expect(furnitureSprites([box], cam, (id) => id === 'wood').map((s) => s.textureId)).toEqual([
+      'wood',
+    ]);
+    expect(furnitureSprites([box], cam, (id) => id === 'brass').map((s) => s.textureId)).toEqual([
+      'brass',
+    ]);
+  });
+
+  it('fits both portrait chips independently', () => {
+    const cam = camera();
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials([MAT_BEZEL, MAT_BEZEL_SMALL]),
+      figures: [] as FigureBox[],
+      furniture: [
+        portraitBezelBox({ cx: 90, cy: 60, w: 68, h: 68 }),
+        portraitBezelBox({ cx: 90, cy: 380, w: 68, h: 68 }),
+      ],
+      vigor: { lit: 2, total: 3 },
+    });
+    const fitted = scene.sprites.filter(
+      (s) => s.textureId === MAT_BEZEL || s.textureId === MAT_BEZEL_SMALL,
+    );
+    expect(fitted).toHaveLength(2);
+    // Two different board rows: the enemy chip is up-board of the hero's, and
+    // nothing here collapses them onto one authored position the way the
+    // frame-fixed furniture does.
+    expect(fitted[0].position.y).toBeLessThan(fitted[1].position.y);
+    expect(fitted[0].position.x).toBeCloseTo(fitted[1].position.x, 10);
+  });
+});
+
+describe('two authored sizes of one shape', () => {
+  it('takes the bake whose own frame is nearest the size being drawn', () => {
+    expect(pickAuthoredSize(BEZEL_SIZES, BEZEL_SMALL_FRAME)).toBe(MAT_BEZEL_SMALL);
+    expect(pickAuthoredSize(BEZEL_SIZES, BEZEL_FRAME)).toBe(MAT_BEZEL);
+    // Either side of the midpoint, so the boundary is the boundary.
+    const mid = (BEZEL_FRAME + BEZEL_SMALL_FRAME) / 2;
+    expect(pickAuthoredSize(BEZEL_SIZES, mid - 0.01)).toBe(MAT_BEZEL_SMALL);
+    expect(pickAuthoredSize(BEZEL_SIZES, mid + 0.01)).toBe(MAT_BEZEL);
+    // And it never runs off the ends.
+    expect(pickAuthoredSize(BEZEL_SIZES, 0.01)).toBe(MAT_BEZEL_SMALL);
+    expect(pickAuthoredSize(BEZEL_SIZES, 40)).toBe(MAT_BEZEL);
+  });
+
+  it('survives an empty or unusable list rather than picking a phantom id', () => {
+    expect(pickAuthoredSize([], 1)).toBeNull();
+    expect(pickAuthoredSize([{ id: 'x', frame: Number.NaN }], 1)).toBeNull();
+  });
+
+  it('BOTH branches are reachable from a real chip, which is what makes it a rule', () => {
+    // Dead generality would be worse than hardcoding one id. A big chip on a
+    // desktop camera takes the large bake; the small one wins once the
+    // `--bf-scale` ladder bottoms out and the chip is a third the size.
+    const cam = camera();
+    const big = furnitureSprites([portraitBezelBox({ cx: 90, cy: 120, w: 68, h: 68 })], cam, () => true);
+    const small = furnitureSprites([portraitBezelBox({ cx: 90, cy: 120, w: 23, h: 23 })], cam, () => true);
+    expect(big[0].textureId).toBe(MAT_BEZEL);
+    expect(small[0].textureId).toBe(MAT_BEZEL_SMALL);
   });
 });
 

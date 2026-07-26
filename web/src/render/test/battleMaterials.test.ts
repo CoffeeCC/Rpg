@@ -114,18 +114,65 @@ describe('battleMaterials.ts actually requests the published furniture', () => {
   });
 
   it('requests every wired shape by its real bake name', () => {
-    for (const name of ['candle_socket', 'candle_rail_strip', 'board_corner_brass']) {
-      expect(battleMaterialsSource, `requestBoardFurniture never asks for ${name}`).toContain(`'${name}'`);
+    for (const name of WIRED_SHAPES) {
+      expect(battleMaterialsSource, `nothing ever asks for ${name}`).toContain(`'${name}'`);
     }
   });
 
-  it('follows the two upload rules for the furniture path specifically', () => {
-    // Colour: SRGB8_ALPHA8. Normal: RGBA8, never sRGB. Both textures go
-    // through the same `loadTexture` helper with the flag as a parameter, so
-    // this checks the CALL SITES rather than the shared function once.
+  it('wraps BOTH halves of the rail split, not just the timber', () => {
+    // `repeat` belongs to the shared FRAME's registered height axis, so the
+    // brass row tiles exactly as the timber does. Requesting it without the
+    // flag would CLAMP_TO_EDGE it and smear the last texel of brass down the
+    // whole run, over a strip that is drawn at the identical rect as a
+    // correctly tiled one — i.e. wrong in a way that reads as a bad bake.
+    expect(battleMaterialsSource).toMatch(
+      /'candle_rail_strip_brass',\s*\{\s*repeat:\s*true\s*\}/,
+    );
+  });
+
+  it('follows the upload rules for the furniture path specifically', () => {
+    // Colour: SRGB8_ALPHA8. Normal AND material: RGBA8, never sRGB. All three
+    // go through the same `loadTexture` helper with the flag as a parameter,
+    // so this checks the CALL SITES rather than the shared function once.
     expect(battleMaterialsSource).toMatch(/loadTexture\(`\$\{BAKED_BOARD_ROOT\}\/\$\{name\}\.png`, true,/);
     expect(battleMaterialsSource).toMatch(/loadTexture\(`\$\{BAKED_BOARD_ROOT\}\/\$\{name\}_normal\.png`, false,/);
+    // THE MATERIAL MAP, which had no test of its own. Every channel is data:
+    // an sRGB decode turns 0.12 roughness into 0.014 and brass becomes a
+    // mirror, and 0.5 iridescence into 0.21. Same class of silent error as the
+    // normal map, one texture later.
+    expect(battleMaterialsSource).toMatch(
+      /loadTexture\(`\$\{BAKED_BOARD_ROOT\}\/\$\{name\}_material\.png`, false,/,
+    );
     expect(battleMaterialsSource).toMatch(/srgb \? gl\.SRGB8_ALPHA8 : gl\.RGBA8/);
+  });
+});
+
+// Everything `requestBoardFurniture` and `requestHudFurniture` actually name.
+// Kept apart from BOARD_SHAPES above on purpose: that list is "what §19.1 asks
+// for and the bake produces", this one is "what the renderer will fetch at
+// runtime", and the gap between them is exactly ENGINE_PLAN §21.7's open list.
+const WIRED_SHAPES = [
+  'candle_socket',
+  'candle_rail_strip',
+  'candle_rail_strip_brass',
+  'board_corner_brass',
+  'portrait_bezel',
+  'portrait_bezel_small',
+];
+
+describe.skipIf(!existsSync(PUBLISH_DIR))('every shape the renderer fetches is on disk', () => {
+  it('has all THREE maps published for each, colour, normal and material', () => {
+    // `requestFurniture` issues three fetches per shape, and the material map
+    // is the newest of them — the one a stale published tree would be missing.
+    // Checked for the WIRED list rather than every §19.1 shape because a
+    // missing map only matters where something asks for it.
+    for (const name of WIRED_SHAPES) {
+      for (const suffix of ['', '_normal', '_material']) {
+        const file = join(PUBLISH_DIR, `${name}${suffix}.png`);
+        expect(existsSync(file), `missing ${name}${suffix}.png in the published tree`).toBe(true);
+        expect(statSync(file).size).toBeGreaterThan(500);
+      }
+    }
   });
 });
 

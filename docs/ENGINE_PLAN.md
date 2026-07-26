@@ -2524,3 +2524,138 @@ assets, the geometry solve, the gate-then-render logic) were.
   `tray`, `bezel`) is baked and published but has no consumer on either render
   path — §19's player console as a whole is still unbuilt, only its candle
   rail and one frame corner are.
+
+---
+
+## 21.8 The portrait bezels are fitted; the rest is measured, not guessed (2026-07-26)
+
+§21.7 left five DOM-anchored fittings as *"a real, scoped follow-up — five
+`getBoundingClientRect` reads, five unprojections, five sprites."* The
+machinery is built and two of the five are fitted. The other three are blocked,
+and both blockers are numbers taken off a live fight rather than opinions.
+
+**The machinery, which is `placeFigure` pointed at a different element.**
+`battleScene.ts` gains `FurnitureBox` (a measured HUD rect plus what goes behind
+it), `placeFurniture` (unproject it through the rank-solved camera) and
+`furnitureSprites` (emit, gated on `has()`). `LanternBattlefield`'s `measure()`
+reads the new rects in the SAME sweep as the figure boxes — one layout pass,
+still no writes anywhere in the function — and `BattleScreen` gains a `hudRefs`
+map that mirrors `figureRefs` exactly. No HUD element's box, class, `title`,
+ARIA or `data-*` changed; two `ref=` attributes were added and nothing else.
+
+**The one constant that matters is `cos`, not `sin`.** `buildVertexData` scales
+a STANDING quad's height by `zoom * sin` and a LYING one's by `zoom * cos`, so
+`placeFurniture` is `placeFigure` with the other divisor. At the shipping 55°
+tilt those differ by 1.43x — enough to be wrong, not enough to look like a bug
+rather than a bad bake. There is a test that asserts the round trip through the
+exact factor and asserts the `sin` answer does NOT match.
+
+**A bezel is drawn at 3/2 of the chip it frames, and that number is authored.**
+`build_portrait_bezel`: *"the bore is exactly TWO THIRDS of the frame width in
+both sizes ... the art the engine puts behind this is the bezel's own quad
+scaled by 2/3 about the same centre."* Read backwards, that is where the quad
+goes. It is the reason the bezels are the fittings that work: `bake.py` and the
+engine agree on one number, so nothing had to be eyeballed. The chip anchor is
+`.bf-ring` rather than §21.7's `.bf-portrait` — the bore is round and the ring
+is the round hole it lands on, where `.bf-portrait` is the taller column that
+also carries the HP text.
+
+**Both authored sizes are live, which is what makes the pick a rule.**
+`pickAuthoredSize` takes the bake whose own frame is nearest the size being
+drawn, because the two rows are one design at two sizes with different AO
+distances (`split()`'s "a fitting is a tenth the size of the panel"). Confirmed
+at two real viewports rather than argued: at 1280x820 the chip draws 0.86 tiles
+wide and takes `portrait_bezel`; at 1266x443 it draws 0.71 and takes
+`portrait_bezel_small`. `--bf-chip` clamps at both ends of the `--bf-scale`
+ladder while `zoom` keeps growing, so the chip's size in TILES genuinely moves.
+
+**`candle_rail_strip_brass` was baked in `fa677e4` and never asked for.** One
+`split()` frame, two rows, and only the timber was requested — so a rail §19.1
+wants "fairly reflective" has had no metal on it since it landed. Both halves
+now draw at the identical rect, both with `repeat: true` (the wrap belongs to
+the shared frame's registered height axis, not to either material).
+
+**And the left rail's painted surface comes off.** `.bf-rail` is an opaque
+CSS fake of oiled timber with a lit edge, a filigree line and two recessed
+caps. With it left on the bezels are drawn, correct, and behind a wall. §1.2 is
+the rule — the GPU draws every surface, the DOM draws text and hit targets — so
+the rail's box, children and ARIA are untouched and its paint moves to the
+renderer, exactly as `.vigor-candles` and `.stage-backdrop` already did. The HP
+ring itself is deliberately left alone: it is a readout, and the bore is sized
+to land on it.
+
+### The three that did not land, with the measurements
+
+| fitting | anchor | blocker |
+|---|---|---|
+| pile tray | `.pile-widget.pile-discard` | outside the canvas |
+| exhaust grate | `.pile-widget.pile-exhaust` | outside the canvas |
+| lantern cradle | `.lantern-turn` | outside the canvas |
+| log well | `.battle-log-rail` | 5.7x anisotropic stretch |
+| brass strap | — | still no console seam (§21.7, unchanged) |
+
+**THE CANVAS DOES NOT REACH THREE OF THEM, and this is the finding.**
+`.lantern-arena` is `inset: 0` inside `.battlefield`. Measured at 1280x820 in a
+real Hollow Gate fight: the canvas is y 111..517, and `.hand-zone` — a SIBLING
+of `.battlefield`, not a child — starts at y 547. The discard and exhaust piles
+sit at y 633..771 and the End Turn lantern at y 653..775, i.e. **116px below
+where the canvas ends**. A fitting placed behind them unprojects past the
+board's near edge and is clipped: drawn, geometrically correct, and never once
+visible. Reaching them means moving the renderer's host up to `.battle-stage`
+AND taking the opaque command bar's own painted surface off — which is §19's
+player console, a look change to the entire bottom of the screen, not a
+placement. Deliberately not attempted unilaterally.
+
+**AND THE BAKES ARE FRAMED FOR A HORIZONTAL CONSOLE.** §19 puts the console
+along the bottom of the board, so `log_well` is baked 2.50 x 1.40 board units —
+a wide panel. The Chronicle it would dress is a TALL right-hand rail, 216 x 394
+px. Covering that needs a 5.7x anisotropic stretch, and `log_well_brass.png`
+(rendered and looked at, not assumed) is a thin rectangular escutcheon with
+corner brackets — so the whole stretch lands on the brass banding and turns
+square joinery into lopsided bars with elliptical corners. `pile_tray` is the
+same failure at 2.1x and `lantern_cradle` at 2.5x. The bezels escape it for one
+reason: they are ROUND framing something ROUND, so there is no banding to go
+lopsided. Fixing the other three is a re-bake in portrait orientation, or a
+console that is actually horizontal — either way a bake decision, not a
+renderer one.
+
+### Verified by measurement versus by eye
+
+By **measurement**: the furniture round trip against `camera.project` at four
+box centres to 1e-6 px; the `cos`-not-`sin` divisor, including the assertion
+that the `sin` answer is wrong; the bore landing on the chip to 1e-6; eleven
+degenerate inputs (zero rect, sub-threshold rect, NaN centre, NaN and infinite
+size, zero/negative/NaN zoom, edge-on and NaN tilt) each producing NO SPRITE and
+never a non-finite vertex; the `has()` gates actually gating, with the materials
+deliberately withheld; wood and brass at one rect with brass painted second, and
+each drawing alone when its partner is missing; both `pickAuthoredSize` branches
+reachable from a real chip; the three published maps (colour, normal, material)
+on disk for all six wired shapes; the material map's upload-rule call site,
+which had no test at all before this; and a new static check that EVERY selector
+in `lanternBattle.css` is scoped under `.lantern-battle` — mutation-tested by
+appending an unscoped `.bf-rail` rule and confirming it fails. 1326 tests (was
+1285), `tsc -b` clean.
+
+**Flag OFF, in a live fight** (`?r=off`, Hollow Gate, fresh character):
+`.battle-stage` carries `panel battle-stage` and nothing else, no
+`.lantern-arena`, no `__lanternBattle`, `.bf-rail` keeps its gradient, its
+`rgba(150, 120, 62, 0.38)` border and its box-shadow, the chip's fake socket
+`::after` is present, `.vigor-candles` is `flex`, the figure `<img>` is
+`visible`, `.stage-backdrop` is present, and `--vigor-lume` still resolves to
+0.11 off the `:has()` count.
+
+By **eye**: a composited frame of a real fight — the hero's bezel reading as a
+scalloped brass ring seated around his portrait, the enemy's around hers, the
+rail's CSS timber gone and the board's own candle rail with its sockets and lit
+candles standing where the fake one used to be. **One thing the eye caught that
+the tests do not cover:** the enemy bezel is markedly dimmer than the hero's —
+sampled in a ring at 1.22x the chip radius it reads 15,13,11 against the hero's
+39,32,22, because the enemy chip sits at board y≈0, out at the unlit far edge
+while the lantern hangs at mid-rank. Physically consistent and arguably correct,
+but §19.1 asks the brass to catch the light and at the far end there is little
+light to catch. Worth Paul's eye before it is tuned.
+
+The canvas still does not composite in this environment
+(`document.visibilityState` stays `"hidden"`, so `requestAnimationFrame` never
+fires); every frame above came through `window.__lanternBattle.frame()` and
+`gl.readPixels`, which is what that hook exists for.
