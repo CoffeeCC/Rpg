@@ -482,7 +482,7 @@ void main() {
 
   // ONE FETCH, FOUR PROPERTIES. The fallback is the pre-map behaviour exactly:
   // the scalar gloss, full specular, no iridescence, no occlusion.
-  vec4 matx = uHasMaterial > 0.5 ? texture(uMaterial, vUv) : vec4(0.0, 1.0, 0.0, 1.0);
+  vec4 matx = uHasMaterial > 0.5 ? texture(uMaterial, vUV) : vec4(0.0, 1.0, 0.0, 1.0);
   float glossExp = uHasMaterial > 0.5 ? mix(GLOSS_MIRROR, GLOSS_MATTE, matx.r) : uGloss;
   float specK = uSpecular * matx.g;
   float irid = matx.b;
