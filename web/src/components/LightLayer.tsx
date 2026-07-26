@@ -116,6 +116,32 @@ export function LightLayer({
   const respondersRef = useRef<{ el: HTMLElement; x: number; y: number; phase: number }[]>([]);
   const reachRef = useRef(reach);
 
+  /**
+   * THE DIALS, HELD IN A REF SO CHANGING ONE DOES NOT RESTART THE LIGHT.
+   *
+   * Paul: "when a card gets played the screen flashes light for a sec."
+   *
+   * That flash was this component tearing itself down and rebuilding, roughly
+   * twice a turn. Playing a card spends vigor; the battlefield feeds vigor in
+   * as `intensity` (and as `version`); both sat in the render effect's
+   * dependency array; so every card cancelled the rAF loop, re-ran the setup,
+   * and re-measured. The canvas is the DARKNESS, so any gap where it is not
+   * being painted is not a dark screen — it is the undimmed art at full
+   * brightness, which is exactly the "flash" he saw.
+   *
+   * The loop must therefore outlive its own parameters. Anything that is just
+   * a NUMBER the frame reads lives here and is updated in place on render; the
+   * effect below depends only on the things that genuinely require rebuilding
+   * (which elements to watch, whether there is a lamp). This is also simply
+   * less work: a fight used to rebuild observers and re-query the DOM every
+   * time a card was played.
+   */
+  const dials = useRef({ reach, reachCells, intensity, flameSize, ambient, maxDarkness, murkStrength });
+  dials.current = { reach, reachCells, intensity, flameSize, ambient, maxDarkness, murkStrength };
+
+  /** The live `measure`, so `version` can re-read geometry without a rebuild. */
+  const measureRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const host = hostRef.current;
@@ -134,8 +160,13 @@ export function LightLayer({
       const box = host.getBoundingClientRect();
       w = Math.max(1, Math.round(box.width * SCALE));
       h = Math.max(1, Math.round(box.height * SCALE));
-      canvas.width = w;
-      canvas.height = h;
+      // ONLY when the size actually changed. Assigning `canvas.width` — even
+      // the value it already holds — resets the drawing buffer to transparent,
+      // and this layer's job is to hold the darkness. A re-measure that clears
+      // it leaves the scene undimmed until the next rAF paints, which is a
+      // frame of full-brightness art. See the flash note on the effect below.
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
 
       occludersRef.current = [...document.querySelectorAll(occluderSelector)]
         .map((el) => {
@@ -157,11 +188,12 @@ export function LightLayer({
         anchorRef.current = { x: (a.left + a.width / 2 - box.left) * SCALE, y: (a.top + a.height * 0.5 - box.top) * SCALE };
         // Reach in tiles, resolved against the tile the hero is standing on —
         // so it tracks --cell across every breakpoint without knowing it exists.
-        reachRef.current = reachCells != null && a.width > 1 ? a.width * reachCells : reach;
+        reachRef.current =
+          dials.current.reachCells != null && a.width > 1 ? a.width * dials.current.reachCells : dials.current.reach;
       } else {
         // Hung over the square: top centre, a little way down from the edge.
         anchorRef.current = { x: w / 2, y: h * 0.08 };
-        reachRef.current = reach;
+        reachRef.current = dials.current.reach;
       }
 
       respondersRef.current = responderSelector
@@ -203,7 +235,7 @@ export function LightLayer({
      * the one thing in this file that could actually cost the frame budget.
      */
     let tick = 0;
-    const paintResponders = (src: { x: number; y: number }, flicker: number, t: number) => {
+    const paintResponders = (src: { x: number; y: number }, flicker: number, t: number, intensity: number) => {
       const list = respondersRef.current;
       if (!list.length) return;
       const reachPx = reachRef.current * SCALE;
@@ -242,22 +274,27 @@ export function LightLayer({
     };
 
     const start = performance.now();
-    const frame = (now: number) => {
+    /** One frame of light, drawn but NOT scheduling the next. */
+    const draw = (now: number) => {
       const t = (now - start) / 1000;
+      // Read the dials fresh every frame. Spending vigor now dims the room
+      // between one frame and the next, which is what it always looked like it
+      // was doing — it just used to get there by restarting the whole layer.
+      const d = dials.current;
       const live = renderLight(
         ctx,
         w,
         h,
-        { pos: anchorRef.current, reach: reachRef.current * SCALE, intensity, size: flameSize * SCALE },
+        { pos: anchorRef.current, reach: reachRef.current * SCALE, intensity: d.intensity, size: d.flameSize * SCALE },
         occludersRef.current,
         t,
         !reduced.matches,
-        ambient,
-        maxDarkness,
+        d.ambient,
+        d.maxDarkness,
         murkTiles(),
-        murkStrength,
+        d.murkStrength,
       );
-      if (tick++ % 4 === 0) paintResponders(live.src, live.flicker, t);
+      if (tick++ % 4 === 0) paintResponders(live.src, live.flicker, t, d.intensity);
       // ONE custom-property write, on ONE element, per frame. The lamp is a
       // child of this host, so it inherits without any element of its own
       // being touched — style invalidation stays confined to this subtree
@@ -268,35 +305,73 @@ export function LightLayer({
         st.setProperty('--lamp-x', `${(live.lean / SCALE).toFixed(1)}px`);
         st.setProperty('--lamp-y', `${(live.bob / SCALE).toFixed(1)}px`);
       }
+    };
+
+    const frame = (now: number) => {
+      draw(now);
       // Reduced motion is a still frame, so there is nothing to schedule.
       if (!reduced.matches && !document.hidden) raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
+
+    /**
+     * Re-measure, and if that WIPED the canvas, put the darkness back before
+     * the browser gets a chance to composite.
+     *
+     * The second half of Paul's flash. Sizing a canvas resets its buffer to
+     * transparent — unavoidable, and legitimate when the layer really has
+     * resized, which on the battlefield happens when a card leaves the hand and
+     * the layout settles. But a canvas holding DARKNESS is not like other
+     * canvases: an empty frame is not a missing effect, it is the scene at full
+     * brightness. Waiting for the next rAF to repaint means shipping that frame
+     * to the screen. Drawing synchronously here keeps the wipe and the repaint
+     * inside the same task, so the compositor never sees a cleared layer.
+     */
+    const remeasure = () => {
+      const before = canvas.width * canvas.height;
+      measure();
+      if (canvas.width * canvas.height !== before) draw(performance.now());
+    };
 
     const onVisibility = () => {
       cancelAnimationFrame(raf);
       if (!document.hidden && !reduced.matches) raf = requestAnimationFrame(frame);
     };
     const ro = new ResizeObserver(() => {
-      measure();
+      remeasure();
       if (reduced.matches) requestAnimationFrame(frame);
     });
     ro.observe(host);
     // The cast list grows and shrinks (badges, services, orb count), and each
     // change moves the things that block light.
-    const mo = new MutationObserver(() => measure());
+    const mo = new MutationObserver(() => remeasure());
     mo.observe(host, { childList: true, subtree: true });
     document.addEventListener('visibilitychange', onVisibility);
     reduced.addEventListener('change', onVisibility);
 
+    // `version` re-measures rather than rebuilding. The hero taking a step and
+    // the player spending a candle both need the geometry read again; neither
+    // needs a new canvas, new observers, or a restarted clock — and restarting
+    // the clock is visible, because the flicker noise jumps back to t=0.
+    measureRef.current = remeasure;
+
     return () => {
+      measureRef.current = null;
       cancelAnimationFrame(raf);
       ro.disconnect();
       mo.disconnect();
       document.removeEventListener('visibilitychange', onVisibility);
       reduced.removeEventListener('change', onVisibility);
     };
-  }, [occluderSelector, anchorSelector, responderSelector, reach, reachCells, intensity, flameSize, lamp, ambient, maxDarkness, murkStrength, version]);
+    // DELIBERATELY NOT the numeric props — see `dials` above. Only the things
+    // that change what is being observed belong here; putting `intensity` in
+    // this list is what made the screen flash every time a card was played.
+  }, [occluderSelector, anchorSelector, responderSelector, lamp]);
+
+  // Geometry moved: re-measure in place, keeping the running loop.
+  useEffect(() => {
+    measureRef.current?.();
+  }, [version, reach, reachCells]);
 
   return (
     <div className="light-layer" ref={hostRef} aria-hidden="true">
