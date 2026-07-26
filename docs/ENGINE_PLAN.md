@@ -1116,3 +1116,52 @@ it is keyed on elevation relative to the active layer rather than on a layer
 index. A cull would pop as the player climbs; a fade is also what lets an
 upper platform be *partially* transparent at its edge so the player can see
 they are about to walk under something.
+
+### 14.2 Falling pieces: a canned tumble, not a physics engine (2026-07-26)
+
+Paul, clarifying what "can a piece fall" meant: *"im picturing some kind of
+physics interaction. like a game piece tumbles off the edge or falls through a
+trap tile, and sort of bounces around for a second before settling."*
+
+Yes, and the scoping call is the whole decision.
+
+**Do not add a physics engine.** For a small object falling a short distance,
+ballistic motion plus damped bounces IS the physics — a parabola, restitution
+around 0.4, two or three diminishing hops, angular velocity that damps out.
+There is no constraint solving to do. What a real engine would add:
+
+- collision geometry for every board feature, maintained forever
+- an integration surface and a dependency
+- **non-determinism across machines, which would break the multiplayer duels
+  this game already ships.** A seeded tumble reproduces exactly; a solver does
+  not. That alone settles it.
+
+Call it 150 lines with no dependency.
+
+**What sells it is not accuracy.** Three things do:
+
+1. **The settle** — the final wobble before rest. This is what makes an object
+   read as having weight rather than as a sprite following a curve.
+2. **The contact shadow**, which already exists from M3. It tightens and
+   darkens as the piece nears the floor and spreads as it rises. That is what
+   turns "sprite moving down the screen" into "object falling through space",
+   and it costs nothing new.
+3. **Sound.** A wooden clatter does half the work.
+
+**The free one: if the falling piece is the hero, the lantern falls with it.**
+The light is attached to the hero's position, so a fall tumbles the entire
+board's lighting — shadows sweeping the walls, the pool swinging, everything
+settling as the piece comes to rest. No extra cost; it already works that way.
+
+**Where it lives: presentation, not game logic.** The reducer commits
+"piece X fell from tile A to tile B on layer 1" immediately and the renderer
+plays the tumble afterwards. There is precedent in the codebase — `FloorScreen`
+glides `.hero-walker` on a transform while the reducer has already moved the
+hero. Same pattern, one axis further.
+
+`Sprite.position.z` is already a first-class property, so a falling piece is
+animating z and rotation. The infrastructure exists.
+
+**The real risk is pacing, not implementation.** A one-second tumble is
+delightful once and tedious on the fortieth trap tile. Keep it to 0.6–0.9s and
+scale it with the existing animation-speed setting.
