@@ -2659,3 +2659,301 @@ The canvas still does not composite in this environment
 (`document.visibilityState` stays `"hidden"`, so `requestAnimationFrame` never
 fires); every frame above came through `window.__lanternBattle.frame()` and
 `gl.readPixels`, which is what that hook exists for.
+
+## 22. The walls are this gate's rock, and the console is furnished (2026-07-26)
+
+Two things, and the second one closes §21.8's list. `893ca1f` ended with a
+paragraph headed ONE THING FOR PAUL, NOT FIXED HERE; this is that thing fixed,
+plus the five DOM-anchored fittings §21.7 scoped and §21.8 measured.
+
+### 22.1 The per-gate stone: a multiply that is really a re-bake
+
+`bake.py` renders every wall shape out of one shared palette. Reading the
+published PNGs rather than the source that made them — the standing rule since
+§21.7's near/far corner — that palette is **the literal, flat albedo**: mean
+187.5/182.4/180.6 sRGB across all four wall bakes with a total spread of ONE
+BYTE of luminance over 1024x1024, and `bake.py`'s `STONE = (0.50, 0.47, 0.46)`
+sRGB-encodes to exactly the measured 0.5000/0.4699/0.4601 linear. Every scrap of
+shape in a baked wall lives in its normal and material maps and none of it in
+its colour.
+
+**That is what makes a tint the right instrument rather than a patch.** On a
+constant albedo, `tint * STONE` is bit-for-bit what Cycles would have written
+had `shape(..., colour=<this gate's stone>)` been passed — nothing is lost,
+because there is nothing in there to lose. The tint is not a correction laid
+over the asset; it IS the asset's `colour=`, moved to where the renderer knows
+which gate it is drawing. It goes on `Sprite.tint`, which `floorScene.ts`
+already used for the painted path's fake AO and for the fog, so no new field
+exists anywhere.
+
+**THE NUMBERS ARE LINEAR, AND THAT IS THE TRAP.** Both the painted tile and the
+bake upload `SRGB8_ALPHA8`, so `texture()` hands the shader linear reflectance
+and `vTint` multiplies it there. Taking the ratio in bytes instead — 31.6/183.3
+= 0.172 for Hollow — leaves the wall at sRGB 83 rather than 36: still 2.6x too
+bright, and the exercise half done while looking finished. `GATE_WALL_ALBEDO` is
+therefore the mean LINEAR albedo of each `<gate>_wall.jpg`, and
+`floorScene.test.ts` decodes all five JPEGs and re-derives every row, so the
+table cannot drift from the paintings it claims to come from. They are tracked
+source art, unlike `public/art/materials/`, so that check runs unconditionally.
+
+| gate | wall lum | ground lum | wall/ground | the material |
+|---|---|---|---|---|
+| verdant | 29.8 | 100.0 | 0.130 | mossed stone |
+| hollow | 31.6 | 113.0 | 0.105 | raw hewn rock |
+| sunken | 39.2 | 118.3 | 0.135 | wet cut stone, silt |
+| storm | 36.0 | 145.4 | 0.080 | cracked slate, frost |
+| abyss | 7.9 | 24.2 | 0.233 | blackened basalt |
+
+The ground column is the CHECK rather than an input: nothing tints the floor, so
+a wall matched to its own gate's wall art keeps that gate's authored wall:ground
+contrast by construction. It is also why one tint serves a block's top and its
+front — same stone, and (see above) the same flat texture. The fake AO pair the
+painted path still carries is NOT reintroduced; the tint cannot stand in for it
+because it does not distinguish the two faces, and there is a test that says so.
+
+**Measured on the same Hollow Gate floor at 922x507, tint neutralised and
+restored, everything else identical:**
+
+- untinted — i.e. `893ca1f` exactly as it shipped — **mean frame luminance
+  32.85**. `893ca1f` recorded 32.8 for the same view, which is what makes the
+  rest of these numbers trustworthy.
+- tinted: **16.75**, against the pre-bake board's 12.3. So the palette gives
+  back 16.1 of the 20.5 the bake added, and the +4.5 that remains is the block
+  GEOMETRY — top faces and front faces that did not exist before and are real
+  lit surface.
+- the hue turns over with it: 32.2/33.5/34.5 (blue-leaning, the room lamp) to
+  19.5/15.9/14.9 (warm, the lantern). That is §12's whole claim, arriving as a
+  measurement.
+
+Two byte-space figures differ and both are correct: `893ca1f`'s 5.8x is 183.3
+over the PAINTING's own byte mean, while a flat surface at the painting's
+average reflectance reads 35.7 rather than 31.6, so the flat-equivalent ratio is
+5.1x. The encode is concave; a mottled tile always reads a little darker in
+bytes than an even one bouncing the same light. In LINEAR terms — what actually
+reaches the room lamp — the pair is 27x.
+
+By eye, on two gates: Hollow's walls read as dark cave rock with the lantern
+pool the only bright thing on the board and the sconce flames finally reading as
+points of light; Verdant's are visibly a different rock, mossed and green. A
+gate with no measured art falls to the mean of the five rather than to white,
+because a sixth gate silently resurrecting the pale limestone is the worst way
+to ship this.
+
+### 22.2 The aspect trap was arithmetic, and the arithmetic double-counted cos
+
+§21.8 left three fittings behind two blockers. The first was real and is closed:
+`.lantern-arena` was `inset: 0` inside `.battlefield`, measured at 1350x860 as
+y 111..554, while `.hand-zone` starts at 601 and the discard, exhaust and End
+Turn anchors sit at y 670..812. The host is `.battle-stage` now (y 104..860) and
+the canvas reaches all of them.
+
+**The second blocker does not survive being checked.** §21.8 quotes 5.7x for
+`log_well`, 2.1x for `pile_tray` and 2.5x for `lantern_cradle`. Those compare
+the DOM box's BOARD aspect against the bake's authored board aspect — but the
+box's board aspect already carries a 1/cos, put there by `placeFurniture`
+precisely so the quad projects back onto the box. `battleScene.ts`'s own note
+says as much: *"a lying quad stretched by 1/cos in board y projects back to its
+DOM box's own aspect."* Counting the tilt on one side and not the other is the
+whole of the error. Done once, the distortion of the IMAGE — the only thing that
+can bend a brass band — is the ratio of the two SCREEN aspects, and the cos
+cancels out of it:
+
+    distortion = (boxH / boxW) / (authoredH / authoredW)
+
+Verified against the published PNGs rather than derived and trusted: every one
+is an orthographic render at its authored board proportions with no
+foreshortening baked in (`log_well.png` 1024x573 for 2.50 x 1.40; `pile_tray`
+806x1024 for 0.96 x 1.22; `lantern_cradle` 1024x922 for 1.00 x 0.90), and a test
+reads the IHDR of each and compares.
+
+| fitting | anchor | box | authored | distortion | fit |
+|---|---|---|---|---|---|
+| pile_tray | `.pile-cardback` | 84x118 | 0.96x1.22 | **0.999** | cover |
+| exhaust_grate | `.pile-cardback` | 84x118 | 0.96x1.22 | 0.999 | cover |
+| lantern_cradle | `.lantern-turn` | 96x122 | 1.00x0.90 | 1.412 | contain |
+| log_well | `.battle-log-rail` | 216x434 | 2.50x1.40 | 2.87 | slice |
+
+**THE PILES WERE NEVER A PROBLEM, and the reason is an agreement nobody wrote
+down.** `build_pile_tray` cuts its recess "card-shaped literally — 0.64 by 0.90
+is a 0.71 aspect, which is a playing card", and `.pile-cardback` is 84x118,
+which is 0.712. The bake and the DOM independently chose the same playing card.
+So the slot goes on the card back the way `BEZEL_BORE` puts the bore on the
+chip — an authored fraction read backwards — and it costs a tenth of a percent.
+The anchor is the card back rather than the button for the same reason §21.8
+moved the bezel from `.bf-portrait` to `.bf-ring`: the button is the card plus
+its count and its label, and fitting a card-shaped hole to that frames something
+that is not a card.
+
+The three modes are `FurnitureFit`, and the differences between them are those
+measurements rather than taste:
+
+- **cover** — the quad is the box. The bezels and the piles, where box and bake
+  already agree.
+- **contain** — the quad keeps the bake's authored aspect, grown until it
+  contains the box. Zero distortion by construction, at the cost of overhanging
+  on one axis. `lantern_cradle`'s identity is a round base disc and two brass
+  ears that "run PAST the base disc"; 1.412x makes the disc a visible ellipse
+  and there are no straight runs to slice, so this is the only mode that works
+  for it — and overhanging is what the ears do anyway.
+- **slice** — a 3x3 of UV windows, `board.ts`'s `frameBands` pointed at a
+  measured box. Corners keep their size, the four runs stretch along their
+  length only, and the middle takes the rest. `log_well`'s ornament is a
+  rectangular escutcheon, a full-width brass header and four corner brackets:
+  every one a straight run or a corner, which is exactly what nine-slicing
+  exists for.
+
+**The band's size is taken off the WIDTH, twice, and that is what keeps a corner
+square.** A corner cell is `slice.u` of the quad across; for the same texels to
+be drawn at the same scale down the screen its board height must be that width
+times the texture's own aspect, divided by cos. Take it from the height instead
+and the corners stretch exactly as much as the runs they are protecting — the
+bug wearing a nine-slice costume. There is a test that doubles the box's height
+and asserts the corner does not move while the middle run absorbs all of it.
+
+`LOG_SLICE` (0.155, 0.26) is measured off `log_well_brass.png`'s OWN ALPHA, not
+computed from `bake.py`: the column profile is flat at 0.121 coverage across the
+middle and rises to 0.91 inside u<0.13 and u>0.86; the row profile is flat at
+0.052 and rises to 0.13 outside v<0.26 and v>0.74. Set just outside where each
+goes flat, so every bracket is wholly inside a rigid band.
+
+`LOG_WELL_FRACTION` is the panel's other authored contract — the well is 0.80 x
+0.75 of the frame, so the DOM box that carries the log is the panel's rect
+scaled by those two numbers — and **only the u is taken**. Honouring both draws
+the panel at 216/0.80 x 434/0.75 = 270 x 579 px; the Chronicle's centre sits
+240px down a 756px stage, so 579 runs off the top and takes the top brass
+bracket with it. Reading is horizontal, so the axis that gets the contract is
+the one that puts the well's mouth on the text's width.
+
+### 22.3 Two paint-order bugs that only a composited frame could find
+
+Both were invisible in every unit test and obvious in the first frame.
+
+**The slab's rim painted across all three console fittings.** `ledgeFace`
+returns an upright quad, `layerOf` gives an upright quad `LAYER_PIECE`, and
+`board.test.ts` has a test calling that "in front of everything on the board" —
+which is right, and which stops being right the moment something is NOT on the
+board. The trays, the grate and the cradle unproject to board y ~7.5 while the
+slab's near edge is at 7.2, so they are in front of it. `BoardSlabOptions` gains
+`rimLayer`; the arena passes `LAYER_BOARD - 0.25` and the map passes nothing, so
+its sprites are byte-for-byte what they were.
+
+**The painted flat covered the top quarter of the log well, brass header and
+all.** Same shape of mistake: the backdrop is upright, so it took `LAYER_PIECE`,
+which it only ever needed in order to beat the floor tiles — every combatant is
+at board y >= `ENEMY_RANK` and the flat stands at -0.05, so the painter sort put
+it first among pieces without any help. The Chronicle's box reaches board y
+-1.10, past the flat's base, so the flat really does stand nearer the camera
+than that end of the panel. Physically defensible and wrong for what a fitting
+IS: §1.2 gives the surface under a DOM box to the renderer, and the surface
+under the Chronicle is the well. `BACKDROP_LAYER` is `LAYER_BOARD + 0.5` — over
+the floor, under every fitting, still under every piece.
+
+### 22.4 What landed, and the seam that now exists
+
+- **The host moved to `.battle-stage`.** One JSX element, one CSS rule at
+  `.panel.battle-stage.lantern-battle > .lantern-arena` — 0,4,0 plus
+  `!important`, because v5.css's `.battle-stage > *:not(.stage-backdrop)` is
+  0,2,0, loads later, and would force `position: relative` onto the canvas and
+  drop it into the flex column. battle.css already documents that trap for
+  `.battle-enter-flash`; this is the same repair.
+- **The command bar's paint came off.** `.hand-zone` is a 180deg gradient, a 2px
+  gold rail, three inset shadows and a filigree `::before` — all four surfaces,
+  and all four now the renderer's. Its flex row, padding, gap and 176px
+  min-height are untouched, and there is a test that fails if this stylesheet
+  ever sets one of them. `.pile-cardback`'s stacked-edge shadows are left alone
+  on purpose: those are the CARDS, not the carpentry, and the card render is its
+  own pass.
+- **Six fittings, not three.** The draw pile takes the discard's tray. §19.1's
+  slot table does not name it only because it was written before the console
+  reached the command bar; both are piles of cards you take from, and one grate
+  among two trays states §19.1's silhouette contrast more clearly than one among
+  one.
+- **`brass_strap` finally has a seam.** §21.7 and §21.8 both left it for the
+  same stated reason — "there is no seam in the current arena geometry for a
+  strap to honestly sit across" — and that was true while the camera showed
+  board y up to about 5.1 against a near edge at 7.2. Hosting on the stage moves
+  the solve's centre down ~1.8 tiles and the near edge, the joint under it and
+  the table beyond come into frame. The straps lie ON THE TABLE at the foot of
+  the rim, at their AUTHORED board size (foreshortened by the tilt, like the
+  sockets and the corner brass, because they are carpentry rather than a fitting
+  behind a straight-on widget), spaced at `board_rim`'s own four-tile repeat so
+  they land on the seams its bolt heads already mark. `build_brass_strap` RUNS
+  ALONG X and this joint runs along x, so there is no mirroring and none of the
+  tangent-space problem that still keeps the corner brass at one corner.
+- **`board_corner_brass` is still at ONE corner**, unchanged and for the
+  unchanged reason. Nothing in this pass makes a verified red-channel flip
+  cheaper, and §21.7's near/far mistake is the standing argument for not
+  guessing.
+
+### 22.5 What is still open
+
+- **The console body.** `console_body` / `console_body_brass` are baked,
+  published and still unwired, so the band the fittings sit on is bare table.
+  The fittings read as fittings; they do not yet read as fittings ON something.
+- **The board's near frame band runs under the command bar.** The near edge is
+  at board y 7.2 and the hand zone starts about 1.7 tiles above it, so the trays
+  and the cradle sit across the frame band and the rim rather than clear of them
+  on the table. §16 wants furniture "physically a part of the Board Border" and
+  §19 wants it on the table; the arena does not pan or zoom, so §19's objection
+  does not bite here and either reading is defensible. Moving the board's edge up
+  is `ARENA_DEPTH`, and at 4.35 the party rank leaves no room for it without the
+  hero's plinth overhanging — a framing call for Paul with that number in front
+  of him, not a tune to take unilaterally.
+- **Wear (§19.1)** is still deferred, and the fittings are still separate parts
+  with their own UV space so it can land per fitting when it comes.
+
+### Verified by measurement versus by eye
+
+By **measurement**: the per-gate albedo re-derived from all five shipped JPEGs
+and `bake.py`'s `STONE` read out of the file and compared; the frame luminance
+A/B above, with the untinted arm reproducing `893ca1f`'s own recorded number to
+0.05; the distortion table, including §21.8's 2.1x reproduced exactly so it is
+clear which quantity it was; the five bakes' IHDR pixel aspects against their
+authored frames; nine-slice corner invariance under a 4x change of box height,
+cell tiling to 1e-10 with no gap or overlap, and the corner's screen aspect
+against the texture's; `contain` holding the authored aspect to 1e-9 and growing
+on the tighter axis only; the slot contract landing the recess on the card back
+to 1e-6; `sliceBands` dropping the middle rather than overlapping two bands, and
+producing nothing for a zero, negative or NaN span; twenty degenerate boxes and
+five degenerate cameras across all four new fittings, each producing NO SPRITE
+and never a non-finite vertex; every `has()` gate exercised with its material
+withheld, per fitting and per half; the strap's position on the joint, its
+authored size, its four-tile pitch and its absence without a bake; both new
+layers asserted against the ladder AND the map's default asserted unchanged;
+`.hand-zone`'s rule checked to contain only surface properties and no layout
+one; the canvas rule's specificity and `pointer-events: none`; and every split
+shape checked to have both halves requested, derived from the list so a new
+shape cannot be wired half-way. 1366 tests (was 1326), `tsc -b` clean.
+
+**Flag OFF, in a live fight** (`?r=off`, Hollow Gate, fresh character): all
+fifteen measured rects — stage, battlefield, hand zone, hand fan, hand right,
+all three piles, End Turn, log rail, `.bf-rail`, `.bf-ring`, both rows and a
+figure — are byte-identical to the flag-on layout. `.battle-stage` carries
+`panel battle-stage` and nothing else, there is no `.lantern-arena` and no
+`__lanternBattle`, `.hand-zone` keeps its gradient, its `rgb(121, 100, 28)` top
+border and its box-shadow, `.bf-rail` keeps its gradient and its
+`rgba(150, 120, 62, 0.38)` border, `.vigor-candles` is `flex`, the figure `<img>`
+is `visible`, `.stage-backdrop` is present, and `--vigor-lume` still resolves to
+0.11 off the `:has()` count.
+
+**Hit targets, flag ON:** `elementFromPoint` at the centre of the discard, the
+exhaust, the draw pile, End Turn, the Chronicle, a hand slot and an enemy each
+returns that element or one of its children. The canvas spans the whole stage
+now and intercepts nothing.
+
+By **eye**, from real composited frames: the console with all six fittings — the
+draw tray at the bottom left, the discard tray and the exhaust grate abutting so
+they read as two recesses cut in one board, the grate's hole and bars against
+the tray's floored recess, and the cradle's brass ears running past a perfectly
+round base disc; the Chronicle's well with its brass banding an even thickness
+the whole way round and square corner brackets at all four corners; and on the
+map, Hollow's dark cave rock and Verdant's mossed green.
+
+**The canvas still does not composite in this environment** — the browser pane
+stayed hidden and `document.visibilityState` never left `"hidden"`, so
+`requestAnimationFrame` never fired and `computer:screenshot` timed out on every
+attempt. Every frame above came through `window.__lantern.frame()` /
+`window.__lanternBattle.frame()` and `gl.readPixels`, which is what those hooks
+exist for. The DOM half was checked by measurement instead, as above.
+
+---

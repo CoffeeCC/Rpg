@@ -53,9 +53,18 @@ import {
   MAT_BLANK,
   MAT_CANDLE,
   MAT_CORNER_BRASS,
+  MAT_CRADLE,
+  MAT_CRADLE_BRASS,
+  MAT_EXHAUST,
+  MAT_EXHAUST_BRASS,
+  MAT_LOG_WELL,
+  MAT_LOG_WELL_BRASS,
+  MAT_PILE_TRAY,
+  MAT_PILE_TRAY_BRASS,
   MAT_RAIL_STRIP,
   MAT_RAIL_STRIP_BRASS,
   MAT_SOCKET,
+  MAT_STRAP,
 } from './battleScene';
 
 /**
@@ -522,6 +531,9 @@ export function requestBoardFurniture(lib: BattleMaterialLibrary): void {
   lib.requestFurniture(MAT_RAIL_STRIP, 'candle_rail_strip', { repeat: true });
   lib.requestFurniture(MAT_RAIL_STRIP_BRASS, 'candle_rail_strip_brass', { repeat: true });
   lib.requestFurniture(MAT_CORNER_BRASS, 'board_corner_brass');
+  // The band across the board-to-table joint. Frame-fixed like everything else
+  // here — it is authored onto a seam, not fitted to a widget.
+  lib.requestFurniture(MAT_STRAP, 'brass_strap');
 }
 
 /**
@@ -540,14 +552,26 @@ export function requestBoardFurniture(lib: BattleMaterialLibrary): void {
  * so which one is needed is not known here and asking for one would make the
  * choice a load order rather than a measurement. Six fetches, once per fight.
  *
- * NOT REQUESTED: `log_well`, `pile_tray`, `exhaust_grate`, `lantern_cradle`,
- * `brass_strap`. Every one is published and none of them is wired, for reasons
- * that are measurements rather than oversights — see the block above
- * `HUD_PORTRAIT_ENEMY` in `battleScene.ts`. Asking for a texture nothing draws
- * would only put six phantom requests in the network log, which is exactly the
- * evidence someone would use to conclude the feature works.
+ * BOTH HALVES OF EVERY SPLIT SHAPE. `bake.py`'s `split()` renders `<name>` and
+ * `<name>_brass` from one assembly through one camera frame so the metal can
+ * carry its own material map — roughness 0.12 against timber's 0.86 — and
+ * `furnitureSprites` draws them as two quads at one rect. Asking for only the
+ * timber is the defect §21.8 found on the candle rail, where
+ * `candle_rail_strip_brass` was baked in `fa677e4` and never requested, so a
+ * rail §19.1 wants "fairly reflective" had no metal on it at all.
+ *
+ * THIRTEEN SHAPES, ONE PER MOUNT. Idempotent by `requestFurniture`'s own guard
+ * (`materials.has || drafts.has`), so a StrictMode double-mount costs nothing.
  */
 export function requestHudFurniture(lib: BattleMaterialLibrary): void {
   lib.requestFurniture(MAT_BEZEL, 'portrait_bezel');
   lib.requestFurniture(MAT_BEZEL_SMALL, 'portrait_bezel_small');
+  lib.requestFurniture(MAT_PILE_TRAY, 'pile_tray');
+  lib.requestFurniture(MAT_PILE_TRAY_BRASS, 'pile_tray_brass');
+  lib.requestFurniture(MAT_EXHAUST, 'exhaust_grate');
+  lib.requestFurniture(MAT_EXHAUST_BRASS, 'exhaust_grate_brass');
+  lib.requestFurniture(MAT_CRADLE, 'lantern_cradle');
+  lib.requestFurniture(MAT_CRADLE_BRASS, 'lantern_cradle_brass');
+  lib.requestFurniture(MAT_LOG_WELL, 'log_well');
+  lib.requestFurniture(MAT_LOG_WELL_BRASS, 'log_well_brass');
 }

@@ -124,6 +124,17 @@ export const ARENA_DEPTH = 6;
 export const ARENA_BORDER = 1.2;
 /** Slab thickness — what the rim shows. Thicker than the map's: it is closer. */
 export const ARENA_THICKNESS = 0.45;
+/**
+ * Where the slab's near edge paints on THIS board. See `rimLayer`'s doc in
+ * `lantern/scene/board.ts` — a quarter-layer under the tiles, which is under
+ * the console fittings that sit past it.
+ */
+export const ARENA_RIM_LAYER = LAYER_BOARD - 0.25;
+/**
+ * Where the painted flat stands in the ladder: over the floor, under every
+ * fitting and every piece. See its call site in `buildBattleScene`.
+ */
+export const BACKDROP_LAYER = LAYER_BOARD + 0.5;
 
 /**
  * Zoom guard rails.
@@ -462,6 +473,56 @@ export function cornerBrassCentre(extent: { width: number; height: number; borde
 }
 export const CORNER_BRASS_SIZE = 0.6;
 
+/**
+ * How often a strap crosses the board-to-table joint, in tiles.
+ *
+ * FOUR, which is `board_rim`'s own repeat — `boardSlabSprites` tiles the rim
+ * every four tiles and `bake.py` puts its bolt heads "at every four-tile seam".
+ * Landing the straps on those seams is what makes them read as one piece of
+ * hardware rather than as two unrelated brass rhythms along the same edge.
+ */
+export const STRAP_PITCH = 4;
+
+/**
+ * Where `brass_strap` sits, and it is a seam that did not exist until this pass.
+ *
+ * §21.7 and §21.8 both left the strap unwired for the same stated reason:
+ * *"there is no seam in the current arena geometry for a strap to honestly sit
+ * across."* That was true while `.lantern-arena` was `inset: 0` inside
+ * `.battlefield` — the camera then showed board y up to about 5.1 and the slab's
+ * near edge is at 7.2, so the rim, the joint and the table under it were all off
+ * the bottom of frame. Hosting the canvas on `.battle-stage` moves the solve's
+ * centre down by roughly 1.8 tiles and the near edge comes into view, which is
+ * also what §19 asks for: the console is on the TABLE, past the board's near
+ * edge, and this is the joint it is on the far side of.
+ *
+ * Lying ON THE TABLE (`z = -thickness`), not on the board, and at the strap's
+ * AUTHORED board size rather than fitted to anything. Both follow from what it
+ * is: frame-fixed carpentry like the sockets and the corner brass, so it is
+ * foreshortened by the tilt exactly as a real band of brass lying on a table
+ * would be. Only the HUD-anchored fittings undo that, and they undo it because
+ * they are framing a straight-on widget.
+ *
+ * `build_brass_strap` RUNS ALONG X and says a seam running the other way is a
+ * second bake rather than the same texture turned, so this joint — which runs
+ * along x — is the one it can honestly take. No mirroring, no flip, and none of
+ * the tangent-space problem that still keeps the corner brass at one corner.
+ */
+export function strapCentres(
+  extent: { width: number; height: number; border: number },
+  thickness: number,
+): Vec3[] {
+  const left = -extent.border;
+  const right = extent.width + extent.border;
+  const y = extent.height + extent.border + STRAP_FRAME.h / 2;
+  const out: Vec3[] = [];
+  if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return out;
+  for (let x = left + STRAP_PITCH; x < right - 1e-6; x += STRAP_PITCH) {
+    out.push({ x, y, z: -thickness });
+  }
+  return out;
+}
+
 // -------------------------------------------------------------------------
 // HUD-ANCHORED FURNITURE (§19.1) — a fitting behind a measured DOM box
 // -------------------------------------------------------------------------
@@ -498,38 +559,59 @@ export const CORNER_BRASS_SIZE = 0.6;
 //   furniture above does not go through here.
 //
 // -------------------------------------------------------------------------
-// WHAT IS NOT WIRED, AND IT IS A MEASUREMENT RATHER THAN AN OMISSION
+// THE ASPECT TRAP, RE-MEASURED — AND IT IS SMALLER THAN §21.8 RECORDED
 // -------------------------------------------------------------------------
 //
-// §21.7 listed five DOM anchors. Only the two portrait chips are fitted here,
-// and the other three are blocked on things a placement function cannot fix.
-// Measured live at 1280x820 in a real Hollow Gate fight rather than reasoned
-// about, because §21.7's near/far corner mistake is what happens otherwise:
+// §21.8 left three fittings unwired behind two blockers. The first was real and
+// is closed by this pass: `.lantern-arena` was `inset: 0` inside `.battlefield`,
+// so the piles and the End Turn lantern sat over 100px below where the canvas
+// ended. The host is `.battle-stage` now and the canvas reaches all of them.
 //
-//   THE CANVAS DOES NOT REACH THREE OF THEM. `.lantern-arena` is `inset: 0`
-//   inside `.battlefield`, which measured x 37..1233, y 111..517. The discard
-//   and exhaust piles (y 633..771) and the End Turn lantern (y 653..775) are
-//   in `.hand-zone`, a SIBLING of `.battlefield` that starts 30px below the
-//   canvas ends. A fitting placed behind them unprojects to board y past the
-//   near edge and is clipped — drawn, correct, and never once visible. Reaching
-//   them means moving the renderer's host up to `.battle-stage` and taking the
-//   opaque command bar's own painted surface off, which is §19's player
-//   console, not a placement.
+// THE SECOND BLOCKER WAS ARITHMETIC, AND THE ARITHMETIC DOUBLE-COUNTED cos.
+// §21.8 quotes "a 5.7x anisotropic stretch" for `log_well`, 2.1x for
+// `pile_tray` and 2.5x for `lantern_cradle`. Those compare the DOM box's BOARD
+// aspect against the bake's authored board aspect — but the box's board aspect
+// already carries a 1/cos, put there by `placeFurniture` precisely so the quad
+// projects back to the box. This file's own note above says so: *"a lying quad
+// stretched by 1/cos in board y projects back to its DOM box's own aspect."*
+// Comparing the stretched thing to the unstretched one counts the tilt twice.
 //
-//   AND THE BAKES ARE FRAMED FOR A HORIZONTAL CONSOLE. `log_well` is 2.50 x
-//   1.40 board units — a wide panel, because §19's console runs along the
-//   bottom of the board. The Chronicle it would dress (`.battle-log-rail`,
-//   216 x 394 px) is a TALL right-hand rail. Covering it needs a 5.7x
-//   anisotropic stretch, and `log_well_brass.png` is a thin rectangular
-//   escutcheon with corner brackets — so the stretch lands entirely on the
-//   brass banding and turns square joinery into lopsided bars. `pile_tray`
-//   (2.1x) and `lantern_cradle` (2.5x) are the same failure, smaller.
-//   `brass_strap` is open for §21.7's original reason, unchanged: it straps
-//   the CONSOLE's seams and there is still no console to seam.
+// Done once, the distortion of the IMAGE — which is the only thing that can
+// bend a brass band — is the ratio of the two SCREEN aspects, and the cos
+// cancels out of it entirely:
 //
-// The bezels are the ones that work, and they work for a reason worth keeping:
-// they are ROUND framing something ROUND, and `bake.py` authored the ratio the
-// engine needs rather than leaving it to be eyeballed. See `BEZEL_BORE`.
+//     distortion = (boxH / boxW) / (authoredH / authoredW)
+//
+// Verified against the published PNGs rather than derived and trusted: every
+// one of them is an orthographic render at its authored board proportions, with
+// no foreshortening baked in (`log_well.png` is 1024x573 for an authored
+// 2.50 x 1.40 = 0.560; `pile_tray.png` 806x1024 for 0.96 x 1.22 = 1.271;
+// `lantern_cradle.png` 1024x922 for 1.00 x 0.90). So texel-to-pixel scale is
+// `boxW/pxW` across and `boxH/pxH` down, and their ratio is the expression
+// above. Measured at 1350x857 in a real fight:
+//
+//   fitting          anchor                  box      authored   distortion
+//   pile_tray        .pile-cardback          84x118   0.96x1.22    1.001
+//   exhaust_grate    .pile-cardback          84x118   0.96x1.22    1.001
+//   lantern_cradle   .lantern-turn           96x122   1.00x0.90    1.412
+//   log_well         .battle-log-rail       216x431   2.50x1.40    3.557
+//
+// THE PILES ARE NOT A PROBLEM AT ALL, and the reason is an agreement nobody
+// wrote down: `CARD_SLOT` is 0.64 x 0.90 — "card-shaped literally", says
+// `build_pile_tray` — and `.pile-cardback` is 84 x 118. Both are 0.712. The
+// bake and the DOM independently chose the same playing-card aspect, so putting
+// the slot on the card back leaves 0.1% of distortion. That is the `BEZEL_BORE`
+// situation exactly, one shape down: an authored fraction the engine can read
+// backwards, and no eyeballing.
+//
+// SO THE THREE GET THREE DIFFERENT ANSWERS, and the differences are the
+// measurements above rather than taste — see `FurnitureFit`.
+//
+// `board_corner_brass` STAYS AT ONE CORNER. Nothing in this pass changes the
+// reason (see its call site): mirroring one oriented bake onto the other three
+// needs a tangent-space flip the vertex format cannot express. The strap is the
+// fitting that CAN honestly go on a seam now, because moving the host put a
+// seam in frame — see `strapRun`.
 
 /**
  * The anchor keys, stated here so `BattleScreen` and the builder cannot
@@ -539,9 +621,25 @@ export const CORNER_BRASS_SIZE = 0.6;
  */
 export const HUD_PORTRAIT_ENEMY = 'portrait-enemy';
 export const HUD_PORTRAIT_HERO = 'portrait-hero';
+export const HUD_PILE_DRAW = 'pile-draw';
+export const HUD_PILE_DISCARD = 'pile-discard';
+export const HUD_PILE_EXHAUST = 'pile-exhaust';
+export const HUD_END_TURN = 'end-turn';
+export const HUD_LOG = 'log-well';
 
 export const MAT_BEZEL = 'portraitBezel';
 export const MAT_BEZEL_SMALL = 'portraitBezelSmall';
+/** §19.1's remaining slots. Every one is `split()` — timber id, brass id. */
+export const MAT_PILE_TRAY = 'pileTray';
+export const MAT_PILE_TRAY_BRASS = 'pileTrayBrass';
+export const MAT_EXHAUST = 'exhaustGrate';
+export const MAT_EXHAUST_BRASS = 'exhaustGrateBrass';
+export const MAT_CRADLE = 'lanternCradle';
+export const MAT_CRADLE_BRASS = 'lanternCradleBrass';
+export const MAT_LOG_WELL = 'logWell';
+export const MAT_LOG_WELL_BRASS = 'logWellBrass';
+/** The band across the joint where the board meets the table. Brass, no split. */
+export const MAT_STRAP = 'brassStrap';
 
 /**
  * What the two bezel bakes were framed at, in board units (`bake.py` SHAPES).
@@ -586,6 +684,50 @@ export const BEZEL_BORE = 2 / 3;
  */
 export const MIN_FURNITURE_PX = 2;
 
+/**
+ * HOW A BAKE IS FITTED INTO THE QUAD ITS BOX ASKS FOR.
+ *
+ * One of three, chosen per fitting off the distortion measured in the block
+ * above `HUD_PORTRAIT_ENEMY`, because the three fittings genuinely need three
+ * different answers and a single policy would have to be wrong for two of them.
+ *
+ * `cover`   — the quad IS the box (times `scale`). What every fitting did
+ *             before this pass, and still the right answer wherever the box and
+ *             the bake already agree: the bezels (a round bore on a round chip)
+ *             and the piles (0.712 against 0.712 — see the block above).
+ *
+ * `contain` — the quad keeps the bake's AUTHORED aspect, grown until it
+ *             contains the box. Zero distortion by construction, at the cost of
+ *             overhanging the box on one axis. For `lantern_cradle`, whose
+ *             identity is a round base disc and two brass ears: 1.412x would
+ *             turn the disc into a visible ellipse and there are no straight
+ *             runs to slice, so this is the only one of the three that works.
+ *
+ * `slice`   — a 3x3 of UV windows: the four corners keep their size, the four
+ *             runs stretch ALONG THEIR LENGTH ONLY, the middle takes the rest.
+ *             `board.ts`'s `frameBands` does exactly this for `board_frame` and
+ *             this is that idea pointed at a measured box. For `log_well` at
+ *             3.557x, where the ornament is a rectangular escutcheon, a
+ *             full-width brass header and four corner brackets — every one of
+ *             them a straight run or a corner, which is precisely the shape
+ *             nine-slicing exists for.
+ */
+export type FurnitureFit = 'cover' | 'contain' | 'slice';
+
+/**
+ * A bake's own frame, in board units — its row in `bake.py`'s SHAPES table.
+ *
+ * Restated here rather than imported, same as `board.ts`'s `BAKED_FRAME` and
+ * for the same reason: nothing joins the two programs at runtime, so a change
+ * on either side has to fail a test rather than a screenshot. Only the RATIO is
+ * ever used, which is also the ratio of the published PNG's pixel dimensions —
+ * so the test can check it against the file on disk.
+ */
+export interface AuthoredFrame {
+  w: number;
+  h: number;
+}
+
 /** One measured HUD box, and the fitting that goes behind it. */
 export interface FurnitureBox {
   /** Material id of the fitting — or of its TIMBER half, when it is split. */
@@ -612,6 +754,22 @@ export interface FurnitureBox {
    * bezel is 1/BEZEL_BORE so its bore lands on the box instead of its rim.
    */
   scale?: number;
+  /**
+   * The same, down the screen, when the bake's own opening is not square to its
+   * frame. `log_well`'s well is 0.80 x 0.75 of the panel and `pile_tray`'s slot
+   * is 0.667 x 0.738 of the tray, so reading either contract backwards needs two
+   * numbers. Defaults to `scale`, which is every case that has one.
+   */
+  scaleY?: number;
+  /** Default `cover`. See `FurnitureFit`. */
+  fit?: FurnitureFit;
+  /** The bake's authored frame. Required by `contain` and `slice`. */
+  authored?: AuthoredFrame;
+  /**
+   * The rigid border a `slice` fit keeps, as a fraction of the TEXTURE, per
+   * axis. Measured off the published brass PNG's own alpha — see `LOG_SLICE`.
+   */
+  slice?: { u: number; v: number };
 }
 
 export interface FurniturePlacement {
@@ -643,13 +801,114 @@ export function placeFurniture(f: FurnitureBox, cam: Camera): FurniturePlacement
   const cos = Math.cos(cam.tilt);
   if (!Number.isFinite(cos) || cos <= 1e-3) return null;
   const scale = Number.isFinite(f.scale) && (f.scale as number) > 0 ? (f.scale as number) : 1;
+  const scaleY = Number.isFinite(f.scaleY) && (f.scaleY as number) > 0 ? (f.scaleY as number) : scale;
   const at = unproject({ x: f.cx, y: f.cy }, cam, 0);
   if (!Number.isFinite(at.x) || !Number.isFinite(at.y)) return null;
-  const width = (f.w * scale) / cam.zoom;
-  const height = (f.h * scale) / (cam.zoom * cos);
+  let width = (f.w * scale) / cam.zoom;
+  let height = (f.h * scaleY) / (cam.zoom * cos);
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
   if (width <= 0 || height <= 0) return null;
+  if (f.fit === 'contain') {
+    const a = f.authored;
+    // No authored frame, no aspect to keep. Falls through to `cover` rather
+    // than guessing a ratio — a fitting drawn at the wrong aspect is exactly
+    // the defect this mode exists to prevent.
+    if (a && Number.isFinite(a.w) && Number.isFinite(a.h) && a.w > 0 && a.h > 0) {
+      // The board-space height that draws the texture UNDISTORTED at a given
+      // board width. The 1/cos is the same one `placeFurniture` puts in above:
+      // a lying quad is squashed by cos on the way to the screen, so a board
+      // rectangle has to be 1/cos taller than the authored one to arrive at the
+      // authored SCREEN shape.
+      const perWidth = a.h / a.w / cos;
+      const tall = width * perWidth;
+      if (tall >= height) height = tall;
+      else width = height / perWidth;
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    }
+  }
   return { at, width, height };
+}
+
+/** One band of a sliced axis: where it starts, how long it is, and its UV span. */
+export interface SliceBand {
+  at: number;
+  size: number;
+  t0: number;
+  t1: number;
+}
+
+/**
+ * Cut one axis into rigid-band / stretched-middle / rigid-band.
+ *
+ * `board.ts`'s `frameBands` in general form, and deliberately the same shape so
+ * the two can be read against each other: that one is hard-wired to
+ * `BAKED_FRAME`'s numbers because the board frame is the only thing it cuts,
+ * and this one takes the band as an argument because a fitting's comes from its
+ * own bake.
+ *
+ * `band` is in the SAME UNITS as `span` (tiles); `frac` is the same band as a
+ * fraction of the texture. Two numbers rather than one because the quad is not
+ * drawn at the texture's own size — that is the entire point of slicing it.
+ *
+ * A span too short for two bands gets two half-spans and NO middle, which
+ * compresses the corner ornament rather than overlapping the two bands. Both
+ * are wrong; only one of them draws the same texels twice.
+ */
+export function sliceBands(at: number, span: number, band: number, frac: number): SliceBand[] {
+  if (!Number.isFinite(at) || !Number.isFinite(span) || span <= 0) return [];
+  const f = Number.isFinite(frac) ? Math.min(0.499, Math.max(1e-4, frac)) : 0.25;
+  const b = Math.min(Number.isFinite(band) && band > 0 ? band : span / 4, span / 2);
+  const out: SliceBand[] = [{ at, size: b, t0: 0, t1: f }];
+  const middle = span - b * 2;
+  // Skipped rather than clamped: a negative-width quad draws inside out.
+  if (middle > 1e-6) out.push({ at: at + b, size: middle, t0: f, t1: 1 - f });
+  out.push({ at: at + span - b, size: b, t0: 1 - f, t1: 1 });
+  return out;
+}
+
+/**
+ * A fitting as a 3x3 of UV windows instead of one stretched quad.
+ *
+ * THE BAND'S SIZE IS TAKEN OFF THE WIDTH, both times, and that is what keeps a
+ * corner square. A corner cell is `slice.u` of the quad across; for the same
+ * texels to be drawn at the same scale down the screen its board height must be
+ * that width times the texture's own aspect and then divided by cos, because
+ * cos is what the projection will multiply it back by. Get this from the height
+ * instead and the corners are stretched exactly as much as the runs, which is
+ * the thing being avoided.
+ *
+ * The middle cell is kept, unlike `frameRingSprites`' ring: the middle of a
+ * `log_well` is the routed floor of the well and something has to draw it.
+ */
+export function sliceSprites(
+  textureId: string,
+  at: Vec2,
+  width: number,
+  height: number,
+  authored: AuthoredFrame,
+  slice: { u: number; v: number },
+  cos: number,
+): Sprite[] {
+  const out: Sprite[] = [];
+  if (!(authored.w > 0) || !(authored.h > 0) || !(cos > 1e-3)) return out;
+  const bandW = width * slice.u;
+  const bandH = (width * slice.v * (authored.h / authored.w)) / cos;
+  const cols = sliceBands(at.x - width / 2, width, bandW, slice.u);
+  const rows = sliceBands(at.y - height / 2, height, bandH, slice.v);
+  for (const r of rows) {
+    for (const c of cols) {
+      if (!(c.size > 0) || !(r.size > 0)) continue;
+      out.push({
+        position: { x: c.at, y: r.at, z: 0 },
+        size: { x: c.size, y: r.size },
+        pivot: { x: 0, y: 0 },
+        uv: { u0: c.t0, v0: r.t0, u1: c.t1, v1: r.t1 },
+        textureId,
+        layer: LAYER_DECAL,
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -702,14 +961,23 @@ export function furnitureSprites(
   has: (id: string) => boolean,
 ): Sprite[] {
   const out: Sprite[] = [];
+  const cos = Math.cos(cam.tilt);
   for (const box of boxes) {
     const p = placeFurniture(box, cam);
     if (!p) continue;
     const chosen = box.sizes && box.sizes.length > 0 ? pickAuthoredSize(box.sizes, p.width) : box.id;
     if (!chosen) continue;
     const ids = box.brassId ? [chosen, box.brassId] : [chosen];
+    // A `slice` fit with no authored frame or no border to keep has nothing to
+    // slice ON, so it draws as one quad. Same fallback discipline as `contain`:
+    // degrade to the previous behaviour, never to a guess.
+    const sliced = box.fit === 'slice' && box.authored && box.slice;
     for (const id of ids) {
       if (!has(id)) continue;
+      if (sliced) {
+        out.push(...sliceSprites(id, p.at, p.width, p.height, box.authored!, box.slice!, cos));
+        continue;
+      }
       out.push({
         position: { x: p.at.x, y: p.at.y, z: 0 },
         size: { x: p.width, y: p.height },
@@ -754,6 +1022,119 @@ export function portraitBezelBox(rect: MeasuredBox): FurnitureBox {
     id: MAT_BEZEL,
     sizes: BEZEL_SIZES,
     scale: 1 / BEZEL_BORE,
+    cx: rect.cx,
+    cy: rect.cy,
+    w: rect.w,
+    h: rect.h,
+  };
+}
+
+// -------------------------------------------------------------------------
+// THE OTHER THREE SLOTS (§19.1), each with its own authored contract
+// -------------------------------------------------------------------------
+
+/** `bake.py` SHAPES: `pile_tray` / `exhaust_grate`, framed as a pair. */
+export const PILE_FRAME: AuthoredFrame = { w: 0.96, h: 1.22 };
+/** `lantern_cradle`. */
+export const CRADLE_FRAME: AuthoredFrame = { w: 1.0, h: 0.9 };
+/** `log_well`. */
+export const LOG_FRAME: AuthoredFrame = { w: 2.5, h: 1.4 };
+/** `brass_strap`. */
+export const STRAP_FRAME: AuthoredFrame = { w: 0.9, h: 0.26 };
+
+/**
+ * `CARD_SLOT` as a fraction of the tray's own frame — the pile pair's `BEZEL_BORE`.
+ *
+ * `build_pile_tray` cuts a 0.64 x 0.90 recess in a body framed at 0.96 x 1.22,
+ * and says why the recess is that shape: *"Card-shaped literally — 0.64 by 0.90
+ * is a 0.71 aspect, which is a playing card. A square recess would read as a
+ * coaster."* `.pile-cardback` is 84 x 118, which is 0.712. Read backwards, as
+ * the bore is: to put the SLOT on the card back, draw the tray at the card
+ * back's box divided by these two numbers — and because the two aspects agree to
+ * a thousandth, doing so costs 0.1% of distortion rather than the 2.1x §21.8
+ * recorded.
+ *
+ * `exhaust_grate` shares both numbers deliberately (`PILE_BODY` and `CARD_SLOT`
+ * are module constants in `bake.py`, used by both builders) — §19.1 wants the
+ * pair distinguished by SILHOUETTE, which means everything else must match.
+ */
+export const PILE_SLOT = { u: 0.64 / 0.96, v: 0.9 / 1.22 };
+
+/**
+ * `log_well`'s rigid border, per axis, as a fraction of the texture.
+ *
+ * MEASURED OFF `log_well_brass.png`'s OWN ALPHA, not computed from `bake.py`'s
+ * numbers — §21.7's near/far corner mistake is the standing argument for
+ * reading the finished asset rather than the source that produced it. The
+ * column profile is flat at 0.121 coverage across the middle and rises to 0.91
+ * inside u < 0.13 and u > 0.86 (the corner brackets); the row profile is flat at
+ * 0.052 and rises to 0.13 outside v < 0.26 and v > 0.74 (the brackets' other
+ * arms), with the full-width brass header at v 0.05..0.13 and the escutcheon's
+ * lower run at v 0.87..0.93.
+ *
+ * Set just OUTSIDE where each profile goes flat, so every corner bracket is
+ * wholly inside a rigid band and everything crossing a band boundary is a
+ * straight run that only ever stretches along its own length.
+ */
+export const LOG_SLICE = { u: 0.155, v: 0.26 };
+
+/**
+ * `build_log_well`'s well, as a fraction of the panel: *"the well is 2.00 x
+ * 1.05, which is exactly 0.80 by 0.75 of the frame, so the DOM box that carries
+ * the log is the panel's own rect scaled by those two numbers."*
+ *
+ * ONLY THE U IS USED, and the deviation is measured rather than preferred.
+ * Honouring both would draw the panel at 216/0.80 x 431/0.75 = 270 x 575 px;
+ * the Chronicle's centre sits 240px down a 753px stage, so 575 runs 47px off the
+ * top and the whole top brass bracket goes with it. Reading is horizontal, so
+ * the axis that gets the contract is the one that puts the well's mouth on the
+ * text's width; down the screen the panel covers the rail exactly and the log's
+ * first and last lines sit on the well's lip instead of inside it.
+ */
+export const LOG_WELL_FRACTION = { u: 0.8, v: 0.75 };
+
+/** A measured pile widget's card back, as the tray or grate behind it. */
+export function pileTrayBox(rect: MeasuredBox, exhaust: boolean): FurnitureBox {
+  return {
+    id: exhaust ? MAT_EXHAUST : MAT_PILE_TRAY,
+    brassId: exhaust ? MAT_EXHAUST_BRASS : MAT_PILE_TRAY_BRASS,
+    // The slot contract, read backwards. `cover` rather than `contain` because
+    // at 1.001 there is nothing to correct, and `contain` would round that 0.1%
+    // into a quad that no longer sits on the card.
+    scale: 1 / PILE_SLOT.u,
+    scaleY: 1 / PILE_SLOT.v,
+    authored: PILE_FRAME,
+    cx: rect.cx,
+    cy: rect.cy,
+    w: rect.w,
+    h: rect.h,
+  };
+}
+
+/** The End Turn lantern's housing. */
+export function lanternCradleBox(rect: MeasuredBox): FurnitureBox {
+  return {
+    id: MAT_CRADLE,
+    brassId: MAT_CRADLE_BRASS,
+    fit: 'contain',
+    authored: CRADLE_FRAME,
+    cx: rect.cx,
+    cy: rect.cy,
+    w: rect.w,
+    h: rect.h,
+  };
+}
+
+/** The Chronicle's recessed panel. */
+export function logWellBox(rect: MeasuredBox): FurnitureBox {
+  return {
+    id: MAT_LOG_WELL,
+    brassId: MAT_LOG_WELL_BRASS,
+    fit: 'slice',
+    authored: LOG_FRAME,
+    slice: LOG_SLICE,
+    scale: 1 / LOG_WELL_FRACTION.u,
+    scaleY: 1,
     cx: rect.cx,
     cy: rect.cy,
     w: rect.w,
@@ -873,6 +1254,15 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
         thickness: ARENA_THICKNESS,
         frameTextureId: 'frame',
         rimTextureId: 'rim',
+        // BELOW the fittings, and see `BoardSlabOptions.rimLayer` for why the
+        // default is wrong here specifically: the console's trays, grate and
+        // cradle unproject to board y past the slab's near edge, so the rim is
+        // BEHIND them and painting it last drew the board's own edge straight
+        // across all three. Below `LAYER_BOARD` as well as below `LAYER_DECAL`,
+        // because nothing on the slab's top surface projects into the rim's
+        // band — it hangs off the near edge — so there is nothing for it to
+        // lose a fight with.
+        rimLayer: ARENA_RIM_LAYER,
         tableTextureId: 'table',
         shadowTextureId: 'blockshadow',
         tableGrain: 3.2,
@@ -927,6 +1317,19 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
       uv: FULL_UV,
       textureId: MAT_BACKDROP,
       tint: [0.82, 0.82, 0.9, 1],
+      // BELOW THE FITTINGS, above the floor. An upright quad takes
+      // `LAYER_PIECE` from `layerOf`, which the flat only ever needed in order
+      // to beat the tiles — every combatant is at board y >= ENEMY_RANK and the
+      // flat stands at -0.05, so the painter sort puts it first among pieces
+      // without any help. The fittings are the case that made the default
+      // wrong: the Chronicle's DOM box reaches board y -1.1, past the flat's
+      // base, so at `LAYER_PIECE` the flat painted a black rectangle across the
+      // top quarter of `log_well` — including its brass header. Physically
+      // defensible (the flat really does stand nearer the camera than that end
+      // of the panel) and wrong for what a fitting IS: §1.2 gives the surface
+      // under a DOM box to the renderer, and the surface under the Chronicle is
+      // the well.
+      layer: BACKDROP_LAYER,
     });
   }
 
@@ -954,6 +1357,23 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
       textureId: MAT_CORNER_BRASS,
       layer: LAYER_BOARD,
     });
+  }
+
+  // --- the straps across the board-to-table joint (§19.1) ------------------
+  //
+  // "Wood with visible grain, brass with a soft bevel, STRAPS ACROSS THE SEAMS."
+  // See `strapCentres` for why this seam is honest now and was not before.
+  if (has(MAT_STRAP)) {
+    for (const c of strapCentres(extent, ARENA_THICKNESS)) {
+      sprites.push({
+        position: c,
+        size: { x: STRAP_FRAME.w, y: STRAP_FRAME.h },
+        pivot: { x: 0.5, y: 0.5 },
+        uv: FULL_UV,
+        textureId: MAT_STRAP,
+        layer: LAYER_DECAL,
+      });
+    }
   }
 
   // --- the HUD-anchored fittings (§19.1) ---------------------------------

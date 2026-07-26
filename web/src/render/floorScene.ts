@@ -39,7 +39,7 @@ import { BALANCE } from '../engine/data/balance';
 
 import type { Camera } from '../lantern/scene/camera';
 import { makeScene, makeOccluderGrid, setSolid, type Light, type Material, type Scene } from '../lantern/scene/scene';
-import { LAYER_BOARD, type Sprite, type UVRect } from '../lantern/scene/sprite';
+import { LAYER_BOARD, type Sprite, type Tint, type UVRect } from '../lantern/scene/sprite';
 import { pieceBaseSprites, wallBlockSprites, contactShadowSprite } from '../lantern/scene/piece';
 import { BAKED_RIM_HEIGHT, boardSlabSprites, ledgeFace } from '../lantern/scene/board';
 import { mushroomEmitter, mushroomSpots, sconceEmitter, wispEmitter, wispPaths, hashCoord } from '../lantern/scene/emitters';
@@ -103,6 +103,103 @@ export const MAT_PLINTH_LARGE = 'plinth:large';
  * not the shape.
  */
 const BAKE_MARGIN = 1.04;
+
+// -------------------------------------------------------------------------
+// THE STONE IS PER-GATE. THE BAKE'S STONE IS NOT.
+//
+// `bake.py` renders every wall shape out of ONE shared palette — `STONE =
+// (0.50, 0.47, 0.46)`, and that is the literal, flat albedo those four PNGs
+// carry (measured: mean 187.5/182.4/180.6 sRGB with a total spread of ONE BYTE
+// of luminance across all 1024x1024 of it; every scrap of shape in a baked wall
+// lives in its normal and material maps, none of it in its colour). The painted
+// tiles are per-gate and far darker: `hollow_wall.jpg` is 31.6 mean luminance
+// against the bake's 183.3, so a Hollow Gate wall came out 5.8x too light —
+// pale limestone where §12 wants dark cave rock. In LINEAR light, which is what
+// the surface actually bounces, the same pair is 27x.
+//
+// That is not a taste complaint. ENGINE_PLAN §12 says the hero's lantern is the
+// ONLY significant light, and `buildFloorScene`'s room lamp was cut 0.32 -> 0.12
+// on exactly that argument (its +51% of frame luminance against the whole
+// emitter set's +4.5%). A wall reflecting 5.8x what the art says it reflects
+// picks that lamp up from across the board and hands back the ground that
+// retuning bought.
+//
+// THE FIX IS A MULTIPLY, AND ON A FLAT ALBEDO A MULTIPLY IS A RE-BAKE. Because
+// the bake's colour is constant, `tint * STONE` is bit-for-bit what Cycles would
+// have written had `shape(..., colour=<this gate's stone>)` been passed instead
+// — no detail is lost, because there is no detail in there to lose. So the tint
+// is not a correction laid over the asset; it IS the asset's `colour=`, moved to
+// where the renderer knows which gate it is drawing.
+//
+// WHY THE NUMBERS ARE LINEAR AND NOT BYTES, which is the trap. Both the painted
+// tile and the bake upload `SRGB8_ALPHA8`, so `texture()` hands the shader
+// LINEAR reflectance and `vTint` multiplies it there
+// (`passes/lighting.ts`: `vec4 albedo = texture(uAlbedo, vUV) * vTint`). Taking
+// the ratio in bytes instead — 31.6/183.3 = 0.172 for Hollow — leaves the wall
+// at sRGB 83 rather than 36, i.e. still 2.6x too bright, and the whole exercise
+// half-done while looking finished.
+// -------------------------------------------------------------------------
+
+/**
+ * `tools/art/blender/bake.py`'s `STONE`, in Blender's LINEAR sRGB.
+ *
+ * Restated rather than imported for the same reason `board.ts` restates
+ * `BAKED_FRAME`: nothing joins the two programs at runtime, so a change on
+ * either side has to fail a test rather than a screenshot. `bakeStone.test.ts`
+ * reads the tuple straight out of `bake.py` and compares.
+ */
+export const BAKE_STONE: readonly [number, number, number] = [0.5, 0.47, 0.46];
+
+/**
+ * Each gate's stone, as the MEAN LINEAR albedo of its own `<gate>_wall.jpg`.
+ *
+ * Measured off the shipped art, not chosen — `floorScene.test.ts` decodes the
+ * five JPEGs and re-derives every row, so these cannot drift from the paintings
+ * they describe. Recorded alongside, as byte luminance, because that is the
+ * number the eye and the commit log argue in:
+ *
+ *   gate      wall lum   ground lum   wall/ground     the material
+ *   verdant      29.8        100.0        0.130       mossed stone
+ *   hollow       31.6        113.0        0.105       raw hewn rock
+ *   sunken       39.2        118.3        0.135       wet cut stone, silt
+ *   storm        36.0        145.4        0.080       cracked slate, frost
+ *   abyss         7.9         24.2        0.233       blackened basalt
+ *
+ * The ground column is the check rather than an input: nothing tints the floor,
+ * so a wall matched to its own gate's wall art keeps that gate's authored
+ * wall:ground contrast by construction. It is also why one tint serves both a
+ * block's top and its front — they are the same stone, and (see above) the same
+ * flat texture.
+ */
+export const GATE_WALL_ALBEDO: Record<string, readonly [number, number, number]> = {
+  verdant: [0.01225, 0.01939, 0.01118],
+  hollow: [0.0217, 0.01568, 0.02392],
+  sunken: [0.02787, 0.02713, 0.03657],
+  storm: [0.02351, 0.02272, 0.03165],
+  abyss: [0.00301, 0.00228, 0.0037],
+};
+
+/**
+ * The stone a gate with no measured wall art gets: the mean of the five above.
+ *
+ * NOT white, and that is the whole point of it existing. A sixth gate added
+ * without tiles would otherwise fall through to the bake's own palette and
+ * resurrect the pale-limestone defect this block exists to remove — silently,
+ * on one gate, which is the worst way to ship it. A placeholder in the right
+ * neighbourhood is a better failure than a bug in the wrong one.
+ */
+export const DEFAULT_WALL_ALBEDO: readonly [number, number, number] = [0.017668, 0.01744, 0.021404];
+
+/**
+ * What to multiply a baked wall's flat STONE by so it reads as this gate's rock.
+ *
+ * Alpha is 1: this changes what the surface is made of, never whether it is
+ * there.
+ */
+export function wallTint(gateId: string): Tint {
+  const stone = GATE_WALL_ALBEDO[gateId] ?? DEFAULT_WALL_ALBEDO;
+  return [stone[0] / BAKE_STONE[0], stone[1] / BAKE_STONE[1], stone[2] / BAKE_STONE[2], 1];
+}
 
 /** The icon a tile shows when it is not plain floor, or null for plain floor. */
 export function objectIcon(tile: string): string | null {
@@ -353,6 +450,10 @@ export function buildFloorScene(snap: FloorSnapshot, o: FloorSceneOptions): Scen
   const has = (id: string) => o.materials.has(id);
   const sprites: Sprite[] = [];
   const lights: Light[] = [];
+  // This gate's rock, as a multiplier on the shared STONE the bake carries.
+  // Computed once: it is the same for every block on the floor, and both faces
+  // of every one of them.
+  const stone = wallTint(snap.gateId);
 
   // --- the occupancy grid ------------------------------------------------
   // Walls only. A barrel is a painted object standing in the middle of a tile,
@@ -443,12 +544,19 @@ export function buildFloorScene(snap: FloorSnapshot, o: FloorSceneOptions): Scen
               // block is two separate shapes — `wall_top` lying and `wall_face`
               // upright — so the face is pushed below instead.
               front: front && !cut.baked,
-              // No fake shading on the baked path. The tints darkened the front
-              // face to stand in for an ambient occlusion the painted tile art
-              // could not carry; `wall_face` carries real AO in its material
-              // map's alpha and real relief in its normal.
-              topTint: cut.baked ? undefined : [0.88, 0.88, 0.92, 1],
-              frontTint: cut.baked ? undefined : [0.78, 0.78, 0.84, 1],
+              // NO FAKE SHADING on the baked path, and this is still true: the
+              // pair below darkened the front face relative to the top to stand
+              // in for an ambient occlusion the painted tile art could not
+              // carry, and `wall_face` carries real AO in its material map's
+              // alpha and real relief in its normal.
+              //
+              // What the baked path gets instead is a PALETTE, not a shade —
+              // one value, identical on the top and the front, saying which
+              // gate's rock this block is cut from. It cannot stand in for AO
+              // because it does not distinguish the two faces; see the block
+              // comment on `GATE_WALL_ALBEDO`.
+              topTint: cut.baked ? stone : [0.88, 0.88, 0.92, 1],
+              frontTint: cut.baked ? stone : [0.78, 0.78, 0.84, 1],
               shadowTextureId: 'blockshadow',
               shadowStrength: 0.55,
             },
@@ -460,7 +568,7 @@ export function buildFloorScene(snap: FloorSnapshot, o: FloorSceneOptions): Scen
         // only difference is that it gets its own texture.
         if (front && cut.baked) {
           sprites.push(
-            ledgeFace({ x, width: 1, y: y + 1, top: h, bottom: 0, textureId: cut.face, uv: FULL_UV }),
+            ledgeFace({ x, width: 1, y: y + 1, top: h, bottom: 0, textureId: cut.face, uv: FULL_UV, tint: stone }),
           );
         }
         continue;

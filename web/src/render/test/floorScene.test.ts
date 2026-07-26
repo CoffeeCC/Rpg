@@ -12,13 +12,19 @@
 //               and BLACK, not absent — absent shows the frame's timber.
 //   §2 rule 1   nothing under `lantern/` may import `engine/`.
 // =========================================================================
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import jpegjs from 'jpeg-js';
 import { gameReducer, initialGameState, type GameState } from '../../engine/game';
 import { TILE } from '../../engine/systems/floors';
 import { makeCamera } from '../../lantern/scene/camera';
 import type { Material } from '../../lantern/scene/scene';
 import { isSolid } from '../../lantern/scene/scene';
 import {
+  BAKE_STONE,
+  DEFAULT_WALL_ALBEDO,
+  GATE_WALL_ALBEDO,
   MAT_BLANK,
   MAT_FRAME,
   MAT_FRAME_BAKED,
@@ -45,6 +51,7 @@ import {
   snapshotFloor,
   unitTextureId,
   wallCut,
+  wallTint,
 } from '../floorScene';
 
 function expedition(): GameState {
@@ -427,16 +434,25 @@ describe('the map draws the baked furniture, not the procedural stand-ins', () =
   });
 
   it('drops the fake shading, because the bake carries real relief', () => {
-    // The tints darkened the front face to stand in for an occlusion the
-    // painted art could not carry. `wall_face` has real AO in its material
-    // map's alpha; multiplying it down again would double the darkening.
+    // The old pair darkened the FRONT relative to the TOP, standing in for an
+    // occlusion the painted art could not carry. `wall_face` has real AO in its
+    // material map's alpha; multiplying it down again would double the
+    // darkening. What the baked path carries now is one PALETTE value, and the
+    // assertion that keeps the two apart is that it does not distinguish the
+    // faces — see the gate-stone block below.
     const { scene } = build(bakedMaterials());
-    for (const s of scene.sprites) {
-      if (s.textureId === MAT_WALL_TOP || s.textureId === MAT_WALL_FACE) expect(s.tint).toBeUndefined();
+    const tops = scene.sprites.filter((s) => s.textureId === MAT_WALL_TOP || s.textureId === MAT_WALL_TOP_WORN);
+    const faces = scene.sprites.filter((s) => s.textureId === MAT_WALL_FACE || s.textureId === MAT_WALL_FACE_CHIPPED);
+    for (const s of [...tops, ...faces]) {
+      expect(s.tint).not.toEqual([0.88, 0.88, 0.92, 1]);
+      expect(s.tint).not.toEqual([0.78, 0.78, 0.84, 1]);
     }
+    expect(tops[0].tint).toEqual(faces[0].tint);
     // The fallback keeps them, unchanged.
     const plain = build(allMaterials()).scene.sprites.filter((s) => s.textureId === MAT_WALL);
     expect(plain.some((s) => s.tint !== undefined)).toBe(true);
+    expect(plain.some((s) => JSON.stringify(s.tint) === JSON.stringify([0.88, 0.88, 0.92, 1]))).toBe(true);
+    expect(plain.some((s) => JSON.stringify(s.tint) === JSON.stringify([0.78, 0.78, 0.84, 1]))).toBe(true);
   });
 
   it('replaces the one-quad frame with a registered ring, and adds its brass', () => {
@@ -554,5 +570,220 @@ describe('a piece stands in the plinth its rank calls for', () => {
     expect(plinthFor('hero', none).id).toBe('base');
     expect(plinthFor('hero', none).radius).toBeCloseTo(0.4, 6);
     expect(plinthFor('hero', () => true).radius).toBeCloseTo(0.4 * 1.04, 6);
+  });
+});
+
+// =========================================================================
+// THE WALLS ARE THIS GATE'S ROCK.
+//
+// `893ca1f` put Blender wall blocks on the map out of ONE shared `STONE`
+// palette while the painted tiles are per-gate and far darker, and said so in
+// its own commit message: Hollow Gate's walls came out 5.8x too light and mean
+// frame luminance went 12.3 -> 32.8. ENGINE_PLAN §12 says the hero's lantern is
+// the only significant light, and a wall reflecting 5.8x what its art says it
+// reflects picks up the room lamp from across the board.
+//
+// So these do not describe the tint; they REJECT the untinted wall, and they
+// re-derive the numbers off the shipped JPEGs so the table cannot drift from
+// the paintings it claims to have been measured from.
+// =========================================================================
+describe("the baked wall is this gate's rock, not the bake's shared limestone", () => {
+  const GATES = ['verdant', 'hollow', 'sunken', 'storm', 'abyss'] as const;
+  const REPO = join(__dirname, '..', '..', '..', '..');
+
+  /** sRGB byte -> linear, which is what `SRGB8_ALPHA8` hands the shader. */
+  const toLinear = (b: number): number => {
+    const s = b / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+
+  function meanLinear(file: string): [number, number, number] {
+    const img = jpegjs.decode(readFileSync(file), { useTArray: true, formatAsRGBA: true });
+    const n = img.width * img.height;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let i = 0; i < n; i++) {
+      r += toLinear(img.data[i * 4]);
+      g += toLinear(img.data[i * 4 + 1]);
+      b += toLinear(img.data[i * 4 + 2]);
+    }
+    return [r / n, g / n, b / n];
+  }
+
+  const lum = (c: readonly [number, number, number]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+  /** Every baked wall sprite on a fully revealed floor of `gateId`. */
+  function bakedWalls(gateId: string) {
+    const state = expedition();
+    const snap = snapshotFloor(state.expedition!, state.player!, false);
+    // `expedition()` enters Hollow. Only the ID selects the palette, and it is
+    // read straight off the snapshot — so re-pointing it is the whole of what
+    // playing another gate does to this code path.
+    snap.gateId = gateId;
+    for (let y = 0; y < snap.height; y++) for (let x = 0; x < snap.width; x++) snap.revealed.add(`${x},${y}`);
+    const materials = new Map<string, Material>();
+    for (const id of [MAT_BLANK, MAT_GROUND, MAT_HERO, 'shadow', 'blockshadow', 'table', 'sprite:tamer']) {
+      materials.set(id, { id, albedo: null });
+    }
+    for (const id of [
+      MAT_WALL_TOP,
+      MAT_WALL_TOP_WORN,
+      MAT_WALL_FACE,
+      MAT_WALL_FACE_CHIPPED,
+      MAT_PLINTH,
+      MAT_PLINTH_SMALL,
+    ]) {
+      materials.set(id, { id, albedo: null });
+    }
+    const scene = buildFloorScene(snap, {
+      camera: CAMERA,
+      time: 0,
+      heroAt: snap.heroTile,
+      materials,
+      emitters: false,
+    });
+    const wall = new Set([MAT_WALL_TOP, MAT_WALL_TOP_WORN, MAT_WALL_FACE, MAT_WALL_FACE_CHIPPED]);
+    return scene.sprites.filter((s) => wall.has(s.textureId));
+  }
+
+  it('THE POINT: a Hollow wall no longer reflects 5.8x what its own tile does', () => {
+    const walls = bakedWalls('hollow');
+    expect(walls.length).toBeGreaterThan(30);
+    const painted = GATE_WALL_ALBEDO.hollow;
+    for (const s of walls) {
+      // The one thing that must be true of every single one of them, top and
+      // front alike: multiplied through the bake's flat STONE it IS the
+      // painting's own reflectance.
+      const t = s.tint!;
+      expect(t).toBeDefined();
+      for (let c = 0; c < 3; c++) expect(t[c] * BAKE_STONE[c]).toBeCloseTo(painted[c], 9);
+      expect(t[3]).toBe(1);
+    }
+    // AND THE OLD ANSWER FAILS, BY TWO DIFFERENT SIZES OF WRONG. Untinted, the
+    // wall is the bake's own STONE. `893ca1f` reported that as 5.8x, which is
+    // the ratio in BYTES — what the eye sees. The ratio in LINEAR light, which
+    // is what the surface actually bounces back at the room lamp, is 27x. Both
+    // are asserted because quoting only the first is how someone talks
+    // themselves into a byte-space tint that leaves the wall 2.6x too bright.
+    const bytes = (c: readonly [number, number, number]) => {
+      const enc = (l: number) => (l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055) * 255;
+      return 0.2126 * enc(c[0]) + 0.7152 * enc(c[1]) + 0.0722 * enc(c[2]);
+    };
+    expect(lum(BAKE_STONE) / lum(painted)).toBeGreaterThan(25);
+    expect(lum(BAKE_STONE) / lum(painted)).toBeLessThan(29);
+    // 5.13 here against the commit's 5.8, and the gap is not an error: 5.8 is
+    // 183.3 over the PAINTING'S OWN byte mean of 31.6, while this is 183.3 over
+    // the byte value of a FLAT surface at the painting's average reflectance,
+    // 35.7. A mottled tile always reads a little darker in bytes than an even
+    // one bouncing the same light, because the encode is concave. +4.1 bytes on
+    // Hollow, and the reason a flat bake can never be byte-identical to the art
+    // it is matched to.
+    expect(bytes(BAKE_STONE) / bytes(painted)).toBeGreaterThan(5);
+    expect(bytes(BAKE_STONE) / bytes(painted)).toBeLessThan(6);
+    expect(walls.some((s) => s.tint === undefined)).toBe(false);
+    expect(walls.some((s) => JSON.stringify(s.tint) === JSON.stringify([1, 1, 1, 1]))).toBe(false);
+  });
+
+  it('MEASURED, NOT CHOSEN: re-derives every row off the shipped JPEGs', () => {
+    // The argument for these numbers is the measurement, so the measurement is
+    // the test. Decoding all five costs ~0.3s and the tiles are TRACKED source
+    // art, present in every clone — unlike `public/art/materials/`, which is a
+    // gitignored build artifact and is why `battleMaterials.test.ts` has to
+    // gate its disk checks and this does not.
+    for (const gate of GATES) {
+      const measured = meanLinear(join(REPO, 'web', 'public', 'art', 'tiles', `${gate}_wall.jpg`));
+      const recorded = GATE_WALL_ALBEDO[gate];
+      expect(recorded).toBeDefined();
+      for (let c = 0; c < 3; c++) expect(recorded[c]).toBeCloseTo(measured[c], 5);
+    }
+    // And the placeholder is the mean of the five, so a sixth gate lands among
+    // them rather than back on the bake's limestone.
+    for (let c = 0; c < 3; c++) {
+      const mean = GATES.reduce((a, g) => a + GATE_WALL_ALBEDO[g][c], 0) / GATES.length;
+      expect(DEFAULT_WALL_ALBEDO[c]).toBeCloseTo(mean, 5);
+    }
+  });
+
+  it("restates bake.py's STONE, and notices if either side moves", () => {
+    // Nothing joins the two programs at runtime — same discipline `board.ts`
+    // states for BAKED_FRAME. A change to the palette in Blender has to fail
+    // here rather than in a screenshot nobody takes.
+    const py = readFileSync(join(REPO, 'tools', 'art', 'blender', 'bake.py'), 'utf8');
+    const m = /^STONE = \(([\d.]+), ([\d.]+), ([\d.]+)\)/m.exec(py);
+    expect(m).not.toBeNull();
+    for (let c = 0; c < 3; c++) expect(Number(m![c + 1])).toBeCloseTo(BAKE_STONE[c], 9);
+    // All four wall shapes are rendered from it, which is why one tint per gate
+    // covers a block's top and its front.
+    for (const shape of ['wall_top', 'wall_top_worn', 'wall_face', 'wall_face_chipped']) {
+      expect(py).toContain(`"${shape}"`);
+    }
+  });
+
+  it('gives each of the five gates its own stone, all of them dark', () => {
+    const seen = new Set<string>();
+    for (const gate of GATES) {
+      const walls = bakedWalls(gate);
+      const t = walls[0].tint!;
+      seen.add(JSON.stringify(t));
+      for (const s of walls) expect(s.tint).toEqual(t);
+      // Every one of them is a DARKENING. A tint above 1 would be brightening
+      // the shared limestone, which no painted tile asks for.
+      for (let c = 0; c < 3; c++) {
+        expect(t[c]).toBeGreaterThan(0);
+        expect(t[c]).toBeLessThan(0.25);
+      }
+    }
+    expect(seen.size).toBe(GATES.length);
+    // Abyss is the darkest rock in the game and Sunken the palest; if the
+    // ordering ever inverts, a gate has been handed the wrong palette.
+    expect(lum(GATE_WALL_ALBEDO.abyss)).toBeLessThan(lum(GATE_WALL_ALBEDO.verdant));
+    expect(lum(GATE_WALL_ALBEDO.verdant)).toBeLessThan(lum(GATE_WALL_ALBEDO.sunken));
+  });
+
+  it('is a PALETTE, not the fake AO it replaced: one value, both faces', () => {
+    // The pair `893ca1f` dropped differed between the top and the front, and
+    // that difference was standing in for an occlusion the bake now carries for
+    // real. Re-introducing it under a new name is the mistake this rejects.
+    const walls = bakedWalls('storm');
+    const tops = walls.filter((s) => !s.upright);
+    const faces = walls.filter((s) => s.upright);
+    expect(tops.length).toBeGreaterThan(10);
+    expect(faces.length).toBeGreaterThan(5);
+    expect(tops[0].tint).toEqual(faces[0].tint);
+  });
+
+  it('falls to the mean of the five for an unmeasured gate, never to white', () => {
+    const unknown = wallTint('a-gate-nobody-has-painted-yet');
+    expect(unknown).not.toEqual([1, 1, 1, 1]);
+    for (let c = 0; c < 3; c++) expect(unknown[c] * BAKE_STONE[c]).toBeCloseTo(DEFAULT_WALL_ALBEDO[c], 9);
+    // And a real gate never takes it.
+    for (const gate of GATES) expect(wallTint(gate)).not.toEqual(unknown);
+  });
+
+  it('leaves the painted fallback completely alone', () => {
+    // No bake published: the walls are the gate's own `<gate>_wall.jpg` again,
+    // with the fake AO pair they have always had, and the gate stone must not
+    // reach them — multiplying a painting that is already this gate's rock by
+    // this gate's rock would square it.
+    const state = expedition();
+    const snap = snapshotFloor(state.expedition!, state.player!, false);
+    for (let y = 0; y < snap.height; y++) for (let x = 0; x < snap.width; x++) snap.revealed.add(`${x},${y}`);
+    const scene = buildFloorScene(snap, {
+      camera: CAMERA,
+      time: 0,
+      heroAt: snap.heroTile,
+      materials: allMaterials(),
+      emitters: false,
+    });
+    const walls = scene.sprites.filter((s) => s.textureId === MAT_WALL);
+    expect(walls.length).toBeGreaterThan(30);
+    const stone = wallTint('hollow');
+    for (const s of walls) {
+      expect(s.tint).not.toEqual(stone);
+      expect([JSON.stringify([0.88, 0.88, 0.92, 1]), JSON.stringify([0.78, 0.78, 0.84, 1])]).toContain(
+        JSON.stringify(s.tint),
+      );
+    }
   });
 });

@@ -161,6 +161,21 @@ export interface BoardSlabOptions {
    * repeat length by the same factor scales the bake uniformly instead.
    */
   rimRepeat?: number;
+  /**
+   * What layer the rim paints on. `LAYER_PIECE` by default, which is what an
+   * upright quad gets from `layerOf` and what "in front of everything on the
+   * board" means — the near edge is nearer the viewer than anything standing on
+   * the slab, so it wins.
+   *
+   * IT IS A KNOB BECAUSE "EVERYTHING ON THE BOARD" IS NOT EVERYTHING. §19.1's
+   * console fittings sit BEYOND the near edge, on the table in front of it, and
+   * a fitting at board y 7.5 is nearer the viewer than a rim at 7.2 — so on the
+   * arena the same default paints the board's edge across the discard tray, the
+   * exhaust grate and the lantern cradle, which is how it looked the first time
+   * this was drawn. The map is unaffected: nothing over there is past the rim,
+   * so it keeps the default and byte-for-byte the sprites it had.
+   */
+  rimLayer?: number;
   tableTextureId?: string;
   /** Soft darkening the slab casts onto the table. */
   shadowTextureId?: string;
@@ -370,8 +385,8 @@ export function boardSlabSprites(o: BoardSlabOptions, camera?: Camera): Sprite[]
     // are sold by the frame's chamfer catching the light instead.
     const repeat = o.rimRepeat ?? SLAB_DEFAULTS.rimRepeat;
     const uv = { u0: 0, v0: 0, u1: slab.width / repeat, v1: 1 };
-    const face = (textureId: string): Sprite =>
-      ledgeFace({
+    const face = (textureId: string): Sprite => ({
+      ...ledgeFace({
         x: slab.x,
         width: slab.width,
         y: slab.y + slab.height,
@@ -380,7 +395,13 @@ export function boardSlabSprites(o: BoardSlabOptions, camera?: Camera): Sprite[]
         textureId,
         uv,
         tint: o.rimTint,
-      });
+      }),
+      // Spread rather than a parameter on `ledgeFace`: a ledge is a general
+      // shape used for wall fronts and layer steps too, and only the SLAB's own
+      // rim has a reason to leave the default. `undefined` is exactly what the
+      // sprite carried before, so `layerOf` still answers LAYER_PIECE.
+      ...(o.rimLayer === undefined ? {} : { layer: o.rimLayer }),
+    });
     out.push(face(o.rimTextureId));
     // The strap and its bolt heads, at the identical rect — see
     // `frameRingSprites` for why the metal is never merged into the timber.

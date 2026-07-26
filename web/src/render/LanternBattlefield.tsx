@@ -32,11 +32,19 @@ import { formatHud, type HudStats } from '../lantern/debug/hud';
 import {
   ARENA_BORDER,
   ARENA_DEPTH,
+  HUD_END_TURN,
+  HUD_LOG,
+  HUD_PILE_DISCARD,
+  HUD_PILE_DRAW,
+  HUD_PILE_EXHAUST,
   HUD_PORTRAIT_ENEMY,
   HUD_PORTRAIT_HERO,
   MIN_FURNITURE_PX,
   arenaCamera,
   buildBattleScene,
+  lanternCradleBox,
+  logWellBox,
+  pileTrayBox,
   portraitBezelBox,
   type FieldAnchors,
   type FigureBox,
@@ -270,6 +278,14 @@ export function LanternBattlefield({
       };
       fit(HUD_PORTRAIT_ENEMY, portraitBezelBox);
       fit(HUD_PORTRAIT_HERO, portraitBezelBox);
+      // §19.1's remaining slots. All four are below `.battlefield`'s old box
+      // and none of them could be reached until the host moved to
+      // `.battle-stage` — see the aspect block in `battleScene.ts`.
+      fit(HUD_PILE_DRAW, (r) => pileTrayBox(r, false));
+      fit(HUD_PILE_DISCARD, (r) => pileTrayBox(r, false));
+      fit(HUD_PILE_EXHAUST, (r) => pileTrayBox(r, true));
+      fit(HUD_END_TURN, lanternCradleBox);
+      fit(HUD_LOG, logWellBox);
 
       return {
         anchors: {

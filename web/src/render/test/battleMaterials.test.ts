@@ -119,6 +119,17 @@ describe('battleMaterials.ts actually requests the published furniture', () => {
     }
   });
 
+  it('NEVER ASKS FOR HALF A SPLIT SHAPE', () => {
+    // The check that would have caught `candle_rail_strip_brass` sitting
+    // published and unrequested for two sessions. Derived from the list rather
+    // than spelled out twice, so adding a shape to `WIRED_SHAPES` without its
+    // brass fails here instead of looking dull on screen.
+    for (const name of SPLIT_SHAPES) {
+      expect(WIRED_SHAPES, `${name} is wired without its brass`).toContain(`${name}_brass`);
+      expect(battleMaterialsSource, `nothing asks for ${name}_brass`).toContain(`'${name}_brass'`);
+    }
+  });
+
   it('wraps BOTH halves of the rail split, not just the timber', () => {
     // `repeat` belongs to the shared FRAME's registered height axis, so the
     // brass row tiles exactly as the timber does. Requesting it without the
@@ -158,6 +169,38 @@ const WIRED_SHAPES = [
   'board_corner_brass',
   'portrait_bezel',
   'portrait_bezel_small',
+  // §19's console, wired once the canvas reached the command bar. Both halves
+  // of every `split()` shape — see the pair check below for why that is not a
+  // list to be trimmed.
+  'brass_strap',
+  'pile_tray',
+  'pile_tray_brass',
+  'exhaust_grate',
+  'exhaust_grate_brass',
+  'lantern_cradle',
+  'lantern_cradle_brass',
+  'log_well',
+  'log_well_brass',
+];
+
+/**
+ * Shapes `bake.py` emits through `split()` — a timber row and a brass row from
+ * ONE assembly through ONE camera frame.
+ *
+ * Requesting only the timber is the defect §21.8 found on the candle rail:
+ * `candle_rail_strip_brass` was baked in `fa677e4` and never asked for, so a
+ * rail §19.1 wants "fairly reflective" had no metal on it for two sessions. The
+ * two rows are drawn at the identical rect and carry different material maps
+ * (roughness 0.12 against timber's 0.86), which is the entire reason the split
+ * exists — half of it is not a smaller version of it, it is a fitting made of
+ * oak.
+ */
+const SPLIT_SHAPES = [
+  'candle_rail_strip',
+  'pile_tray',
+  'exhaust_grate',
+  'lantern_cradle',
+  'log_well',
 ];
 
 describe.skipIf(!existsSync(PUBLISH_DIR))('every shape the renderer fetches is on disk', () => {

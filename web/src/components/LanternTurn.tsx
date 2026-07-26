@@ -14,9 +14,28 @@
 
 const LANTERN_SRC = `${(import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? ''}art/fx/lantern.png`;
 
-export function LanternTurn({ yours, onEndTurn }: { yours: boolean; onEndTurn: () => void }) {
+/**
+ * `hostRef` is how §19.1's lantern CRADLE finds this button, and it is the only
+ * thing this file gained for it.
+ *
+ * A ref callback writes no style, class, attribute or child — `render/
+ * battleScene.ts` measures the box and draws a housing BEHIND it, exactly as
+ * the portrait bezels do for `.bf-ring`. Optional because `FloorScreen` mounts
+ * the same control and has no console to fit it into; absent, this component is
+ * byte-for-byte what it was.
+ */
+export function LanternTurn({
+  yours,
+  onEndTurn,
+  hostRef,
+}: {
+  yours: boolean;
+  onEndTurn: () => void;
+  hostRef?: (el: HTMLButtonElement | null) => void;
+}) {
   return (
     <button
+      ref={hostRef}
       className={`lantern-turn ${yours ? 'lantern-bright' : 'lantern-dim'}`}
       onClick={() => yours && onEndTurn()}
       disabled={!yours}

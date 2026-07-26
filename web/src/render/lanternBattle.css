@@ -10,13 +10,23 @@
    THE ARRANGEMENT, in one picture:
 
      .battle-stage.lantern-battle
-       .battlefield                    the viewport. Unchanged: same flex
-         .lantern-arena                column, same --bf-scale ladder.
-           canvas                      every SURFACE, drawn by the renderer
-         .bf-rail / .bf-row / ...      UNCHANGED DOM. Plates, badges, HP
-                                       grooves, intents, reticles, popups and
-                                       every hit target stay exactly where and
-                                       what they were.
+       .lantern-arena                  inset:0 over the WHOLE STAGE
+         canvas                        every SURFACE, drawn by the renderer
+       .battlefield                    the fight. Unchanged: same flex column,
+         .bf-rail / .bf-row / ...      same --bf-scale ladder. Plates, badges,
+         .battle-log-rail              HP grooves, intents, reticles, popups
+       .hand-zone                      and every hit target stay exactly where
+         .hand-fan / .hand-right       and what they were.
+
+   THE ARENA MOVED UP ONE LEVEL, and it is ENGINE_PLAN §21.8's first blocker
+   closed rather than a tidy-up. It used to be a child of `.battlefield`, so
+   `inset: 0` sized the canvas to that box — measured at 1350x857: y 111..554,
+   while `.hand-zone` starts at 584 and the discard, exhaust and End Turn
+   anchors sit at y 670..812. §19.1's fittings for those three were placed
+   correctly, unprojected past the board's near edge, and clipped every frame.
+
+   `.battle-stage` is `position: relative; overflow: hidden` (battle.css), so it
+   is already the containing block this needs and already clips to itself.
 
    WHY THE FIGURES ARE HIDDEN AND NEVER REMOVED. `visibility: hidden` keeps the
    `<img>` in flow at its exact resolved size, which is the whole mechanism:
@@ -35,23 +45,45 @@
    ========================================================================= */
 
 /* --- 1 · The canvas ------------------------------------------------------ */
-.lantern-battle .lantern-arena {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+/* 0,4,0 plus `!important`, and it is the same cascade repair battle.css already
+   documents at `.panel.battle-stage > .battle-enter-flash`: v5.css's
+   `.battle-stage > *:not(.stage-backdrop)` (0,2,0, loaded later) forces
+   `position: relative` onto every direct child of the stage, which would drop
+   this canvas into the flex column and reflow the fight around it. */
+.panel.battle-stage.lantern-battle > .lantern-arena {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
   /* Transparent to the pointer. Every click, hover and `elementFromPoint`
      probe on this screen belongs to a `.bf-unit` above — §8 item 4's touch
      targeting reads `document.elementFromPoint(...).closest('[data-enemy-uid]')`
      and a canvas that ate events would return the canvas. */
   pointer-events: none;
   overflow: hidden;
-  border-radius: 10px;
+  /* No radius: it is the stage's own surface now, not a panel inside it, and
+     `.battle-stage` already clips with `overflow: hidden`. */
+  border-radius: 0;
 }
 
 .lantern-battle .lantern-arena > canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* EVERYTHING THE DOM STILL DRAWS SITS ABOVE THE CANVAS. Both of these are
+   already `position: relative` (battle.css, and v5.css's blanket rule), so this
+   only supplies the z-index — but stating it here rather than relying on
+   document order is what stops a later child of the stage falling behind the
+   board for reasons nobody can see in the markup.
+
+   §1.2 is why this is a z-index and not a re-parenting: the GPU draws every
+   SURFACE, the DOM draws TEXT and HIT TARGETS, so every DOM box keeps its
+   place, its handlers and its ARIA and simply stops painting a background. */
+.lantern-battle .battlefield,
+.lantern-battle .hand-zone {
+  position: relative;
+  z-index: 1;
 }
 
 /* The rows and the rail are static boxes, so a positioned canvas at z-index 0
@@ -145,6 +177,43 @@
    into the bar. The bezel IS that recess now, modelled and lit, and leaving
    the pretend one on draws a soft dark ring across the real one's inner bead. */
 .lantern-battle .battlefield .bf-rail .bf-ring::after {
+  display: none !important;
+}
+
+/* THE COMMAND BAR'S PAINTED SURFACE (§19, §19.1). `battle.css` draws
+   `.hand-zone` as an opaque plank — a 180deg gradient from rgba(26,20,12,0.5) to
+   rgba(10,7,4,0.98), a 2px gold top rail, three inset shadows and a filigree
+   line riding the rail on `::before`. It is a very good CSS fake of a console,
+   and with it left on it is a wall: the canvas now spans the whole stage and
+   every fitting behind the piles, the End Turn lantern and the buttons is drawn,
+   correct, and completely covered.
+
+   Same move `.bf-rail`, `.vigor-candles` and `.stage-backdrop` already made,
+   and the same rule behind it — THE GPU DRAWS EVERY SURFACE, THE DOM DRAWS TEXT
+   AND HIT TARGETS. The zone's BOX is untouched: same flex row, same padding,
+   same 176px min-height, same children, same order, so the hand fan, the pile
+   buttons, Items, Retreat and End Turn keep their exact rects, their `title`s,
+   their `data-nav-item`s and their hit areas, and `nav/` cannot tell the
+   difference.
+
+   WHAT IS DELIBERATELY LEFT ALONE: `.pile-cardback`'s stacked-edge shadows and
+   the `CardBack` inside it. Those are the CARDS, not the console — they are
+   §19.1's contents rather than its carpentry, and the card render is its own
+   pass. The tray behind them is sized to their box, so when the cards do become
+   lit surfaces the recess is already the right shape for them.
+
+   0,3,0 plus `!important` for the reason in this file's header: v5.css and
+   v16.css both select this box and load in an order this file cannot control. */
+.lantern-battle .hand-zone {
+  background: none !important;
+  border-top-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* The filigree glow riding the top rail — joinery painted in CSS, and there is
+   real joinery under it now: the board's near rim, the joint below it and the
+   straps across that joint (`battleScene.strapCentres`). */
+.lantern-battle .hand-zone::before {
   display: none !important;
 }
 

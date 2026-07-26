@@ -152,3 +152,98 @@ describe('lanternBattle.css cannot reach the default path', () => {
     expect(css).toMatch(/\.bf-ring::after[^{]*\{[^}]*display:\s*none/);
   });
 });
+
+// =========================================================================
+// THE COMMAND BAR'S PAINT, AND WHERE THE CANVAS IS HOSTED
+//
+// §19's player console needed two things `lanternBattle.css` did not do: the
+// renderer's host had to span the whole `.battle-stage` rather than just
+// `.battlefield`, and `.hand-zone`'s opaque plank had to come off so the
+// fittings behind the piles and the End Turn lantern are not drawn behind a
+// wall. Both are the same move `.bf-rail`, `.vigor-candles` and
+// `.stage-backdrop` already made, and both are stripped PAINT rather than
+// changed LAYOUT — which is the property these check.
+// =========================================================================
+describe('the console comes off the DOM and onto the board', () => {
+  const css = readFileSync(fileURLToPath(new URL('../lanternBattle.css', import.meta.url)), 'utf8');
+  const battle = readFileSync(fileURLToPath(new URL('../../battle.css', import.meta.url)), 'utf8');
+  /** Rules as (selector list, body), comments removed. */
+  const rules = (() => {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    const out: { sels: string[]; body: string }[] = [];
+    for (const block of bare.split('}')) {
+      const i = block.indexOf('{');
+      if (i < 0) continue;
+      out.push({
+        sels: block
+          .slice(0, i)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        body: block.slice(i + 1),
+      });
+    }
+    return out;
+  })();
+  const ruleFor = (sel: string) => rules.find((r) => r.sels.length === 1 && r.sels[0] === sel);
+
+  it('takes .hand-zone’s surface and NOTHING that positions its children', () => {
+    // The shipping bar is a 180deg gradient, a 2px gold rail, three inset
+    // shadows and a filigree `::before`. All four are surfaces. Its flex row,
+    // its padding and its 176px min-height are LAYOUT, and every hit target in
+    // the fight is positioned by them.
+    const rule = ruleFor('.lantern-battle .hand-zone');
+    expect(rule).toBeDefined();
+    const body = rule!.body;
+    expect(body).toContain('background: none');
+    expect(body).toContain('box-shadow: none');
+    expect(body).toMatch(/border-top-color:\s*transparent/);
+    for (const layout of ['display', 'padding', 'min-height', 'gap', 'justify-content', 'align-items', 'flex']) {
+      expect(body, `lanternBattle.css must not restyle .hand-zone's ${layout}`).not.toContain(`${layout}:`);
+    }
+    // And the filigree on the rail, which is joinery painted in CSS.
+    expect(css).toMatch(/\.lantern-battle\s+\.hand-zone::before[^{]*\{[^}]*display:\s*none/);
+  });
+
+  it('leaves the CARDS alone — they are contents, not carpentry', () => {
+    // `.pile-cardback`'s stacked-edge shadows are the pile itself, and the card
+    // render is its own pass. The tray behind them is sized to their box, so
+    // taking their paint here would strip a surface nothing else draws yet.
+    // Selectors only: the stylesheet's prose says why these are left alone, and
+    // a substring search over the whole file would match the explanation.
+    const allSels = rules.flatMap((r) => r.sels);
+    for (const untouched of ['.pile-cardback', '.hand-fan', '.hand-slot', '.pile-count-num', '.pile-name']) {
+      expect(allSels.some((s) => s.includes(untouched)), `${untouched} must keep its own paint`).toBe(false);
+    }
+  });
+
+  it('hosts the canvas on the STAGE, at a specificity v5.css cannot beat', () => {
+    // battle.css records the trap by name: v5.css's `.battle-stage >
+    // *:not(.stage-backdrop)` is 0,2,0 and loaded later, so it forces
+    // `position: relative` onto every direct child of the stage — which would
+    // drop the canvas into the flex column and reflow the fight around it.
+    // The repair is the same 0,3,0-or-better shape battle.css already uses.
+    expect(battle).toContain('.panel.battle-stage > .battle-enter-flash');
+    const rule = ruleFor('.panel.battle-stage.lantern-battle > .lantern-arena');
+    expect(rule).toBeDefined();
+    expect(rule!.body).toMatch(/position:\s*absolute\s*!important/);
+    expect(rule!.body).toMatch(/inset:\s*0\s*!important/);
+    expect(rule!.body).toMatch(/z-index:\s*0\s*!important/);
+    // Still transparent to the pointer: §8 item 4's touch targeting reads
+    // `elementFromPoint(...).closest('[data-enemy-uid]')`, and a canvas that ate
+    // events would return the canvas — over the WHOLE stage now, not just the
+    // battlefield, so this matters more than it did.
+    expect(rule!.body).toContain('pointer-events: none');
+  });
+
+  it('lifts both DOM bands above the canvas rather than re-parenting them', () => {
+    // §1.2: the DOM keeps its box, its text and its hit targets and simply
+    // stops painting. Nothing moves in the tree; the canvas goes behind.
+    const lift = rules.find(
+      (r) =>
+        r.sels.includes('.lantern-battle .battlefield') && r.sels.includes('.lantern-battle .hand-zone'),
+    );
+    expect(lift).toBeDefined();
+    expect(lift!.body).toMatch(/z-index:\s*1/);
+  });
+});

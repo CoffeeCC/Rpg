@@ -21,13 +21,39 @@
 //   robustness   a degenerate measurement (a row that has not been laid out)
 //                must produce a finite camera, not a scene full of NaN.
 // =========================================================================
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { project, type Camera } from '../../lantern/scene/camera';
 import type { Material } from '../../lantern/scene/scene';
 import {
   ARENA_DEPTH,
+  ARENA_RIM_LAYER,
+  BACKDROP_LAYER,
   CANDLE_FRAME_X,
   CORNER_BRASS_SIZE,
+  CRADLE_FRAME,
+  LOG_FRAME,
+  LOG_SLICE,
+  LOG_WELL_FRACTION,
+  MAT_CRADLE,
+  MAT_CRADLE_BRASS,
+  MAT_EXHAUST,
+  MAT_EXHAUST_BRASS,
+  MAT_LOG_WELL,
+  MAT_LOG_WELL_BRASS,
+  MAT_PILE_TRAY,
+  MAT_PILE_TRAY_BRASS,
+  MAT_STRAP,
+  PILE_FRAME,
+  PILE_SLOT,
+  STRAP_FRAME,
+  STRAP_PITCH,
+  lanternCradleBox,
+  logWellBox,
+  pileTrayBox,
+  sliceBands,
+  strapCentres,
   ENEMY_RANK,
   MAT_ARENA,
   MAT_BACKDROP,
@@ -65,10 +91,13 @@ import {
   placeFigure,
   placeFurniture,
   portraitBezelBox,
+  type AuthoredFrame,
   type FigureBox,
   type FurnitureBox,
+  type MeasuredBox,
 } from '../battleScene';
 import { LAYER_DECAL, LAYER_PIECE } from '../../lantern/scene/sprite';
+import { boardSlabSprites } from '../../lantern/scene/board';
 
 /** Every id the builder can ask for, so nothing is skipped for want of art. */
 function allMaterials(extra: string[] = []): Map<string, Material> {
@@ -884,5 +913,465 @@ describe('texture ids', () => {
   it('namespaces heroes and monsters apart', () => {
     expect(monsterTextureId('duskhound')).not.toBe(heroTextureId('duskhound'));
     expect(heroTextureId('Knight')).toContain('Knight');
+  });
+});
+
+// =========================================================================
+// THE CONSOLE (§19, §19.1) — the three fittings §21.8 could not place.
+//
+// Two blockers, and only one of them was real. The canvas genuinely did not
+// reach the piles or the End Turn lantern; the "5.7x anisotropic stretch" did
+// not exist at that size, because it compared the DOM box's BOARD aspect
+// against the bake's authored one and the box's board aspect already carries
+// the 1/cos `placeFurniture` puts there. So these check the arithmetic FIRST —
+// including the wrong answer, by name — and then that each fitting takes the
+// mode its own measured distortion calls for.
+//
+// Per LIGHTING_PLAN §10: prefer a test that REJECTS the old behaviour. The one
+// that matters most here is that `log_well` is NINE quads whose corners do not
+// move when the box changes shape, because one stretched quad is exactly what
+// was refused.
+// =========================================================================
+
+/** Real boxes, measured in a real Hollow Gate fight at 1350x860. */
+const REAL = {
+  /** The whole button — the card plus its count and label. §21.8's anchor. */
+  pileWidget: { w: 90, h: 138 },
+  /** The card itself, which is what the tray's recess is framed around. */
+  cardback: { w: 84, h: 118 },
+  lanternTurn: { w: 96, h: 122 },
+  logRail: { w: 216, h: 434 },
+};
+
+/**
+ * How much a bake's image is stretched when its QUAD is drawn over a box.
+ *
+ * The quad may be bigger than the box — that is what `scale`/`scaleY` are for —
+ * so both go in. See the block above `HUD_PORTRAIT_ENEMY`: the cos cancels,
+ * which is the whole correction.
+ */
+const distortion = (box: { w: number; h: number }, a: AuthoredFrame, sx = 1, sy = 1) =>
+  ((box.h * sy) / (box.w * sx)) * (a.w / a.h);
+
+describe('the aspect trap, re-measured', () => {
+  it('THE CORRECTION: the pile pair is 0.999, and §21.8’s 2.1x is reproduced', () => {
+    // First the number that was recorded, exactly, so there is no doubt which
+    // quantity it was: the widget's BOARD aspect — already 1/cos taller than
+    // its screen aspect, put there by `placeFurniture` so the quad projects
+    // back onto the box — against the bake's authored board aspect. Counting
+    // the tilt on one side and not the other is the whole of the error.
+    const cos = Math.cos(camera().tilt);
+    const asRecorded =
+      REAL.pileWidget.h / cos / REAL.pileWidget.w / (PILE_FRAME.h / PILE_FRAME.w);
+    expect(asRecorded).toBeCloseTo(2.1, 1);
+    // Done once, on the anchor and with the contract this pass actually uses:
+    // `build_pile_tray`'s recess is "0.64 by 0.90 ... which is a playing card"
+    // and `.pile-cardback` is 84x118 = 0.712. The bake and the DOM chose the
+    // same playing card independently, so putting the slot on the card leaves
+    // a tenth of a percent to correct.
+    expect(distortion(REAL.cardback, PILE_FRAME, 1 / PILE_SLOT.u, 1 / PILE_SLOT.v)).toBeCloseTo(1, 2);
+    // Even covering the button naively — no contract at all — it is 1.11.
+    expect(distortion(REAL.pileWidget, PILE_FRAME)).toBeCloseTo(1.21, 2);
+  });
+
+  it('keeps the other two honest: the cradle 1.41, the log well 3.56', () => {
+    expect(distortion(REAL.lanternTurn, CRADLE_FRAME)).toBeCloseTo(1.412, 2);
+    // The log well takes its u contract, which is part of what it is drawn at.
+    expect(distortion(REAL.logRail, LOG_FRAME, 1 / LOG_WELL_FRACTION.u, 1)).toBeCloseTo(2.87, 2);
+    expect(distortion(REAL.logRail, LOG_FRAME)).toBeCloseTo(3.587, 2);
+    // Which is why they take different modes, and the ordering is the argument.
+    expect(
+      distortion(REAL.cardback, PILE_FRAME, 1 / PILE_SLOT.u, 1 / PILE_SLOT.v),
+    ).toBeLessThan(distortion(REAL.lanternTurn, CRADLE_FRAME));
+    expect(distortion(REAL.lanternTurn, CRADLE_FRAME)).toBeLessThan(distortion(REAL.logRail, LOG_FRAME));
+    expect(pileTrayBox({ cx: 0, cy: 0, ...REAL.cardback }, false).fit).toBeUndefined();
+    expect(lanternCradleBox({ cx: 0, cy: 0, ...REAL.lanternTurn }).fit).toBe('contain');
+    expect(logWellBox({ cx: 0, cy: 0, ...REAL.logRail }).fit).toBe('slice');
+  });
+
+  it('every authored frame is the published PNG’s own pixel aspect', () => {
+    // The whole distortion argument rests on the bakes being orthographic
+    // renders at their authored board proportions, with no foreshortening baked
+    // in. Checked against the real files rather than asserted — and gated on the
+    // directory existing, because `web/public/art/materials/` is a build
+    // artifact (same reason `battleMaterials.test.ts` gates its disk checks).
+    const dir = join(__dirname, '..', '..', '..', 'public', 'art', 'materials', 'board');
+    if (!existsSync(dir)) return;
+    const png = (name: string) => {
+      const b = readFileSync(join(dir, `${name}.png`));
+      // IHDR: 8-byte signature, 4 length, 4 type, then width and height BE32.
+      return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+    };
+    for (const [name, a] of [
+      ['pile_tray', PILE_FRAME],
+      ['exhaust_grate', PILE_FRAME],
+      ['lantern_cradle', CRADLE_FRAME],
+      ['log_well', LOG_FRAME],
+      ['brass_strap', STRAP_FRAME],
+    ] as const) {
+      const p = png(name);
+      expect(p.h / p.w).toBeCloseTo(a.h / a.w, 2);
+      // Both halves of a split shape share one frame, or they cannot be drawn
+      // at one rect.
+      if (name !== 'brass_strap') {
+        const b = png(`${name}_brass`);
+        expect([b.w, b.h]).toEqual([p.w, p.h]);
+      }
+    }
+  });
+});
+
+describe('log_well is NINE windows, not one stretched quad', () => {
+  const cam = camera();
+  const box = (over: Partial<{ w: number; h: number }> = {}) =>
+    logWellBox({ cx: 700, cy: 260, ...REAL.logRail, ...over });
+
+  const sprites = (over = {}) =>
+    furnitureSprites([box(over)], cam, (id) => id === MAT_LOG_WELL || id === MAT_LOG_WELL_BRASS);
+
+  it('THE POINT: the brass corners do not grow when the box gets taller', () => {
+    // This is the assertion the old behaviour fails. Covering a box with one
+    // quad scales every texel with the box, so doubling its height doubles the
+    // corner bracket; nine-slicing keeps the corner and lengthens the run.
+    const short = sprites({ h: 200 }).filter((s) => s.textureId === MAT_LOG_WELL);
+    const tall = sprites({ h: 800 }).filter((s) => s.textureId === MAT_LOG_WELL);
+    expect(short).toHaveLength(9);
+    expect(tall).toHaveLength(9);
+    const corner = (list: typeof short) => list[0];
+    expect(corner(tall).size.x).toBeCloseTo(corner(short).size.x, 10);
+    expect(corner(tall).size.y).toBeCloseTo(corner(short).size.y, 10);
+    // And the run between them takes ALL of the difference.
+    const middleRow = (list: typeof short) => list[3];
+    expect(middleRow(tall).size.y - middleRow(short).size.y).toBeCloseTo(
+      600 / (cam.zoom * Math.cos(cam.tilt)),
+      6,
+    );
+  });
+
+  it('cuts the UV at the border the brass was measured at, on both halves', () => {
+    const all = sprites();
+    const timber = all.filter((s) => s.textureId === MAT_LOG_WELL);
+    const brass = all.filter((s) => s.textureId === MAT_LOG_WELL_BRASS);
+    expect(timber).toHaveLength(9);
+    expect(brass).toHaveLength(9);
+    // The brass is drawn at the IDENTICAL nine rects — `split()` renders both
+    // halves from one assembly at one frame precisely so this is legal.
+    for (let i = 0; i < 9; i++) {
+      expect(brass[i].position).toEqual(timber[i].position);
+      expect(brass[i].size).toEqual(timber[i].size);
+      expect(brass[i].uv).toEqual(timber[i].uv);
+    }
+    expect(timber[0].uv).toEqual({ u0: 0, v0: 0, u1: LOG_SLICE.u, v1: LOG_SLICE.v });
+    expect(timber[8].uv).toEqual({ u0: 1 - LOG_SLICE.u, v0: 1 - LOG_SLICE.v, u1: 1, v1: 1 });
+  });
+
+  it('the nine tile the quad exactly — no gap, no overlap', () => {
+    const all = sprites().filter((s) => s.textureId === MAT_LOG_WELL);
+    const p = placeFurniture(box(), cam)!;
+    const left = p.at.x - p.width / 2;
+    const top = p.at.y - p.height / 2;
+    // Every cell is pivoted at its own corner, so the runs must add up.
+    const xs = [...new Set(all.map((s) => s.position.x))].sort((a, b) => a - b);
+    const ys = [...new Set(all.map((s) => s.position.y))].sort((a, b) => a - b);
+    expect(xs[0]).toBeCloseTo(left, 10);
+    expect(ys[0]).toBeCloseTo(top, 10);
+    const row = all.filter((s) => s.position.y === ys[0]).sort((a, b) => a.position.x - b.position.x);
+    for (let i = 1; i < row.length; i++) {
+      expect(row[i].position.x).toBeCloseTo(row[i - 1].position.x + row[i - 1].size.x, 10);
+    }
+    const last = row[row.length - 1];
+    expect(last.position.x + last.size.x).toBeCloseTo(left + p.width, 10);
+  });
+
+  it('draws the corner SQUARE — the band is taken off the width, twice', () => {
+    // A corner cell whose height came from the box's height would be stretched
+    // exactly as much as the run it is protecting, which is the bug wearing a
+    // nine-slice costume. `log_well`'s brackets are 0.30 x 0.30 board units, so
+    // the drawn cell must be square ON SCREEN.
+    const all = sprites().filter((s) => s.textureId === MAT_LOG_WELL);
+    const cos = Math.cos(cam.tilt);
+    const c = all[0];
+    const screenW = c.size.x * cam.zoom;
+    const screenH = c.size.y * cam.zoom * cos;
+    // Same ratio the texture's own corner has: slice.u of the width against
+    // slice.v of the height, in the PNG's pixel aspect.
+    expect(screenH / screenW).toBeCloseTo((LOG_SLICE.v * LOG_FRAME.h) / (LOG_SLICE.u * LOG_FRAME.w), 6);
+  });
+
+  it('honours the well’s u contract and deliberately not its v', () => {
+    // `build_log_well`: the well is 0.80 x 0.75 of the panel. Read backwards
+    // that is the panel's scale. Only u is taken, and the reason is a
+    // measurement — see LOG_WELL_FRACTION.
+    const b = box();
+    expect(b.scale).toBeCloseTo(1 / LOG_WELL_FRACTION.u, 10);
+    expect(b.scaleY).toBe(1);
+    const p = placeFurniture(b, cam)!;
+    expect(p.width * cam.zoom).toBeCloseTo(REAL.logRail.w / LOG_WELL_FRACTION.u, 6);
+    expect(p.height * cam.zoom * Math.cos(cam.tilt)).toBeCloseTo(REAL.logRail.h, 6);
+  });
+});
+
+describe('sliceBands', () => {
+  it('gives band / middle / band, and the middle takes the slack', () => {
+    const b = sliceBands(10, 6, 1, 0.2);
+    expect(b).toHaveLength(3);
+    expect(b.map((x) => x.size)).toEqual([1, 4, 1]);
+    expect(b.map((x) => x.at)).toEqual([10, 11, 15]);
+    expect(b[1].t0).toBeCloseTo(0.2, 10);
+    expect(b[1].t1).toBeCloseTo(0.8, 10);
+  });
+
+  it('DROPS the middle rather than letting the bands overlap', () => {
+    // Two bands wider than the span is the degenerate case, and drawing them
+    // both at full width would paint the same texels twice with a negative-width
+    // quad between them.
+    const b = sliceBands(0, 1.5, 1, 0.25);
+    expect(b).toHaveLength(2);
+    expect(b.map((x) => x.size)).toEqual([0.75, 0.75]);
+    expect(b[0].at + b[0].size).toBeCloseTo(b[1].at, 10);
+  });
+
+  it('produces nothing at all for a degenerate span', () => {
+    expect(sliceBands(0, 0, 1, 0.2)).toEqual([]);
+    expect(sliceBands(0, -3, 1, 0.2)).toEqual([]);
+    expect(sliceBands(NaN, 5, 1, 0.2)).toEqual([]);
+    expect(sliceBands(0, NaN, 1, 0.2)).toEqual([]);
+    // A fraction at or past the half clamps rather than inverting the middle.
+    for (const f of [0.5, 0.9, NaN]) {
+      for (const band of sliceBands(0, 8, 1, f)) {
+        expect(band.t0).toBeLessThan(band.t1);
+        expect(Number.isFinite(band.size)).toBe(true);
+        expect(band.size).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('contain keeps the bake’s aspect and covers the box anyway', () => {
+  const cam = camera();
+
+  it('draws the cradle at its authored shape, to the pixel', () => {
+    const p = placeFurniture(lanternCradleBox({ cx: 500, cy: 300, ...REAL.lanternTurn }), cam)!;
+    const cos = Math.cos(cam.tilt);
+    const screenW = p.width * cam.zoom;
+    const screenH = p.height * cam.zoom * cos;
+    expect(screenH / screenW).toBeCloseTo(CRADLE_FRAME.h / CRADLE_FRAME.w, 9);
+    // And it CONTAINS the button rather than fitting inside it: the ears run
+    // past the base disc, so the housing is wider than the thing it holds.
+    expect(screenW).toBeGreaterThanOrEqual(REAL.lanternTurn.w - 1e-6);
+    expect(screenH).toBeGreaterThanOrEqual(REAL.lanternTurn.h - 1e-6);
+    // Grown by the tighter axis only — one of the two is exact.
+    const exact = Math.abs(screenW - REAL.lanternTurn.w) < 1e-6 || Math.abs(screenH - REAL.lanternTurn.h) < 1e-6;
+    expect(exact).toBe(true);
+  });
+
+  it('grows the OTHER way round when the box is wide', () => {
+    const p = placeFurniture(lanternCradleBox({ cx: 500, cy: 300, w: 400, h: 40 }), cam)!;
+    const cos = Math.cos(cam.tilt);
+    expect((p.height * cam.zoom * cos) / (p.width * cam.zoom)).toBeCloseTo(CRADLE_FRAME.h / CRADLE_FRAME.w, 9);
+    expect(p.width * cam.zoom).toBeCloseTo(400, 6);
+  });
+
+  it('falls back to covering when there is no authored frame to keep', () => {
+    const p = placeFurniture({ id: 'x', fit: 'contain', cx: 500, cy: 300, w: 200, h: 100 }, cam)!;
+    expect(p.width * cam.zoom).toBeCloseTo(200, 6);
+    expect(p.height * cam.zoom * Math.cos(cam.tilt)).toBeCloseTo(100, 6);
+  });
+
+  it('draws the cradle’s brass over its timber at one rect, and gates each', () => {
+    // §19.1 asks the brass to catch the light, which needs its own material map
+    // and therefore its own quad. The cradle is one shape where that is
+    // load-bearing: `build_lantern_cradle` says the EARS are its identity and
+    // the ears are brass.
+    const box = lanternCradleBox({ cx: 500, cy: 300, ...REAL.lanternTurn });
+    const both = furnitureSprites([box], cam, () => true);
+    expect(both.map((s) => s.textureId)).toEqual([MAT_CRADLE, MAT_CRADLE_BRASS]);
+    expect(both[1].position).toEqual(both[0].position);
+    expect(both[1].size).toEqual(both[0].size);
+    expect(furnitureSprites([box], cam, (id) => id === MAT_CRADLE_BRASS)).toHaveLength(1);
+    expect(furnitureSprites([box], cam, () => false)).toHaveLength(0);
+  });
+});
+
+describe('the pile pair', () => {
+  const cam = camera();
+  const ids = new Set([MAT_PILE_TRAY, MAT_PILE_TRAY_BRASS, MAT_EXHAUST, MAT_EXHAUST_BRASS]);
+  const has = (id: string) => ids.has(id);
+
+  it('puts the card SLOT on the card back, not the tray’s rim on it', () => {
+    // `PILE_SLOT` read backwards, the way `BEZEL_BORE` is. Getting this wrong
+    // draws a card-shaped hole the size of the card and the timber outside the
+    // widget entirely.
+    const p = placeFurniture(pileTrayBox({ cx: 400, cy: 300, ...REAL.cardback }, false), cam)!;
+    expect(p.width * cam.zoom * PILE_SLOT.u).toBeCloseTo(REAL.cardback.w, 6);
+    expect(p.height * cam.zoom * Math.cos(cam.tilt) * PILE_SLOT.v).toBeCloseTo(REAL.cardback.h, 6);
+  });
+
+  it('shares a footprint with the grate and nothing else', () => {
+    // §19.1: the pair must be told apart by SILHOUETTE. Same frame, same slot,
+    // same rect — different bake.
+    const tray = pileTrayBox({ cx: 400, cy: 300, ...REAL.cardback }, false);
+    const grate = pileTrayBox({ cx: 400, cy: 300, ...REAL.cardback }, true);
+    expect(grate.id).not.toBe(tray.id);
+    expect(grate.brassId).not.toBe(tray.brassId);
+    expect({ ...grate, id: '', brassId: '' }).toEqual({ ...tray, id: '', brassId: '' });
+    const a = placeFurniture(tray, cam)!;
+    const b = placeFurniture(grate, cam)!;
+    expect(b).toEqual(a);
+  });
+
+  it('draws timber then brass at one rect, and each alone if its partner is missing', () => {
+    const box = pileTrayBox({ cx: 400, cy: 300, ...REAL.cardback }, false);
+    const both = furnitureSprites([box], cam, has);
+    expect(both.map((s) => s.textureId)).toEqual([MAT_PILE_TRAY, MAT_PILE_TRAY_BRASS]);
+    expect(both[1].position).toEqual(both[0].position);
+    expect(both[1].size).toEqual(both[0].size);
+    expect(furnitureSprites([box], cam, (id) => id === MAT_PILE_TRAY)).toHaveLength(1);
+    expect(furnitureSprites([box], cam, (id) => id === MAT_PILE_TRAY_BRASS)).toHaveLength(1);
+    expect(furnitureSprites([box], cam, () => false)).toHaveLength(0);
+  });
+});
+
+describe('every console fitting refuses a degenerate box', () => {
+  const cam = camera();
+  const makers = [
+    (r: MeasuredBox) => pileTrayBox(r, false),
+    (r: MeasuredBox) => pileTrayBox(r, true),
+    lanternCradleBox,
+    logWellBox,
+  ];
+  const bad: MeasuredBox[] = [
+    { cx: 100, cy: 100, w: 0, h: 0 },
+    { cx: 100, cy: 100, w: 1, h: 40 },
+    { cx: NaN, cy: 100, w: 40, h: 40 },
+    { cx: 100, cy: 100, w: NaN, h: 40 },
+    { cx: 100, cy: 100, w: 40, h: Infinity },
+  ];
+
+  it('NO SPRITE, never a NaN vertex', () => {
+    // A NaN that reaches the camera does not draw badly, it blanks the canvas
+    // for the rest of the session. Every guard on this path returns nothing.
+    for (const make of makers) {
+      for (const r of bad) {
+        const b = make(r);
+        expect(placeFurniture(b, cam)).toBeNull();
+        expect(furnitureSprites([b], cam, () => true)).toHaveLength(0);
+      }
+    }
+  });
+
+  it('and refuses a degenerate CAMERA, including the sliced path', () => {
+    const box = logWellBox({ cx: 400, cy: 300, ...REAL.logRail });
+    for (const over of [{ zoom: 0 }, { zoom: -5 }, { zoom: NaN }, { tilt: Math.PI / 2 }, { tilt: NaN }]) {
+      const bad = { ...cam, ...over } as Camera;
+      expect(furnitureSprites([box], bad, () => true)).toHaveLength(0);
+    }
+  });
+});
+
+describe('brass_strap crosses a seam that exists', () => {
+  const extent = { width: 6, height: ARENA_DEPTH, border: 1.2 };
+
+  it('sits on the joint at the slab’s near edge, on the TABLE', () => {
+    const c = strapCentres(extent, 0.45);
+    expect(c.length).toBeGreaterThan(0);
+    for (const s of c) {
+      expect(s.y).toBeCloseTo(ARENA_DEPTH + 1.2 + STRAP_FRAME.h / 2, 10);
+      // z below the board, which is where the table is.
+      expect(s.z).toBeCloseTo(-0.45, 10);
+    }
+  });
+
+  it('lands on the rim’s own four-tile repeat, inside the slab', () => {
+    const c = strapCentres(extent, 0.45);
+    const left = -extent.border;
+    for (const s of c) {
+      expect((s.x - left) % STRAP_PITCH).toBeCloseTo(0, 10);
+      expect(s.x).toBeGreaterThan(left);
+      expect(s.x).toBeLessThan(extent.width + extent.border);
+    }
+    expect(STRAP_PITCH).toBe(4);
+  });
+
+  it('draws at its AUTHORED size, foreshortened like the rest of the carpentry', () => {
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_STRAP]),
+      figures: [],
+      vigor: { lit: 1, total: 3 },
+    });
+    const straps = scene.sprites.filter((s) => s.textureId === MAT_STRAP);
+    expect(straps.length).toBe(strapCentres(arenaExtent(camera()), 0.45).length);
+    for (const s of straps) {
+      // NOT divided by cos: a strap is board furniture, not a fitting behind a
+      // straight-on widget, so the tilt squashes it exactly as it squashes the
+      // socket it shares a board with.
+      expect(s.size).toEqual({ x: STRAP_FRAME.w, y: STRAP_FRAME.h });
+      expect(s.upright).toBeUndefined();
+    }
+  });
+
+  it('draws NOTHING when the bake has not arrived', () => {
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials(),
+      figures: [],
+      vigor: { lit: 1, total: 3 },
+    });
+    expect(scene.sprites.some((s) => s.textureId === MAT_STRAP)).toBe(false);
+  });
+
+  it('produces no strap for a degenerate slab', () => {
+    expect(strapCentres({ width: 0, height: 6, border: 0 }, 0.45)).toEqual([]);
+    expect(strapCentres({ width: NaN, height: 6, border: 1.2 }, 0.45)).toEqual([]);
+  });
+});
+
+describe('the paint order the console needed', () => {
+  const cam = camera();
+  const opts = {
+    camera: cam,
+    time: 0,
+    figures: [] as FigureBox[],
+    vigor: { lit: 2, total: 3 },
+  };
+
+  it('THE FIX: the slab’s rim no longer paints across the fittings', () => {
+    // An upright quad takes LAYER_PIECE from `layerOf`, and that put the board's
+    // own near edge over the discard tray, the exhaust grate and the cradle —
+    // all of which unproject PAST that edge and are therefore in front of it.
+    const scene = buildBattleScene({ ...opts, materials: allMaterials() });
+    const rim = scene.sprites.find((s) => s.textureId === 'rim')!;
+    expect(rim.layer).toBe(ARENA_RIM_LAYER);
+    expect(ARENA_RIM_LAYER).toBeLessThan(LAYER_DECAL);
+    // The map keeps the default, and that is asserted where the default lives.
+    const mapRim = boardSlabSprites({ width: 8, height: 6, frameTextureId: 'frame', rimTextureId: 'rim' }).find(
+      (s) => s.textureId === 'rim',
+    )!;
+    expect(mapRim.layer).toBeUndefined();
+  });
+
+  it('drops the painted flat below the fittings and keeps it above the floor', () => {
+    // The Chronicle's box reaches board y past the flat's base, so at
+    // LAYER_PIECE the flat painted a black rectangle over the top of `log_well`.
+    const scene = buildBattleScene({ ...opts, materials: allMaterials() });
+    const flat = scene.sprites.find((s) => s.textureId === MAT_BACKDROP)!;
+    expect(flat.layer).toBe(BACKDROP_LAYER);
+    expect(BACKDROP_LAYER).toBeGreaterThan(0);
+    expect(BACKDROP_LAYER).toBeLessThan(LAYER_DECAL);
+    // Still behind every piece, which is the only thing it ever needed.
+    expect(BACKDROP_LAYER).toBeLessThan(LAYER_PIECE);
+  });
+
+  it('puts every fitting on LAYER_DECAL, sliced or not', () => {
+    const boxes = [
+      pileTrayBox({ cx: 300, cy: 300, ...REAL.cardback }, false),
+      pileTrayBox({ cx: 400, cy: 300, ...REAL.cardback }, true),
+      lanternCradleBox({ cx: 500, cy: 300, ...REAL.lanternTurn }),
+      logWellBox({ cx: 700, cy: 260, ...REAL.logRail }),
+    ];
+    for (const s of furnitureSprites(boxes, cam, () => true)) expect(s.layer).toBe(LAYER_DECAL);
   });
 });

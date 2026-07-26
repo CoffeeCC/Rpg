@@ -26,6 +26,11 @@ import { DrillCoach } from './DrillCoach';
 import { renderDebug, renderMode } from '../render/flag';
 import { LanternBattlefield, type BattleFigureRef } from '../render/LanternBattlefield';
 import {
+  HUD_END_TURN,
+  HUD_LOG,
+  HUD_PILE_DISCARD,
+  HUD_PILE_DRAW,
+  HUD_PILE_EXHAUST,
   HUD_PORTRAIT_ENEMY,
   HUD_PORTRAIT_HERO,
   heroTextureId,
@@ -196,6 +201,23 @@ const IMPACT_KINDS = new Set(['slash', 'pierce', 'fire', 'frost', 'bolt', 'dark'
 type PileId = 'draw' | 'discard' | 'exhaust';
 
 const PILE_LABEL: Record<PileId, string> = { draw: 'Deck', discard: 'Embers', exhaust: 'Ashes' };
+/**
+ * Which §19.1 fitting sits behind each pile.
+ *
+ * DRAW TAKES THE DISCARD'S TRAY, and the slot table does not name it because
+ * §19.1 was written before the console reached the command bar: it lists "the
+ * discard pile" and "the exhaust pile" and stops. Both are piles of cards you
+ * take from, `build_pile_tray` is a tray for exactly that, and leaving one of
+ * three undressed would read as an oversight rather than as a distinction. What
+ * §19.1 actually insists on is the CONTRAST — the exhaust "must read as
+ * somewhere cards do NOT return from ... Distinguished by SILHOUETTE" — and one
+ * grate among two trays says that more clearly than one among one.
+ */
+const PILE_ANCHOR: Record<PileId, string> = {
+  draw: HUD_PILE_DRAW,
+  discard: HUD_PILE_DISCARD,
+  exhaust: HUD_PILE_EXHAUST,
+};
 
 function intentView(intent: Intent | undefined): { icon: string; label: string; title: string; move?: string } {
   // v11: kit moves carry a telegraph name ("The Bell Tolls") shown under the number.
@@ -941,7 +963,15 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           setPileView((v) => (v === pile ? null : pile));
         }}
       >
-        <span className="pile-cardback">
+        {/* The CARD BACK is the anchor, not the button — the same correction
+            §21.8 made when it moved the portrait bezel from `.bf-portrait` to
+            `.bf-ring`. `build_pile_tray` frames its recess around a card
+            ("0.64 by 0.90 is a 0.71 aspect, which is a playing card") and this
+            box is 84x118, which is 0.712; the button is the card plus the count
+            and the label below it, and fitting the recess to that would put a
+            card-shaped hole around something that is not a card. Nothing about
+            the element changes — a ref writes no style, class or attribute. */}
+        <span className="pile-cardback" ref={hudRef(PILE_ANCHOR[pile])}>
           <CardBack width={84} />
         </span>
         <span className="pile-count-num">{cards.length}</span>
@@ -1006,6 +1036,48 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         setHoveredEnemyUid(null);
       }}
     >
+      {/* THE RENDERER, UNDERNEATH EVERYTHING — and "everything" now means the
+          whole stage rather than just the battlefield. It draws the slab, the
+          frame, the rim, the table it stands on, the painted flat behind it,
+          every combatant as a piece on a plinth with a contact shadow, the
+          candle rail as candles that actually light the board, and — since the
+          canvas reaches the command bar — the console fittings behind the
+          piles, the End Turn lantern and the Chronicle.
+
+          IT IS A CHILD OF `.battle-stage`, NOT OF `.battlefield`, and that move
+          is the whole of ENGINE_PLAN §21.8's first blocker. `.lantern-arena` is
+          `inset: 0`, so hosting it inside `.battlefield` sized the canvas to
+          that box — measured at 1350x857: y 111..554, while `.hand-zone` starts
+          at 584 and the discard, exhaust and End Turn anchors sit at y 670..812.
+          A fitting placed behind any of them unprojected past the board's near
+          edge and was clipped: drawn, geometrically correct, and never once
+          visible. Hosted here the canvas is the stage's own box (y 90..843) and
+          all three are inside it.
+
+          NOTHING ELSE MOVES. The element is the same element with the same
+          props; `.battlefield` keeps its box, its class, its children and its
+          `--bf-scale` ladder, and the DOM above the canvas keeps every plate,
+          badge, intent, reticle, popup, `title`, `data-enemy-uid` and
+          `data-nav-item` it ever had — including the two heal-aim registrations
+          ENGINE_PLAN §8 item 3 warned about, which work unchanged because their
+          elements were never touched. The camera solve is unaffected in the one
+          way that matters: it keys off the DISTANCE between the two feet lines,
+          and both shift by the same 21px when the origin changes. */}
+      {lantern && (
+        <LanternBattlefield
+          figureRefs={figureRefs}
+          hudRefs={hudRefs}
+          figures={lanternFigures}
+          energy={view.energy}
+          maxEnergy={view.maxEnergy}
+          enemyEnergy={view.enemyEnergy}
+          enemyMaxEnergy={view.enemyMaxEnergy}
+          arenaUrl={(view.backdrop?.gateId && TILE_TEXTURES[view.backdrop.gateId]?.ground) || null}
+          backdropUrl={view.backdrop?.painted ?? null}
+          debug={lanternDebug}
+        />
+      )}
+
       {/* THE LANTERN OVER THE FIGHT — vigor is its FUEL, not its address.
           The first cut hung the light on `.vigor-candles`, reasoning that
           there are literal lit candles drawn on that rail so the light should
@@ -1140,28 +1212,6 @@ export function BattleStage({ view }: { view: BattleView | null }) {
            Each combatant is a battlefield unit — figure, corner badges, nameplate,
            HP groove — replacing the old ff-box strip entirely. ===== */}
       <div className={`battlefield ${view.variant === 'duel' ? 'bf-duel' : ''}`}>
-        {/* THE RENDERER, underneath everything. It draws the slab, the frame,
-            the rim, the table it stands on, the painted flat behind it, every
-            combatant as a piece on a plinth with a contact shadow, and the
-            candle rail as candles that actually light the board. The DOM above
-            it keeps every plate, badge, intent, reticle, popup, `title`,
-            `data-enemy-uid` and `data-nav-item` it ever had — including the two
-            heal-aim registrations ENGINE_PLAN §8 item 3 warned about, which
-            work unchanged because their elements were never touched. */}
-        {lantern && (
-          <LanternBattlefield
-            figureRefs={figureRefs}
-            hudRefs={hudRefs}
-            figures={lanternFigures}
-            energy={view.energy}
-            maxEnergy={view.maxEnergy}
-            enemyEnergy={view.enemyEnergy}
-            enemyMaxEnergy={view.enemyMaxEnergy}
-            arenaUrl={(view.backdrop?.gateId && TILE_TEXTURES[view.backdrop.gateId]?.ground) || null}
-            backdropUrl={view.backdrop?.painted ?? null}
-            debug={lanternDebug}
-          />
-        )}
         {/* ===== THE LEFT RAIL — one object, not three stacked ones =====
             Paul: "I want the Enemy Portrait in the top left and the player
             portrait in the bottom left. They can merge with the Candle Bar on
@@ -1318,7 +1368,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         {/* v18: the combat log rides a RIGHT-side rail, opposite the candles.
             The app shell's bottom .game-log is hidden in battle (battle.css);
             the strip it vacated is where the hand now lives. */}
-        <aside className="battle-log-rail" aria-label="Combat log">
+        <aside className="battle-log-rail" aria-label="Combat log" ref={hudRef(HUD_LOG)}>
           <div className="battle-log-title">Chronicle</div>
           <LogPanel lines={view.log} allyNames={view.allyNames} />
         </aside>
@@ -1757,7 +1807,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
               {pileWidget('exhaust')}
             </div>
           </div>
-          <LanternTurn yours={!locked} onEndTurn={endTurn} />
+          <LanternTurn yours={!locked} onEndTurn={endTurn} hostRef={hudRef(HUD_END_TURN)} />
         </div>
       </div>
 
