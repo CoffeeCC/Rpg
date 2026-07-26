@@ -1076,3 +1076,43 @@ binning** (§12.3, which the emitter direction blocks on), then layers. But the
 height-field data model should be designed before more code is written against
 the binary grid, because every day it stays binary is another consumer to
 migrate.
+
+### 14.1 Revision: erase by light, and erase UPWARD (2026-07-26)
+
+Paul, on the draft above: *"you are probably right about the light spilling
+down layers. if we visually erase a layer it kind of kills that."*
+
+Correct, and working it through inverts the rule.
+
+**Do not erase the lower layer. Do not light it.** It stays physically
+present and dark, and the player sees it only where light spills through a
+gap. That is not a second mechanism bolted on for atmosphere — it is the
+SAME principle §13 already runs on: fog of war is a physical fact, not a UI
+convention. You do not erase the layer below any more than you erase the
+unexplored half of the layer you are standing on. It is dark, and darkness is
+the disambiguator.
+
+It also makes the shaft of light the *only* way to perceive what is below,
+which turns the best image in the engine into information rather than
+decoration.
+
+**The asymmetry is the part the first draft got wrong.** The legibility
+problem is not the layer beneath — it is the layer ABOVE:
+
+- **Below**: already hidden by the floor the player is standing on. Visible
+  only through a hole or over an edge — and a hole is exactly where light
+  falls through. Geometry does most of the hiding and light does the rest,
+  self-consistently. Nothing needs deleting.
+- **Above**: at a 55° tilt an upper platform in front of the player sits
+  BETWEEN THE CAMERA AND THE PIECE. That is what actually breaks the read,
+  and that is what has to fade or cull.
+
+**The rule:** fade geometry above the active layer; keep everything below,
+unlit except where light reaches. The ceiling gets out of the way; the
+basement stays.
+
+Consequence for the renderer: layer visibility is a **fade**, not a cull, and
+it is keyed on elevation relative to the active layer rather than on a layer
+index. A cull would pop as the player climbs; a fade is also what lets an
+upper platform be *partially* transparent at its edge so the player can see
+they are about to walk under something.
