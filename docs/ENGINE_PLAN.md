@@ -1925,6 +1925,65 @@ answering wrongly.
 
 ---
 
+## 19.1 What is ON the console — the inventory (2026-07-26)
+
+§19 settled where the console lives and why it does not move. It did not say
+what is on it. Paul, after seeing the first lit fight:
+
+> *"I would really like the (Player board im going to call ) to be modeled with
+> some nice wood and brass accents. A Dedicated place for the Vigor Candles
+> Player and Enemy Portraits, The Discard Pile, The Exhaust pile or whatever we
+> call that now. Something for the End Turn lantern to fit in to, and the
+> Combat/Chronicle Log. It should all feel like a physical part of the game
+> being played. not just a menu. then i think the Vigor candles wont look so
+> weird. Like the candles should sit in sockets made for them, im debating
+> having a placement for the Cards in hand aswell. but i kind of like the
+> floating."*
+
+**The last three sentences are the important ones**, and they are a diagnosis
+rather than a decoration request.
+
+### Why the candles looked wrong, and why a socket is the actual fix
+
+`9f3cfa0` moved the vigor candles off the battlefield onto the board's left
+frame band, because standing among the combatants made them read as pieces
+(§15). That was right and they still looked odd — because a candle resting on a
+bare strip of timber is a candle someone left there. **A socket is what makes an
+object belong.** It is the same argument as §15's plinth: a piece in a plinth is
+placed, a piece on a floor is dropped. Every item below therefore gets a
+FITTING, not a position.
+
+This also retires the compromise in `FRAME_INSET_TILES`. That constant is 2
+rather than 1 only because the opaque `.bf-rail` HUD panel overlaps ~190px of
+the canvas and the candles had to clear it — a workaround for a DOM panel that
+the console replaces outright. When the console lands, the rail goes, and the
+inset drops back.
+
+### The slots
+
+| slot | what it holds | note |
+|---|---|---|
+| candle sockets | the vigor rail | brass cup, drip pan, collar. Sized to `CANDLE_WIDTH` |
+| portrait bezels | hero and enemy faces | two sizes; brass surround around painted art |
+| discard tray | the discard pile | shallow wooden tray, card-shaped recess |
+| exhaust | exhausted cards | must read as somewhere cards do NOT return from — scorched, a slot or grate, NOT a second tray. Distinguished by SILHOUETTE, not by a label |
+| lantern cradle | the End Turn control | the lantern must look like it belongs there lit AND unlit |
+| log well | the Chronicle | a recessed panel with a lip. §1.2 keeps the TEXT in the DOM; this is the well it sits in, never a texture with words baked into it |
+
+Wood with visible grain, brass with a soft bevel, straps across the seams.
+
+### The one open question
+
+**Cards in hand: undecided, and deliberately left so.** Paul: *"im debating
+having a placement for the Cards in hand aswell. but i kind of like the
+floating."* Both readings are defensible — a fan of cards held above the table
+is exactly what a player's hand does, and it is the one part of the interface
+that genuinely is in your hands rather than on the table. Nothing here should
+foreclose it: the console is designed with the hand floating, and a card ledge
+can be added later without moving anything else.
+
+---
+
 ## 20. It is wired into the game (2026-07-26)
 
 Every section above §19 ends with some version of the same sentence — *"nothing
