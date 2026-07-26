@@ -62,12 +62,41 @@ import {
 import { flamePixels, mushroomPixels, wispPixels } from '../lantern/scene/emitters';
 import { TILE_TEXTURES, SPRITE_ART, ICON_ART } from '../art/iconArt';
 import { PAINTED_MONSTERS } from '../art/paintedCharacters';
-import { MAT_BLANK, MAT_GROUND, MAT_HERO, MAT_WALL, iconTextureId } from './floorScene';
+import {
+  MAT_BLANK,
+  MAT_FRAME,
+  MAT_FRAME_BAKED,
+  MAT_FRAME_BRASS,
+  MAT_GROUND,
+  MAT_HERO,
+  MAT_PLINTH,
+  MAT_PLINTH_LARGE,
+  MAT_PLINTH_SMALL,
+  MAT_RIM,
+  MAT_RIM_BAKED,
+  MAT_RIM_BRASS,
+  MAT_WALL,
+  MAT_WALL_FACE,
+  MAT_WALL_FACE_CHIPPED,
+  MAT_WALL_TOP,
+  MAT_WALL_TOP_WORN,
+  iconTextureId,
+} from './floorScene';
 
 export interface MaterialLibrary {
   materials: Map<string, Material>;
   /** Queue a colour texture for `id` from `url`. Idempotent; a repeat is free. */
   request(id: string, url: string, extra?: Partial<Material>): void;
+  /**
+   * Queue a Blender-baked board shape (§19.1) by its bake NAME rather than a
+   * URL — `wall_top`, `board_frame_brass`, `plinth_large`, and so on.
+   *
+   * Three fetches out of `BAKED_BOARD_ROOT`: `<name>.png` (colour),
+   * `<name>_normal.png` (authored relief) and `<name>_material.png` (the
+   * packed roughness/specular/iridescence/occlusion map). Every one of them is
+   * allowed to 404 — see the file header.
+   */
+  requestFurniture(id: string, name: string, extra?: Partial<Material> & { repeat?: boolean }): void;
   /** True once at least the procedural furniture is up. */
   ready: boolean;
   dispose(): void;
@@ -79,6 +108,22 @@ export interface MaterialLibrary {
 
 /** Published by `tools/art/bake.mjs`. Mirrors `web/art-staging/materials/`. */
 export const BAKED_ROOT = 'art/materials';
+
+/**
+ * The Blender board furniture, published by `tools/art/blender/publish.mjs`.
+ *
+ * A SECOND PIPELINE INTO THE SAME TREE, and the distinction is worth stating
+ * because the two conventions are not compatible. `bakedRef` above parses the
+ * EDT-bevel naming (`<set>/<source basename>_albedo.png`) off a piece of source
+ * ART; these shapes have no source art at all. They are Cycles renders of
+ * modelled geometry, `<name>.png` IS the albedo, and they carry a third map the
+ * bevel path never emits. So they get their own request path rather than being
+ * squeezed through `request`.
+ *
+ * Derived from `BAKED_ROOT` rather than restated, so the two can never drift.
+ * `render/battleMaterials.ts` names the same directory as `BAKED_BOARD_ROOT`.
+ */
+export const BAKED_BOARD_ROOT = `${BAKED_ROOT}/board`;
 
 /**
  * The sets `bake.mjs` knows about, keyed by the `web/public/art/` directory
@@ -143,6 +188,27 @@ export const TILE_RELIEF = 0.35;
  */
 export const PIECE_RELIEF = 1;
 
+/**
+ * How much of a BLENDER BAKE's normal to apply. Full strength, deliberately.
+ *
+ * `TILE_RELIEF` above exists because a derived normal is a GUESS: Sobel over
+ * the luminance of art painted under overhead light, which invents relief the
+ * painter never drew and then falls apart at the grazing angle a knee-height
+ * lantern actually lights the floor from.
+ *
+ * A Blender bake is the opposite case. The normal is rendered from modelled
+ * geometry, so the tilt at every texel is the tilt of a surface that really
+ * exists — a chamfer that is genuinely 30 degrees, a bead that is genuinely
+ * routed 5mm deep. Taming it to 0.35 would flatten authored geometry to a third
+ * of the shape its own AO and material map already agree it has, which is how a
+ * carved frame goes back to looking like a printed one.
+ *
+ * Stated as its own constant rather than reusing `PIECE_RELIEF` because they
+ * are the same number for different reasons, and only one of them is free to
+ * change.
+ */
+export const FURNITURE_RELIEF = 1;
+
 /** Board frame chamfer, per axis — the slab is not square and one fraction
  *  would make the short edges twice as chamfered as the long ones. */
 function frameOptions(width: number, height: number, border: number) {
@@ -176,7 +242,16 @@ export function createMaterialLibrary(
    * invisible — the piece simply lights flat some of the time — which is the
    * worst kind, so the draft is the fix rather than a load ordering.
    */
-  const drafts = new Map<string, { extra: Partial<Material>; albedo: WebGLTexture | null; normal: WebGLTexture | null }>();
+  const drafts = new Map<
+    string,
+    {
+      extra: Partial<Material>;
+      albedo: WebGLTexture | null;
+      normal: WebGLTexture | null;
+      /** The packed R/G/B/A material map. Only the Blender bakes have one. */
+      material: WebGLTexture | null;
+    }
+  >();
 
   const own = <T extends WebGLTexture>(tex: T): T => {
     owned.push(tex);
@@ -206,15 +281,21 @@ export function createMaterialLibrary(
     normalStrength: 1,
   });
 
+  // THE FALLBACKS, and they stay built. Everything below is now the SECOND
+  // choice for the frame and the rim — `floorScene.ts` prefers the Blender
+  // bakes requested further down whenever they have arrived. Kept because
+  // `web/public/art/materials/` is a build artifact: a fresh clone, a `git
+  // clean`, or a machine without Blender has no bake at all, and the board it
+  // draws then has to be yesterday's board rather than a blank slab.
   const fo = frameOptions(board.width, board.height, board.border);
-  materials.set('frame', {
-    id: 'frame',
+  materials.set(MAT_FRAME, {
+    id: MAT_FRAME,
     albedo: own(createRGBATexture(gl, 512, boardFramePixels(512, fo), { srgb: true, mipmap: true })),
     normal: own(createRGBATexture(gl, 512, boardFrameNormalPixels(512, fo), { mipmap: true })),
     normalStrength: 1,
   });
-  materials.set('rim', {
-    id: 'rim',
+  materials.set(MAT_RIM, {
+    id: MAT_RIM,
     albedo: own(createRGBATexture(gl, 256, boardRimPixels(256), { srgb: true, mipmap: true, repeat: true })),
     normal: own(createRGBATexture(gl, 256, boardRimNormalPixels(256), { mipmap: true, repeat: true })),
     normalStrength: 1,
@@ -272,7 +353,12 @@ export function createMaterialLibrary(
    * asking for CORS on a same-origin request is a way to fail on file:// for
    * no benefit.
    */
-  function loadImage(url: string, srgb: boolean, done: (tex: WebGLTexture | null) => void): void {
+  function loadImage(
+    url: string,
+    srgb: boolean,
+    done: (tex: WebGLTexture | null) => void,
+    repeat = false,
+  ): void {
     const img = new Image();
     img.onload = () => {
       if (disposed) return done(null);
@@ -283,8 +369,13 @@ export function createMaterialLibrary(
       gl.texImage2D(gl.TEXTURE_2D, 0, srgb ? gl.SRGB8_ALPHA8 : gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      // CLAMP unless the shape is authored to tile along a run — the board rim
+      // repeats every four tiles and clamping it would smear one copy across
+      // the whole slab edge. Last parameter rather than third so every existing
+      // call site keeps reading `(url, srgb, done)`.
+      const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
       gl.generateMipmap(gl.TEXTURE_2D);
       owned.push(tex);
       done(tex);
@@ -301,7 +392,7 @@ export function createMaterialLibrary(
   function publish(id: string): void {
     const d = drafts.get(id);
     if (disposed || !d || !d.albedo) return;
-    materials.set(id, { id, albedo: d.albedo, normal: d.normal, ...d.extra });
+    materials.set(id, { id, albedo: d.albedo, normal: d.normal, material: d.material, ...d.extra });
   }
 
   /**
@@ -322,6 +413,8 @@ export function createMaterialLibrary(
       extra: baked ? { normalStrength: baked.bevel ? PIECE_RELIEF : TILE_RELIEF, ...extra } : extra,
       albedo: null as WebGLTexture | null,
       normal: null as WebGLTexture | null,
+      // The bevel/tile baker emits no material map — see `requestFurniture`.
+      material: null as WebGLTexture | null,
     };
     drafts.set(id, draft);
 
@@ -358,6 +451,101 @@ export function createMaterialLibrary(
     }
   }
 
+  /**
+   * A Blender-baked board shape: colour, authored relief, and what it is MADE OF.
+   *
+   * Deliberately the same shape as `render/battleMaterials.ts`'s
+   * `requestFurniture` rather than a second design — the arena and the map draw
+   * the same fittings out of the same directory, and two independent answers to
+   * "where is this shape's normal map" is exactly how the two screens came to
+   * disagree about which cut of a sprite was the real one (§21.7).
+   *
+   * THE UPLOAD RULES, and only the first one is the obvious half. Colour is
+   * `SRGB8_ALPHA8`. The normal is `RGBA8` — 0.5 means "no tilt on this axis"
+   * and an sRGB decode turns it into 0.21. The MATERIAL MAP is `RGBA8` for the
+   * same reason twice over: every one of its four channels is a NUMBER, not a
+   * colour, and an sRGB decode would bend all four at once — turning brass's
+   * 0.12 roughness into 0.014 and making a fitting a mirror.
+   *
+   * Publishes the moment the ALBEDO lands, per the draft pattern above, so a
+   * frame or a plinth appears flat-shaded rather than waiting on three fetches;
+   * the other two fill in whenever they finish, in whichever order.
+   */
+  function requestFurniture(
+    id: string,
+    name: string,
+    extra: Partial<Material> & { repeat?: boolean } = {},
+  ): void {
+    if (disposed || materials.has(id) || drafts.has(id)) return;
+    const { repeat = false, ...matExtra } = extra;
+    const draft = {
+      // Full strength: this relief is MODELLED, not derived. See FURNITURE_RELIEF.
+      extra: { normalStrength: FURNITURE_RELIEF, ...matExtra } as Partial<Material>,
+      albedo: null as WebGLTexture | null,
+      normal: null as WebGLTexture | null,
+      material: null as WebGLTexture | null,
+    };
+    drafts.set(id, draft);
+    loadImage(
+      `${BAKED_BOARD_ROOT}/${name}.png`,
+      true,
+      (tex) => {
+        draft.albedo = tex;
+        publish(id);
+      },
+      repeat,
+    );
+    loadImage(
+      `${BAKED_BOARD_ROOT}/${name}_normal.png`,
+      false,
+      (tex) => {
+        draft.normal = tex;
+        publish(id);
+      },
+      repeat,
+    );
+    loadImage(
+      `${BAKED_BOARD_ROOT}/${name}_material.png`,
+      false,
+      (tex) => {
+        draft.material = tex;
+        publish(id);
+      },
+      repeat,
+    );
+  }
+
+  // -----------------------------------------------------------------------
+  // THE BOARD'S OWN FURNITURE (§11, §19.1)
+  //
+  // Nineteen published material maps were dead weight until this block: the
+  // frame, the rim and the walls were all SYNTHESISED — `boardFramePixels`,
+  // `boardRimPixels`, `woodField` — so the ornament pass that put brass at
+  // every wood joint, cathedral figure in the timber and lathe-turned profiles
+  // on the fittings never reached the map at all.
+  //
+  // The procedural generators above are still built and still registered, and
+  // that is the safety: every one of these ids is asked for by `has()` in
+  // `floorScene.ts`, so a checkout that has never run `npm run art:board` draws
+  // exactly the board that shipped yesterday instead of a hole.
+  //
+  // BRASS IS ITS OWN ID EVERYWHERE IT EXISTS. `split()` renders `<name>` and
+  // `<name>_brass` from one assembly through one camera frame so the two can
+  // carry different material maps and be drawn as two quads at one rect.
+  // -----------------------------------------------------------------------
+  requestFurniture(MAT_FRAME_BAKED, 'board_frame');
+  requestFurniture(MAT_FRAME_BRASS, 'board_frame_brass');
+  // The rim tiles along the slab's edge, so it is the one shape that wraps.
+  requestFurniture(MAT_RIM_BAKED, 'board_rim', { repeat: true });
+  requestFurniture(MAT_RIM_BRASS, 'board_rim_brass', { repeat: true });
+  requestFurniture(MAT_WALL_TOP, 'wall_top');
+  requestFurniture(MAT_WALL_TOP_WORN, 'wall_top_worn');
+  requestFurniture(MAT_WALL_FACE, 'wall_face');
+  requestFurniture(MAT_WALL_FACE_CHIPPED, 'wall_face_chipped');
+  requestFurniture(MAT_PLINTH, 'plinth');
+  requestFurniture(MAT_PLINTH_SMALL, 'plinth_small');
+  requestFurniture(MAT_PLINTH_LARGE, 'plinth_large');
+
   const tiles = TILE_TEXTURES[gateId];
   if (tiles) {
     // `inlay` is what stops the floor reading as one continuous slab of rock:
@@ -377,6 +565,7 @@ export function createMaterialLibrary(
   return {
     materials,
     request,
+    requestFurniture,
     ready: true,
     dispose() {
       if (disposed) return;

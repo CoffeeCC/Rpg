@@ -20,16 +20,31 @@ import type { Material } from '../../lantern/scene/scene';
 import { isSolid } from '../../lantern/scene/scene';
 import {
   MAT_BLANK,
+  MAT_FRAME,
+  MAT_FRAME_BAKED,
+  MAT_FRAME_BRASS,
   MAT_GROUND,
   MAT_HERO,
+  MAT_PLINTH,
+  MAT_PLINTH_LARGE,
+  MAT_PLINTH_SMALL,
+  MAT_RIM,
+  MAT_RIM_BAKED,
+  MAT_RIM_BRASS,
   MAT_WALL,
+  MAT_WALL_FACE,
+  MAT_WALL_FACE_CHIPPED,
+  MAT_WALL_TOP,
+  MAT_WALL_TOP_WORN,
   blockHeight,
   buildFloorScene,
   iconTextureId,
   objectIcon,
+  plinthFor,
   resolvedTile,
   snapshotFloor,
   unitTextureId,
+  wallCut,
 } from '../floorScene';
 
 function expedition(): GameState {
@@ -323,5 +338,221 @@ describe('identity helpers', () => {
     expect(max - min).toBeGreaterThan(0.05);
     // Deterministic: the same tile is the same height forever.
     expect(blockHeight(4, 7)).toBe(blockHeight(4, 7));
+  });
+});
+
+// =========================================================================
+// THE BLENDER BAKES ACTUALLY REACHING THE MAP.
+//
+// The state this replaces: nineteen published material maps and not one line
+// that loaded any of them. `materials.ts` and `battleMaterials.ts` both
+// SYNTHESISED their frame, rim and wood — `boardFramePixels`, `boardRimPixels`,
+// `woodField` — so the ornament pass that put brass at every wood joint and
+// lathe-turned profiles on the fittings was invisible on the board.
+//
+// Every test below is written to FAIL against that code rather than to
+// describe this one, which for a swap like this means asserting the NEGATIVE:
+// that when a bake is available the procedural stand-in is no longer drawn at
+// all. A test that merely found a baked sprite would have passed on a build
+// that drew both, one over the other.
+// =========================================================================
+describe('the map draws the baked furniture, not the procedural stand-ins', () => {
+  const BAKED = [
+    MAT_FRAME_BAKED,
+    MAT_FRAME_BRASS,
+    MAT_RIM_BAKED,
+    MAT_RIM_BRASS,
+    MAT_WALL_TOP,
+    MAT_WALL_TOP_WORN,
+    MAT_WALL_FACE,
+    MAT_WALL_FACE_CHIPPED,
+    MAT_PLINTH,
+    MAT_PLINTH_SMALL,
+    MAT_PLINTH_LARGE,
+  ];
+
+  /** Everything the fallback board needs, plus every bake. */
+  function bakedMaterials(): Map<string, Material> {
+    const m = allMaterials();
+    for (const id of BAKED) m.set(id, { id, albedo: null });
+    return m;
+  }
+
+  const build = (materials: Map<string, Material>) => {
+    const state = expedition();
+    const snap = snapshotFloor(state.expedition!, state.player!, false);
+    // Reveal everything: an unrevealed tile is fog, and fog draws no wall.
+    for (let y = 0; y < snap.height; y++) for (let x = 0; x < snap.width; x++) snap.revealed.add(`${x},${y}`);
+    const scene = buildFloorScene(snap, {
+      camera: CAMERA,
+      time: 0,
+      heroAt: snap.heroTile,
+      materials,
+      emitters: false,
+    });
+    return { snap, scene };
+  };
+
+  it('THE POINT: not one wall is still drawn with the painted tile texture', () => {
+    // The old builder handed `MAT_WALL` to every block, top and front. This is
+    // the assertion that would have failed then, and that fails again the
+    // moment anyone reverts the wall path.
+    const { scene } = build(bakedMaterials());
+    expect(scene.sprites.some((s) => s.textureId === MAT_WALL)).toBe(false);
+    const tops = scene.sprites.filter((s) => s.textureId === MAT_WALL_TOP || s.textureId === MAT_WALL_TOP_WORN);
+    const faces = scene.sprites.filter((s) => s.textureId === MAT_WALL_FACE || s.textureId === MAT_WALL_FACE_CHIPPED);
+    expect(tops.length).toBeGreaterThan(20);
+    expect(faces.length).toBeGreaterThan(10);
+    // A top LIES on the board at the block's height; a face STANDS UP. Getting
+    // these the same way round is what makes a wall a block rather than a tile
+    // with a picture bolted to its near edge.
+    for (const t of tops) expect(t.upright).toBeUndefined();
+    for (const f of faces) {
+      expect(f.upright).toBe(true);
+      expect(f.uv).toEqual({ u0: 0, v0: 0, u1: 1, v1: 1 });
+    }
+  });
+
+  it('gives a baked block the whole texture, not a quarter of a 4x4 atlas', () => {
+    // `cellUv` windows the painted tile art so neighbours do not visibly
+    // repeat. A bake IS one tile; sampling a quarter of it would draw a
+    // quarter of a stone block stretched over a whole one.
+    const { scene } = build(bakedMaterials());
+    const top = scene.sprites.find((s) => s.textureId === MAT_WALL_TOP)!;
+    expect(top.uv).toEqual({ u0: 0, v0: 0, u1: 1, v1: 1 });
+    // And the variety `cellUv` used to buy now comes from the CUT, so a run of
+    // wall must not be one shape repeated.
+    const worn = scene.sprites.filter((s) => s.textureId === MAT_WALL_TOP_WORN);
+    expect(worn.length).toBeGreaterThan(3);
+  });
+
+  it('drops the fake shading, because the bake carries real relief', () => {
+    // The tints darkened the front face to stand in for an occlusion the
+    // painted art could not carry. `wall_face` has real AO in its material
+    // map's alpha; multiplying it down again would double the darkening.
+    const { scene } = build(bakedMaterials());
+    for (const s of scene.sprites) {
+      if (s.textureId === MAT_WALL_TOP || s.textureId === MAT_WALL_FACE) expect(s.tint).toBeUndefined();
+    }
+    // The fallback keeps them, unchanged.
+    const plain = build(allMaterials()).scene.sprites.filter((s) => s.textureId === MAT_WALL);
+    expect(plain.some((s) => s.tint !== undefined)).toBe(true);
+  });
+
+  it('replaces the one-quad frame with a registered ring, and adds its brass', () => {
+    const { scene } = build(bakedMaterials());
+    expect(scene.sprites.some((s) => s.textureId === MAT_FRAME)).toBe(false);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_FRAME_BAKED)).toHaveLength(8);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_FRAME_BRASS)).toHaveLength(8);
+  });
+
+  it('replaces the procedural rim and lays its brass strap over it', () => {
+    const { scene } = build(bakedMaterials());
+    expect(scene.sprites.some((s) => s.textureId === MAT_RIM)).toBe(false);
+    const timber = scene.sprites.find((s) => s.textureId === MAT_RIM_BAKED)!;
+    const brass = scene.sprites.find((s) => s.textureId === MAT_RIM_BRASS)!;
+    expect(brass.position).toEqual(timber.position);
+    expect(brass.size).toEqual(timber.size);
+  });
+
+  it('stands every piece in a turned plinth instead of the generated disc', () => {
+    const { scene } = build(bakedMaterials());
+    expect(scene.sprites.some((s) => s.textureId === 'base')).toBe(false);
+    expect(scene.sprites.some((s) => s.textureId === MAT_PLINTH)).toBe(true);
+    expect(scene.sprites.some((s) => s.textureId === MAT_PLINTH_SMALL)).toBe(true);
+  });
+
+  it('EVERY ONE OF THEM DEGRADES to the board that shipped, never to a hole', () => {
+    // The safety property, and the reason this is landable at all:
+    // `web/public/art/materials/` is a build artifact, so a fresh clone or a
+    // `git clean` has none of these. Asserted as a whole-scene equality
+    // against the pre-bake build, not merely as "it does not throw".
+    const { snap, scene } = build(allMaterials());
+    expect(scene.sprites.some((s) => s.textureId === MAT_WALL)).toBe(true);
+    expect(scene.sprites.some((s) => s.textureId === MAT_FRAME)).toBe(true);
+    expect(scene.sprites.some((s) => s.textureId === MAT_RIM)).toBe(true);
+    expect(scene.sprites.some((s) => s.textureId === 'base')).toBe(true);
+    // And nothing baked leaked into it.
+    for (const id of BAKED) expect(scene.sprites.some((s) => s.textureId === id)).toBe(false);
+    // Byte for byte the same scene when the ids are merely absent rather than
+    // never considered — which is what a fresh checkout actually looks like.
+    const again = buildFloorScene(snap, {
+      camera: CAMERA,
+      time: 0,
+      heroAt: snap.heroTile,
+      materials: allMaterials(),
+      emitters: false,
+    });
+    expect(JSON.stringify(again.sprites)).toBe(JSON.stringify(scene.sprites));
+  });
+
+  it('is still deterministic with the bakes in — the cut is hashed, not random', () => {
+    const state = expedition();
+    const snap = snapshotFloor(state.expedition!, state.player!, false);
+    const go = () =>
+      buildFloorScene(snap, { camera: CAMERA, time: 1.5, heroAt: snap.heroTile, materials: bakedMaterials() });
+    expect(JSON.stringify(go().sprites)).toBe(JSON.stringify(go().sprites));
+  });
+});
+
+describe('the two halves of a wall block are taken together or not at all', () => {
+  it('THE TRAP: a half-arrived bake falls back rather than mixing normal bases', () => {
+    // `wallBlockSprites` paints ONE texture onto both faces. With `wall_top`
+    // loaded and `wall_face` still in flight, a naive check would put a LYING
+    // render onto an UPRIGHT quad — and the two bake different normal bases
+    // (lying maps texture G to board y, upright maps it to board z), so every
+    // wall on the board would light as though tipped on its back until the
+    // second fetch landed. Silent, transient, and exactly the kind of thing
+    // nobody screenshots.
+    const only = (...ids: string[]) => (id: string) => ids.includes(id);
+    expect(wallCut(3, 4, only(MAT_WALL_TOP)).baked).toBe(false);
+    expect(wallCut(3, 4, only(MAT_WALL_FACE)).baked).toBe(false);
+    expect(wallCut(3, 4, only(MAT_WALL_TOP, MAT_WALL_FACE)).baked).toBe(true);
+    expect(wallCut(3, 4, only(MAT_WALL_TOP)).top).toBe(MAT_WALL);
+  });
+
+  it('varies the cut deterministically, and only where the variant exists', () => {
+    const both = (id: string) => id === MAT_WALL_TOP || id === MAT_WALL_FACE;
+    let worn = 0;
+    for (let y = 0; y < 30; y++) {
+      for (let x = 0; x < 30; x++) {
+        const all = wallCut(x, y, () => true);
+        if (all.top === MAT_WALL_TOP_WORN) {
+          worn++;
+          // The two halves of one block always agree about which cut it is.
+          expect(all.face).toBe(MAT_WALL_FACE_CHIPPED);
+        }
+        // Without the variants published, a block still gets the plain cut
+        // rather than an id nothing will ever supply.
+        expect(both(MAT_WALL_TOP_WORN)).toBe(false);
+        expect(wallCut(x, y, both).top).toBe(MAT_WALL_TOP);
+      }
+    }
+    expect(worn).toBeGreaterThan(100);
+    expect(worn).toBeLessThan(450);
+    expect(wallCut(7, 9, () => true).top).toBe(wallCut(7, 9, () => true).top);
+  });
+});
+
+describe('a piece stands in the plinth its rank calls for', () => {
+  it('gives rank, hero and boss three different bases, not one at three zooms', () => {
+    // ENGINE_PLAN Â§15: the three plinths are three RIM TREATMENTS as well as
+    // three sizes, because sizes alone read as one base at three zooms.
+    const has = () => true;
+    expect(plinthFor('unit', has).id).toBe(MAT_PLINTH_SMALL);
+    expect(plinthFor('hero', has).id).toBe(MAT_PLINTH);
+    expect(plinthFor('miniboss', has).id).toBe(MAT_PLINTH_LARGE);
+    expect(plinthFor('miniboss', has).radius).toBeGreaterThan(plinthFor('hero', has).radius);
+    expect(plinthFor('hero', has).radius).toBeGreaterThan(plinthFor('unit', has).radius);
+  });
+
+  it('draws the bake at its FRAME, not at the plinth, so it is not 4% small', () => {
+    // A free-standing shape is rendered with margin around it for Cycles'
+    // filter to put the anti-aliased silhouette in. Sizing the quad to the
+    // plinth's diameter would shrink the plinth itself by that margin.
+    const none = () => false;
+    expect(plinthFor('hero', none).id).toBe('base');
+    expect(plinthFor('hero', none).radius).toBeCloseTo(0.4, 6);
+    expect(plinthFor('hero', () => true).radius).toBeCloseTo(0.4 * 1.04, 6);
   });
 });

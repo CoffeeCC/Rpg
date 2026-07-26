@@ -15,6 +15,8 @@
 // =========================================================================
 import { describe, expect, it } from 'vitest';
 import {
+  BAKED_FRAME,
+  BAKED_RIM_HEIGHT,
   boardFrameNormalPixels,
   boardFramePixels,
   boardRimPixels,
@@ -266,5 +268,143 @@ describe('the frame chamfer', () => {
     const px = boardRimPixels(SIZE);
     const at = (y: number) => px[(y * SIZE + SIZE / 2) * 4];
     expect(at(SIZE - 1)).toBeLessThan(at(SIZE / 2));
+  });
+});
+
+// =========================================================================
+// THE BLENDER FRAME, CUT INTO WINDOWS.
+//
+// The bug these exist to reject is the one that would be easiest to ship:
+// dropping `board_frame` into the existing single quad. It type-checks, it
+// loads, it draws — and the timber band's width is then a fixed FRACTION of a
+// slab whose aspect is nothing like the bake's, so the brass bead lands
+// several tiles inside the play area and every tile draws over it. That is
+// invisible in a unit test that only asserts "a frame sprite exists", so
+// these assert REGISTRATION: where the bake's own features land in tiles.
+// =========================================================================
+describe('the baked frame registers with the board it is drawn on', () => {
+  const WINDOWS = { textureId: 'board_frame', brassTextureId: 'board_frame_brass' };
+  const ring = (o: Partial<typeof SLAB> = {}) =>
+    boardSlabSprites({ ...SLAB, ...o, frameWindows: WINDOWS }).filter((s) => s.textureId === 'board_frame');
+
+  /** The texture coordinate of the slab's outer edge, and of a window's inner one. */
+  const outer = BAKED_FRAME.play + BAKED_FRAME.border * 2;
+  const tex = outer * BAKED_FRAME.margin;
+  const pad = (tex - outer) / 2;
+
+  it('THE REPRO: the corner keeps its size in tiles whatever the aspect is', () => {
+    // A single stretched quad cannot do this — its border band is a fraction
+    // of the quad, so a 22x14 slab gets a top band 1.57x the width of its side
+    // band. Corner windows are the fix and this is the assertion that they
+    // work: same corner, in tiles, on a wide board and on a tall one.
+    const band = BAKED_FRAME.window * (1.35 / BAKED_FRAME.border);
+    for (const shape of [{ width: 22, height: 14 }, { width: 8, height: 30 }]) {
+      const corner = ring(shape)[0];
+      expect(corner.size.x).toBeCloseTo(band, 6);
+      expect(corner.size.y).toBeCloseTo(band, 6);
+    }
+  });
+
+  it('THE REGISTRATION: the frame band ends exactly where the play area begins', () => {
+    // The one number that has to be right. The bake is 1.1 tiles of timber
+    // around 4 tiles of play; the board is 1.35 around 22. Interpolate the
+    // corner window's UV to board x = 0 and it must land on the bake's own
+    // play boundary — otherwise the bead, the rebate and the mitre all sit at
+    // the wrong radius and no amount of eyeballing says by how much.
+    const slab = slabBounds(SLAB);
+    const corner = ring()[0];
+    const t = (0 - corner.position.x) / corner.size.x;
+    const u = corner.uv.u0 + t * (corner.uv.u1 - corner.uv.u0);
+    expect(u).toBeCloseTo((pad + BAKED_FRAME.border) / tex, 6);
+    // ...and on the other axis, and on the far side, which a formula that
+    // happened to work only from the origin would fail.
+    const far = ring()[ring().length - 1];
+    const tv = (14 - far.position.y) / far.size.y;
+    const v = far.uv.v0 + tv * (far.uv.v1 - far.uv.v0);
+    expect(v).toBeCloseTo(1 - (pad + BAKED_FRAME.border) / tex, 6);
+    expect(far.position.x + far.size.x).toBeCloseTo(slab.x + slab.width, 6);
+  });
+
+  it('omits the middle, because the tile grid draws it', () => {
+    // Eight quads, not nine. The ninth would be a full-board quad of the
+    // bake's rebate floor sitting under every tile for nothing.
+    expect(ring()).toHaveLength(8);
+    for (const s of ring()) {
+      const insideX = s.position.x > 0.5 && s.position.x + s.size.x < 22 - 0.5;
+      const insideY = s.position.y > 0.5 && s.position.y + s.size.y < 14 - 0.5;
+      expect(insideX && insideY).toBe(false);
+    }
+  });
+
+  it('THE ORDER: a ring has a near side, so it must be told to draw first', () => {
+    // The single quad sorted before every tile for free — its anchor was the
+    // outer corner and every tile's y was greater. Two of a ring's eight quads
+    // anchor PAST the last row of tiles, so without a layer they would paint
+    // timber across the front of the dungeon.
+    const slab = slabBounds(SLAB);
+    const near = ring().filter((s) => s.position.y > 13);
+    expect(near.length).toBe(3);
+    for (const s of ring()) expect(spriteLayer(s)).toBeLessThan(LAYER_BOARD);
+    for (const s of ring()) expect(spriteLayer(s)).toBeGreaterThan(LAYER_TABLE);
+    expect(near[0].position.y + near[0].size.y).toBeCloseTo(slab.y + slab.height, 6);
+  });
+
+  it('draws the brass as its own quads, at the identical rects', () => {
+    // `split()` renders the timber and the brass from one assembly through one
+    // camera frame precisely so they can be two draws with two material maps —
+    // roughness 0.12 against 0.86. Merged, the inlay lights like oak, which is
+    // the whole thing §19.1 asks for undone.
+    const all = boardSlabSprites({ ...SLAB, frameWindows: WINDOWS });
+    const brass = all.filter((s) => s.textureId === 'board_frame_brass');
+    expect(brass).toHaveLength(8);
+    for (let i = 0; i < 8; i++) {
+      expect(brass[i].position).toEqual(ring()[i].position);
+      expect(brass[i].size).toEqual(ring()[i].size);
+      expect(brass[i].uv).toEqual(ring()[i].uv);
+      // Over its own timber, never under it.
+      expect(spriteLayer(brass[i])).toBeGreaterThan(spriteLayer(ring()[i]));
+    }
+  });
+
+  it('falls back to the one generated quad when there is no bake', () => {
+    // `web/public/art/materials/` is a build artifact. A fresh clone has no
+    // frame at all and must draw yesterday's board, not a hole.
+    const bare = boardSlabSprites(SLAB);
+    expect(bare).toHaveLength(1);
+    expect(bare[0].textureId).toBe('frame');
+    expect(spriteLayer(bare[0])).toBe(LAYER_BOARD);
+  });
+});
+
+describe('the baked rim keeps its aspect', () => {
+  it('scales the repeat length with the slab thickness, so bolts stay round', () => {
+    // `board_rim` is 4 tiles long and 0.34 tall. Drawn on a 0.5-thick slab at
+    // the flat 4-tile repeat it is stretched 1.47x vertically and the strap's
+    // bolt heads come out as ovals — a distortion that is obvious on screen
+    // and completely invisible in "is there a rim sprite" test.
+    const repeat = (4 * 0.5) / BAKED_RIM_HEIGHT;
+    const rim = boardSlabSprites({ ...SLAB, rimTextureId: 'rim:baked', rimRepeat: repeat }).find(
+      (s) => s.textureId === 'rim:baked',
+    )!;
+    // One repeat of the texture must be as many times wider than it is tall as
+    // the bake itself is.
+    const tilesPerRepeat = rim.size.x / rim.uv.u1;
+    expect(tilesPerRepeat / rim.size.y).toBeCloseTo(4 / BAKED_RIM_HEIGHT, 5);
+  });
+
+  it('lays the brass strap over the timber at the identical rect', () => {
+    const parts = boardSlabSprites({ ...SLAB, rimTextureId: 'rim:baked', rimBrassTextureId: 'rim:brass' });
+    const timber = parts.find((s) => s.textureId === 'rim:baked')!;
+    const brass = parts.find((s) => s.textureId === 'rim:brass')!;
+    expect(brass.position).toEqual(timber.position);
+    expect(brass.size).toEqual(timber.size);
+    expect(brass.uv).toEqual(timber.uv);
+    // Same position and layer, so only the stable sort keeps brass on top.
+    expect(parts.indexOf(brass)).toBeGreaterThan(parts.indexOf(timber));
+  });
+
+  it('keeps the flat four-tile repeat when the rim is the generated one', () => {
+    const rim = boardSlabSprites({ ...SLAB, rimTextureId: 'rim' }).find((s) => s.textureId === 'rim')!;
+    expect(rim.uv.u1).toBeCloseTo(slabBounds(SLAB).width / 4, 6);
   });
 });

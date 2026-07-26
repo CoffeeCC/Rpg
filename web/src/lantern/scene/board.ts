@@ -87,6 +87,56 @@ export function ledgeFace(o: LedgeFaceOptions): Sprite {
 // THE SLAB
 // -------------------------------------------------------------------------
 
+/**
+ * A Blender-baked frame, cut into windows instead of stretched over the slab.
+ *
+ * `board_frame` is ONE square render of a whole frame — 4 tiles of play area
+ * inside a 1.1-tile band of timber — and stretching that over a 22x14 board is
+ * the one thing it must not do: the border band is a fixed FRACTION of the
+ * texture, so on a 22-wide slab the brass bead would land four tiles inside the
+ * play area and the tiles would draw straight over it. `bake.py`'s own comment
+ * on `build_frame` says as much ("Corner-plus-edge is the version that survives
+ * a board whose aspect is not 1:1").
+ *
+ * So the ring is cut out of the bake as a 3x3 of UV windows with the middle
+ * omitted, and the corner windows keep their exact size while only the four
+ * edge runs stretch along their length. That costs the timber figure some
+ * sharpness on a long run and buys three things that matter more: every mitre,
+ * bead and corner bracket lands at its real width whatever the board's aspect,
+ * and — the reason it is windows rather than mirrored strips — EVERY WINDOW IS
+ * IN ITS NATIVE ORIENTATION. A mirrored quad would need its normal map's
+ * matching channel negated to stay correct (LYING maps texture RGB to board
+ * x/y/z directly), the vertex format carries no flip flag, and the error would
+ * be invisible until the lantern moved past it.
+ */
+export interface FrameWindows {
+  /** The `board_frame` bake — the timber half. */
+  textureId: string;
+  /** Its `_brass` half, drawn over the timber at the identical rects. */
+  brassTextureId?: string;
+}
+
+/**
+ * `tools/art/blender/bake.py`'s frame numbers, in TILES.
+ *
+ * Restated here rather than imported because nothing joins the two programs at
+ * runtime — a change on either side has to fail a test rather than a
+ * screenshot. `FRAME_PLAY`, `FRAME_BORDER`, `MARGIN` and `FRAME_WINDOW` there.
+ */
+export const BAKED_FRAME = {
+  /** Play area the frame was modelled around. */
+  play: 4,
+  /** Width of the timber band. This is what sets the scale of everything. */
+  border: 1.1,
+  /** Empty space the render leaves around the slab, as a multiplier. */
+  margin: 1.04,
+  /** How far a corner or edge window reaches in from the slab's outer edge. */
+  window: 1.5,
+} as const;
+
+/** Height the `board_rim` bake was authored at, in tiles. */
+export const BAKED_RIM_HEIGHT = 0.34;
+
 export interface BoardSlabOptions {
   /** Play area, in tiles. The tile grid occupies [0,width) x [0,height). */
   width: number;
@@ -96,7 +146,21 @@ export interface BoardSlabOptions {
   /** How thick the slab is, in tiles. This is what the rim shows. */
   thickness?: number;
   frameTextureId: string;
+  /** A baked frame, cut into windows. Falls back to `frameTextureId` when absent. */
+  frameWindows?: FrameWindows;
   rimTextureId?: string;
+  /** The rim bake's `_brass` half — the strap and its bolts at every seam. */
+  rimBrassTextureId?: string;
+  /**
+   * Tiles per repeat of the rim texture.
+   *
+   * 4 by default, which is what `board_rim` is baked at. It is a knob because
+   * it is the ONLY way to keep a baked rim's aspect honest: the quad's height
+   * is the slab's thickness, so a 0.5-thick slab showing a 4x0.34 bake stretches
+   * it by half again and the strap's bolt heads come out as ovals. Scaling the
+   * repeat length by the same factor scales the bake uniformly instead.
+   */
+  rimRepeat?: number;
   tableTextureId?: string;
   /** Soft darkening the slab casts onto the table. */
   shadowTextureId?: string;
@@ -114,12 +178,106 @@ const SLAB_DEFAULTS = {
   thickness: 0.34,
   tableMargin: 14,
   tableGrain: 7,
+  rimRepeat: 4,
 };
+
+/**
+ * Where the frame ring draws: after the table, before every tile.
+ *
+ * The one-quad frame never had to be told this. Its anchor is the slab's outer
+ * corner, so every tile's `y` was strictly greater and the painter sort put it
+ * first for free. A RING has a NEAR SIDE — the bottom edge and the two bottom
+ * corners anchor past the last row of tiles and would therefore draw OVER the
+ * board, painting timber across the front row of the dungeon. So the ordering
+ * that used to fall out of the geometry now has to be stated. Half a layer,
+ * so nothing else in `sprite.ts`'s ladder has to move.
+ */
+const LAYER_FRAME = LAYER_BOARD - 0.5;
+/** The brass inlay and corner brackets, over their own timber. */
+const LAYER_FRAME_BRASS = LAYER_BOARD - 0.4;
 
 /** The rectangle the slab occupies, frame included, in tiles. */
 export function slabBounds(o: BoardSlabOptions): { x: number; y: number; width: number; height: number } {
   const b = o.border ?? SLAB_DEFAULTS.border;
   return { x: -b, y: -b, width: o.width + b * 2, height: o.height + b * 2 };
+}
+
+/** One axis of the 3x3 cut: where each band starts, how wide it is, and the
+ *  slice of the bake it shows. */
+interface Band {
+  at: number;
+  size: number;
+  t0: number;
+  t1: number;
+}
+
+/**
+ * Cut one axis of the bake into outer-band / stretched-middle / outer-band.
+ *
+ * `span` is the slab's extent on this axis in tiles and `at` its lower edge.
+ * The two outer bands keep the bake's own proportions; only the middle moves.
+ */
+function frameBands(at: number, span: number, border: number): Band[] {
+  const outer = BAKED_FRAME.play + BAKED_FRAME.border * 2;
+  const tex = outer * BAKED_FRAME.margin;
+  // The render leaves empty space around the slab, so the slab's own outer
+  // edge is this far into the texture rather than at 0.
+  const pad = (tex - outer) / 2;
+  // Tiles per bake unit. The board's border may be wider than the 1.1 the
+  // frame was modelled at, and everything scales off that one ratio.
+  const k = border / BAKED_FRAME.border;
+  const band = BAKED_FRAME.window * k;
+  const near = (pad + BAKED_FRAME.window) / tex;
+  const bands: Band[] = [{ at, size: band, t0: pad / tex, t1: near }];
+  const middle = span - band * 2;
+  // A board narrower than two windows has no middle at all. Skipped rather
+  // than clamped: a negative-width quad draws inside out.
+  if (middle > 0) bands.push({ at: at + band, size: middle, t0: near, t1: 1 - near });
+  bands.push({ at: at + span - band, size: band, t0: 1 - near, t1: 1 - pad / tex });
+  return bands;
+}
+
+/**
+ * The baked frame as a ring of quads — timber first, then its brass.
+ *
+ * THE BRASS IS ITS OWN SPRITE ON PURPOSE, at the identical rect. `split()` in
+ * `bake.py` renders `board_frame` and `board_frame_brass` from one assembly
+ * through one camera frame precisely so the metal can be a separate draw: the
+ * two halves carry different material maps (roughness 0.12 against 0.86), and
+ * a single quad carrying both an oak rail and a brass inlay can only be one or
+ * the other. Merging them back into one texture would throw away the entire
+ * reason the bake is split.
+ */
+function frameRingSprites(
+  slab: { x: number; y: number; width: number; height: number },
+  border: number,
+  windows: FrameWindows,
+  tint?: Tint,
+): Sprite[] {
+  const cols = frameBands(slab.x, slab.width, border);
+  const rows = frameBands(slab.y, slab.height, border);
+  const ring = (textureId: string, layer: number): Sprite[] => {
+    const out: Sprite[] = [];
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < cols.length; c++) {
+        // The middle of the 3x3 is the play area, and the tile grid draws it.
+        if (cols.length === 3 && rows.length === 3 && c === 1 && r === 1) continue;
+        out.push({
+          position: { x: cols[c].at, y: rows[r].at, z: 0 },
+          size: { x: cols[c].size, y: rows[r].size },
+          pivot: { x: 0, y: 0 },
+          uv: { u0: cols[c].t0, v0: rows[r].t0, u1: cols[c].t1, v1: rows[r].t1 },
+          textureId,
+          tint,
+          layer,
+        });
+      }
+    }
+    return out;
+  };
+  const out = ring(windows.textureId, LAYER_FRAME);
+  if (windows.brassTextureId) out.push(...ring(windows.brassTextureId, LAYER_FRAME_BRASS));
+  return out;
 }
 
 /**
@@ -186,33 +344,48 @@ export function boardSlabSprites(o: BoardSlabOptions, camera?: Camera): Sprite[]
     });
   }
 
-  out.push({
-    position: { x: slab.x, y: slab.y, z: 0 },
-    size: { x: slab.width, y: slab.height },
-    pivot: { x: 0, y: 0 },
-    uv: FULL_UV,
-    textureId: o.frameTextureId,
-    tint: o.frameTint,
-    layer: LAYER_BOARD,
-  });
+  // A REAL BAKE IF THERE IS ONE, the generated chamfer if there is not. The
+  // fallback is not politeness: `web/public/art/materials/` is a build
+  // artifact, so a fresh clone that has never run `npm run art:board` has no
+  // frame at all, and the board it draws must be the one that shipped before
+  // the bake existed rather than a hole.
+  if (o.frameWindows) {
+    out.push(...frameRingSprites(slab, o.border ?? SLAB_DEFAULTS.border, o.frameWindows, o.frameTint));
+  } else {
+    out.push({
+      position: { x: slab.x, y: slab.y, z: 0 },
+      size: { x: slab.width, y: slab.height },
+      pivot: { x: 0, y: 0 },
+      uv: FULL_UV,
+      textureId: o.frameTextureId,
+      tint: o.frameTint,
+      layer: LAYER_BOARD,
+    });
+  }
 
   if (o.rimTextureId) {
     // The only face of the slab that has any area. In an orthographic,
     // axis-aligned projection the left and right sides are exactly edge-on
     // and the back is behind the board — so a rim is one quad, and the sides
     // are sold by the frame's chamfer catching the light instead.
-    out.push(
+    const repeat = o.rimRepeat ?? SLAB_DEFAULTS.rimRepeat;
+    const uv = { u0: 0, v0: 0, u1: slab.width / repeat, v1: 1 };
+    const face = (textureId: string): Sprite =>
       ledgeFace({
         x: slab.x,
         width: slab.width,
         y: slab.y + slab.height,
         top: 0,
         bottom: -thickness,
-        textureId: o.rimTextureId,
-        uv: { u0: 0, v0: 0, u1: slab.width / 4, v1: 1 },
+        textureId,
+        uv,
         tint: o.rimTint,
-      }),
-    );
+      });
+    out.push(face(o.rimTextureId));
+    // The strap and its bolt heads, at the identical rect — see
+    // `frameRingSprites` for why the metal is never merged into the timber.
+    // Same position and size, so the stable painter sort keeps it on top.
+    if (o.rimBrassTextureId) out.push(face(o.rimBrassTextureId));
   }
 
   return out;
