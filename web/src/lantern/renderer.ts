@@ -303,7 +303,7 @@ export class Renderer {
           const l = lights[i];
           gl.uniform3f(prog.u(`uLightPos[${i}]`), l.position.x, l.position.y, l.position.z);
           gl.uniform3f(prog.u(`uLightColour[${i}]`), l.colour[0], l.colour[1], l.colour[2]);
-          gl.uniform3f(prog.u(`uLightParams[${i}]`), l.intensity, l.reach, l.radius);
+          gl.uniform4f(prog.u(`uLightParams[${i}]`), l.intensity, l.reach, l.radius, l.castsShadow === false ? 0 : 1);
         }
         gl.uniform1f(prog.u('uAmbient'), scene.ambient);
         gl.uniform3f(prog.u('uNight'), scene.night[0], scene.night[1], scene.night[2]);
@@ -418,9 +418,12 @@ export class Renderer {
     // bleeding through the first half-tile of every wall.
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    // Clamp: sampling past the edge returns the edge tile, and the border of
-    // a floor is wall, so off-grid reads as solid. Same claim `isSolid` makes
-    // on the CPU, and the two must not disagree.
+    // Clamp is now belt-and-braces only: `traceShadow` bounds-checks before
+    // it samples, because off the board is a TABLE rather than more rock (see
+    // the note there). This deliberately differs from `isSolid`, which still
+    // answers true off-grid — that is a GAMEPLAY claim about where a piece
+    // may stand, not a claim about what stops light. Two different questions
+    // that happened to share an answer while the board was the whole world.
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.occupancyKey = key;

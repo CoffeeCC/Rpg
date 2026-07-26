@@ -217,6 +217,11 @@ export interface WallBlockOptions {
    * False when another block stands immediately in front, because then the
    * face is buried inside the wall and drawing it costs a quad and a batch
    * break to render something nobody can see.
+   *
+   * ONLY IF THE BLOCK IN FRONT IS AT LEAST AS TALL. A shorter neighbour hides
+   * only part of this face, and the sliver that shows through is whatever is
+   * underneath the board — which lit up as a bright line along every wall run
+   * and read as a rendering glitch, because it was one.
    */
   front?: boolean;
   topTint?: Tint;

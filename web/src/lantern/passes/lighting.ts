@@ -113,6 +113,14 @@ float traceShadow(vec3 from, vec2 to) {
     vec2 p = from.xy + dir * (float(i) * stepLen);
     vec2 tile = floor(p);
     if (all(equal(tile, originTile))) continue;
+    // OFF THE BOARD IS NOT ROCK ANY MORE. The grid used to be sampled
+    // CLAMP_TO_EDGE, so anything past the last row read the border wall and
+    // blocked — which was right while the board was the entire world, and is
+    // wrong now that there is a table around it (ENGINE_PLAN section 11). The
+    // board's own border blocks still do the blocking; they are inside the
+    // grid. Without this, the rim, the frame and the table are shadowed by a
+    // wall that is behind them.
+    if (any(lessThan(tile, vec2(0.0))) || any(greaterThanEqual(tile, uGridSize))) continue;
     // The grid is R8 UNORM, so a solid tile is uploaded as 255 and arrives
     // here as 1.0. Uploading a literal 1 instead would arrive as 1/255 and
     // never clear this test — shadows would silently never cast, which looks
@@ -173,7 +181,7 @@ uniform int uHasNormal;
 uniform int uLightCount;
 uniform vec3 uLightPos[${MAX_LIGHTS}];      // xy board tiles, z height above board
 uniform vec3 uLightColour[${MAX_LIGHTS}];
-uniform vec3 uLightParams[${MAX_LIGHTS}];   // intensity, reach, radius
+uniform vec4 uLightParams[${MAX_LIGHTS}];   // intensity, reach, radius, casts shadow
 
 uniform float uAmbient;
 uniform vec3 uNight;
@@ -330,7 +338,13 @@ void main() {
     float atten = falloff * window;
 
     float ndl = max(dot(worldN, L), 0.0);
-    float shadow = softShadow(surface, lp.xy, radius);
+    // A light that casts no shadow skips the march entirely — which is most
+    // of its cost, and the reason a scene can afford a lot of them. Two kinds
+    // want this: the faint emitters of ENGINE_PLAN section 12.2 (a mushroom
+    // has no business casting a hard shadow), and the ROOM the board is
+    // sitting in, which is outside the fiction and must not be occluded by
+    // the fiction's walls.
+    float shadow = uLightParams[i].w > 0.5 ? softShadow(surface, lp.xy, radius) : 1.0;
 
     if (uDebug == 2) { outColor = vec4(vec3(ndl), 1.0); return; }
     if (uDebug == 3) { outColor = vec4(vec3(atten), 1.0); return; }

@@ -92,6 +92,13 @@
     <input type="range" id="rad" min="0" max="1.2" step="0.01" value="0.18" /></label>
   <label><span class="row">Ambient<b id="vAmb">0.06</b></span>
     <input type="range" id="amb" min="0" max="0.5" step="0.005" value="0.06" /></label>
+  <label><span class="row">Room lamp<b id="vRoom">1.00</b></span>
+    <input type="range" id="room" min="0" max="12" step="0.05" value="1" /></label>
+  <p class="note">The room lamp is not in the fiction — it is the lamp above the
+    table the board is sitting on. Raking from the near-left is what keeps it
+    out: the board's own border blocks shadow the dungeon from it entirely, so
+    it lands on the table, the rim and the frame and stops at the wall. Drag it
+    to 0 to see why the slab edge needs it.</p>
   <p class="note">Flame size is the penumbra: at 0 the shadows are knife-edged,
     because a light with no width cannot cast a soft edge.</p>
 
@@ -147,6 +154,9 @@ try {
   const { contactShadowPixels, blockShadowPixels, baseDiscPixels, baseDiscNormalPixels,
           pieceBaseSprites, contactShadowSprite, wallBlockSprites }
     = await import('/src/lantern/scene/piece.ts' + V);
+  const { boardSlabSprites, boardFramePixels, boardFrameNormalPixels, boardRimPixels,
+          boardRimNormalPixels, woodField, fieldToAlbedo, fieldToNormals, slabBounds }
+    = await import('/src/lantern/scene/board.ts' + V);
 
   const canvas = $('gl');
   const { device, status, reason } = createDevice(canvas);
@@ -224,6 +234,43 @@ try {
     }],
   ]);
 
+  // ---------------------------------------------------------------------
+  // THE SLAB AND THE TABLE.
+  //
+  // §11 lists both as MISSING and §13 makes them load-bearing: the camera
+  // frames the whole board, so the rim and the table are on screen every
+  // frame and carry most of the "this is an object" impression by themselves.
+  //
+  // The chamfer on the frame is the part worth spending the texture on. A
+  // painted edge gradient looks the same from every light angle, which is to
+  // say it looks painted; a tipped NORMAL brightens on the lantern's side and
+  // falls away on the other, so the slab reads as machined the moment
+  // anything moves.
+  // ---------------------------------------------------------------------
+  const SLAB = { width: W, height: H, border: 1.35, thickness: 0.5 };
+  const bounds = slabBounds(SLAB);
+  const frameOpts = {
+    // Per-axis, because the slab is not square: one fraction would put a
+    // chamfer twice as wide on the short edges as on the long ones.
+    borderU: (SLAB.border * 0.86) / bounds.width,
+    borderV: (SLAB.border * 0.86) / bounds.height,
+  };
+  const tableField = woodField(256, { grain: 7, warp: 1.5 });
+  for (const [id, albedo, normal, opts] of [
+    ['frame', boardFramePixels(512, frameOpts), boardFrameNormalPixels(512, frameOpts), {}],
+    ['rim', boardRimPixels(256), boardRimNormalPixels(256), { repeat: true }],
+    ['table', fieldToAlbedo(tableField, 256, [30, 21, 14], [92, 64, 40]),
+              fieldToNormals(tableField, 256, 0.9), { repeat: true }],
+  ]) {
+    const size = id === 'frame' ? 512 : 256;
+    furniture.set(id, {
+      id,
+      albedo: createRGBATexture(gl, size, albedo, { srgb: true, mipmap: true, ...opts }),
+      normal: createRGBATexture(gl, size, normal, { mipmap: true, ...opts }),
+      normalStrength: 1,
+    });
+  }
+
   async function loadGate(name) {
     const ground = await loadTexture(`art/tiles/${name}_ground.jpg`);
     const wall = await loadTexture(`art/tiles/${name}_wall.jpg`);
@@ -274,6 +321,18 @@ try {
     });
 
     const sprites = [];
+    // The slab first: table, the shadow it casts on the table, then the
+    // frame. The frame is one quad with a chamfer baked around all four
+    // sides of its texture — the tile grid simply draws over the middle of
+    // it — and it sorts before every tile without being told to, because its
+    // anchor is the outer corner.
+    sprites.push(
+      ...boardSlabSprites(
+        { ...SLAB, frameTextureId: 'frame', rimTextureId: 'rim', tableTextureId: 'table',
+          shadowTextureId: 'blockshadow', tableGrain: 3.2 },
+        camera,
+      ),
+    );
     // Window the shared tile texture per cell so neighbouring tiles do not
     // repeat visibly — the same trick FloorScreen already does in CSS with
     // backgroundPosition, which is a UV lookup by another name.
@@ -293,8 +352,13 @@ try {
               topUv: cellUv(x, y),
               frontUv: { u0: (x % 4) / 4, v0: 0.5, u1: (x % 4 + 1) / 4, v1: 1 },
               // Buried faces cost a quad and a batch break to draw something
-              // nobody can see.
-              front: !layout[y + 1]?.[x],
+              // nobody can see — but only if the thing burying them is at
+              // least as TALL. A shorter block in front leaves a few pixels
+              // of this one's side showing, and what showed through the gap
+              // was the lit frame underneath: a bright sliver along the top
+              // of the board that looked like a rendering glitch because it
+              // was one.
+              front: !layout[y + 1]?.[x] || blockHeight(x, y + 1) < blockHeight(x, y),
               topTint: [0.88, 0.88, 0.92, 1],
               // A vertical face catches less of the sky than a horizontal
               // one. With `vHeight` carried per fragment the lantern now does
@@ -391,6 +455,39 @@ try {
           radius: Number($('rad').value),
           reach: Number($('reach').value),
         },
+        // THE ROOM, not the dungeon.
+        //
+        // §12 says the hero's lantern is the only significant light — and it
+        // means inside the fiction. The board is a physical object on a table
+        // in a room, and that room has a lamp in it. Without one, the rim,
+        // the frame and the table are lit by ambient alone and every bit of
+        // §11's edge work is invisible, because the board's own border blocks
+        // shadow the entire slab edge from the lantern. Correctly, and
+        // uselessly.
+        //
+        // It DOES cast, and that is what keeps it out of the fiction rather
+        // than a flag would: raking from the near-left means the board's own
+        // border blocks shadow the dungeon interior from it completely, so it
+        // lands on the table, the rim, the near frame and the left frame and
+        // stops dead at the wall. The board casts its own shadow across the
+        // table, which is the object cue this whole section is for.
+        //
+        // Tried the other way first. A room lamp that casts nothing lights the
+        // dungeon floor exactly as well as it lights the table, and at any
+        // intensity that makes the rim read, the darkness is gone and the
+        // lantern is contributing nothing anyone can see.
+        {
+          position: { x: -5, y: H + 8, z: 15 },
+          colour: [0.6, 0.68, 1],
+          intensity: Number($('room').value),
+          radius: 1.4,
+          // Far bigger than the board, deliberately. The falloff window is
+          // tuned for a lantern a few tiles across; run a room lamp at a
+          // similar reach and the inverse-square eats it before it crosses
+          // the table. Reach is what decides how EVEN a light is, not just
+          // how far it goes.
+          reach: 95,
+        },
       ],
     });
   }
@@ -467,6 +564,7 @@ try {
                                 ['thr','vThr',(v)=>Number(v).toFixed(2)],
                                 ['lamp','vLamp',(v)=>Number(v).toFixed(1)],['reach','vReach',(v)=>Number(v).toFixed(1)],
                                 ['rad','vRad',(v)=>Number(v).toFixed(2)],['amb','vAmb',(v)=>Number(v).toFixed(3)],
+                                ['room','vRoom',(v)=>Number(v).toFixed(2)],
                                 ['base','vBase',(v)=>Number(v).toFixed(2)],['thick','vThick',(v)=>Number(v).toFixed(2)],
                                 ['shad','vShad',(v)=>Number(v).toFixed(2)],['lift','vLift',(v)=>Number(v).toFixed(2)]]) {
     const el = $(id);

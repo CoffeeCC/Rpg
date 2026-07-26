@@ -93,6 +93,21 @@ export interface Light {
    * promoted into the direct pass deliberately.
    */
   indirectOnly?: boolean;
+  /**
+   * March the occupancy grid for this light. Default true.
+   *
+   * False is not a cheat, it is a statement about what the light IS. Two
+   * kinds want it. The faint emitters of ENGINE_PLAN §12.2 — a glowing
+   * mushroom, a drifting wisp — should not throw a hard-edged shadow across
+   * a room, because a dim source physically does not. And the ROOM LIGHT the
+   * board is sitting in is outside the fiction entirely: it falls on the
+   * table, the rim and the frame, and the dungeon's own walls have no
+   * business occluding it.
+   *
+   * It is also where most of a light's cost goes, which is what makes "many
+   * faint ones" affordable at all.
+   */
+  castsShadow?: boolean;
 }
 
 /**
