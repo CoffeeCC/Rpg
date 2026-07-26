@@ -1,0 +1,201 @@
+/* =========================================================================
+   lantern.css — the map, when `?r=lantern` is on. NOTHING HERE APPLIES
+   OTHERWISE.
+
+   Every rule below is scoped under `.lantern-grid` or `.lantern-stage`, both
+   of which only exist while the flag is set (see `render/flag.ts`). With the
+   flag off this stylesheet is inert, which is ENGINE_PLAN §4's whole
+   arrangement: both paths run, the DOM map stays the default until the canvas
+   map is BETTER rather than merely finished, and turning it off is a reload.
+
+   THE ARRANGEMENT, in one picture:
+
+     .map-grid.lantern-grid          the viewport. Does not scroll — the
+       .lantern-stage                CAMERA pans now (§17.1).
+         canvas                      every SURFACE, drawn by the renderer
+       .lantern-cells                one transform, carrying the square DOM
+         .map-row                    lattice onto the projected board
+           .map-cell                 TRANSPARENT. Keeps its click handler, its
+                                     title, its ARIA and its threat/reach
+                                     affordances. Draws no surface of its own.
+
+   Why the cells are only made transparent and never removed: `nav/` scores
+   real bounding boxes, `engine/test/lighting.test.ts` regex-matches ~15 CSS
+   rules against raw source, and 22 screens share these selectors. Deleting the
+   DOM would fail tests without changing a pixel and would take the controller
+   nav with it. Transparency costs nothing and keeps all of it.
+   ========================================================================= */
+
+/* --- 1 · The viewport ---------------------------------------------------- */
+.map-grid.lantern-grid {
+  /* Pinned, and it is the fix rather than a shortcut. ENGINE_PLAN §8 item 5:
+     --cell is resolved at four breakpoints and is the real source of truth for
+     scale on the DOM path. The renderer owns that ladder now — `camera.zoom`
+     decides how big a tile draws — so the lattice underneath is a plain
+     unscaled grid at one known pitch. LANTERN_CELL_PX in LanternMap.tsx must
+     equal this number; a mismatch slides hit targets off their tiles further
+     and further as x grows. */
+  --cell: 48px;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  gap: 0;
+  /* The camera pans, clamped to the board's edges. A scroll container as well
+     would be two things fighting over the same gesture. */
+  overflow: hidden;
+  background: #05040a;
+  border-color: rgba(8, 5, 3, 0.9);
+  touch-action: none;
+}
+
+/* --- 2 · The canvas ------------------------------------------------------ */
+.lantern-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Transparent to the pointer: clicks belong to the cells above, and the
+     wheel/pan listeners live on .map-grid so they fire wherever the pointer
+     is. A stage that ate events would make the outer margin of the board
+     un-clickable, which is exactly where "click that far tile" happens. */
+  pointer-events: none;
+}
+
+.lantern-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- 3 · The hit-target lattice ------------------------------------------ */
+.lantern-cells {
+  position: absolute;
+  left: 0;
+  top: 0;
+  /* The transform is written imperatively every frame from
+     `boardCamera.latticeTransform`. Origin at the corner, because the
+     projection's own origin is the board's (0,0). */
+  transform-origin: 0 0;
+  will-change: transform;
+  z-index: 1;
+}
+
+.lantern-cells .map-row {
+  display: flex;
+  /* NO GAP. The lattice pitch must be exactly --cell or the transform, which
+     assumes a uniform pitch, drifts by one gap per column. */
+  gap: 0;
+}
+
+.map-grid.lantern-grid .lantern-cells .map-cell {
+  width: var(--cell);
+  height: var(--cell);
+  margin: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+/* The surface moves to the GPU. The BOX, the handler, the tooltip, the role
+   and the tactical affordances stay exactly where they were. */
+.map-grid.lantern-grid .lantern-cells .map-cell {
+  background: none !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  filter: none !important;
+  animation: none !important;
+}
+
+/* Cell CONTENTS are drawn by the renderer as lit sprites — tile art, painted
+   icons, unit figures, the fog fringe. Hidden rather than removed so the
+   element tree, and therefore every measurement `nav/` makes, is unchanged. */
+.map-grid.lantern-grid .lantern-cells .map-cell > * {
+  display: none !important;
+}
+
+/* The DOM walker is the DOM path's hero. Here he is a piece on the board with
+   a plinth and a contact shadow, and the element is only still rendered
+   because it is what fires the footfall on every kind of move.
+
+   `!important`, and it is earned: floor.css §12 sets `display: flex` at the
+   same specificity and is imported AFTER this sheet (FloorScreen imports
+   LanternMap, which imports this, before its own `../floor.css`), so an equal
+   tie loses. Every `!important` in this file is scoped under `.lantern-grid`,
+   which exists only while the flag is on, so none of them can reach the
+   default path. */
+.map-grid.lantern-grid .hero-walker {
+  display: none !important;
+}
+
+/* --- 3b · Which DOM decorations survive ---------------------------------- */
+/*
+   These are pseudo-elements, so `.map-cell > *` above cannot touch them, and
+   they are not all the same kind of thing. The rule applied here:
+
+     A SURFACE the renderer now draws  -> gone.
+     An AFFORDANCE the renderer does not draw -> kept.
+
+   So the hero's painted pool goes (there is a real lantern casting real
+   shadows underneath it), the "beyond the light" veil goes (the light IS the
+   veil now, and doubling it made the far half of the board flat black), and
+   the floor pip goes. The THREAT RIM stays, because nothing on the canvas says
+   "a hostile can reach this tile next turn" and losing it would be a tactical
+   regression dressed up as a lighting change.
+
+   `:not(.threat)` is not a flourish. `.threat`, `.beyond` and `.floor-tile`
+   all paint into the SAME `::after`, so a blanket hide would take the rim with
+   them on exactly the tiles that need it most.
+*/
+.map-grid.lantern-grid .lantern-cells .map-cell.player::before {
+  display: none !important;
+}
+.map-grid.lantern-grid .lantern-cells .map-cell.beyond:not(.threat)::after,
+.map-grid.lantern-grid .lantern-cells .map-cell.floor-tile:not(.threat)::after {
+  background: none !important;
+  box-shadow: none !important;
+}
+
+/* --- 4 · The flag's own chrome ------------------------------------------- */
+.lantern-chip,
+.lantern-hud,
+.lantern-error {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.lantern-chip {
+  left: 8px;
+  bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(217, 164, 65, 0.72);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.lantern-hud {
+  right: 8px;
+  top: 6px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre;
+  color: rgba(232, 227, 216, 0.8);
+  background: rgba(6, 5, 4, 0.66);
+  border: 1px solid rgba(200, 162, 74, 0.22);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.lantern-error {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 70%;
+  font-size: 12px;
+  color: #e06d5a;
+  text-align: center;
+}

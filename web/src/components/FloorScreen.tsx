@@ -29,6 +29,9 @@ import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
 import { useNavScope, navItem, focusFirstIn } from '../nav';
 import { useConfirmAction } from './ConfirmOverlay';
+import { LanternMap } from './LanternMap';
+import { renderDebug, renderMode } from '../render/flag';
+import { STEP_MS } from '../render/walk';
 import '../floor.css';
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
@@ -167,11 +170,39 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   );
 }
 
-/**
- * How long one tile takes, in ms. MUST match the `.hero-walker.glide`
- * transition and the `hero-gait` animation in floor.css §12.
+/*
+ * STEP_MS — how long one tile takes, in ms. MUST match the `.hero-walker.glide`
+ * transition and the `hero-gait` animation in floor.css §12. It moved to
+ * `render/walk.ts` when the Lantern renderer became a third consumer: the
+ * canvas hero glides between tiles on the same cadence, so the number is now
+ * stated once and imported rather than copied.
  */
-const STEP_MS = 190;
+
+/**
+ * The rows, wrapped in a transformable layer — but ONLY under `?r=lantern`.
+ *
+ * Inactive it renders its children and nothing else, so the DOM path keeps
+ * `.map-row` as a direct child of `.map-grid`: same layout, same `offsetLeft`
+ * for the walker, same descendant selectors across five stylesheets. A wrapper
+ * that was always present would be a small, permanent, invisible risk to a
+ * screen that is played every day, for the benefit of a flag that is off.
+ */
+function LatticeLayer({
+  active,
+  cellsRef,
+  children,
+}: {
+  active: boolean;
+  cellsRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}) {
+  if (!active) return <>{children}</>;
+  return (
+    <div className="lantern-cells" ref={cellsRef}>
+      {children}
+    </div>
+  );
+}
 
 const NAV_MOVE = {
   up: 'north',
@@ -183,6 +214,14 @@ const NAV_MOVE = {
 export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const [showItems, setShowItems] = useState(false);
   const merchantOpen = !!state.pendingMerchant;
+  // THE FLAG (ENGINE_PLAN §4). `?r=lantern` puts the GPU renderer underneath
+  // this screen; absent, everything below is byte-for-byte the map that has
+  // always shipped. Read once per render — a query string cannot change under
+  // us — and every use of it below is a guard, never a rewrite.
+  const lantern = renderMode() === 'lantern';
+  const lanternDebug = lantern && renderDebug();
+  /** The transformed lattice of hit targets. Only mounted under the flag. */
+  const cellsRef = useRef<HTMLDivElement>(null);
   // v12: guards a click-to-move walk so overlapping clicks don't stack paths.
   const walkingRef = useRef(false);
 
@@ -299,6 +338,10 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
   const playerCellRef = useRef<HTMLSpanElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // Under the flag the CAMERA follows the hero (ENGINE_PLAN §17.1, clamped
+    // pan) and the grid is not a scroll container at all. Two things trying to
+    // frame the same hero would fight over every step.
+    if (lantern) return;
     const grid = gridRef.current;
     const cell = playerCellRef.current;
     if (!grid || !cell) return;
@@ -308,7 +351,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       top: cell.offsetTop - grid.clientHeight / 2 + cell.offsetHeight / 2,
       behavior: 'smooth',
     });
-  }, [exp?.gateId, exp?.floorIndex, exp?.x, exp?.y]);
+  }, [lantern, exp?.gateId, exp?.floorIndex, exp?.x, exp?.y]);
 
   // --- THE WALK ------------------------------------------------------------
   //
@@ -538,10 +581,28 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           <i className="map-corner bl" aria-hidden="true" />
           <i className="map-corner br" aria-hidden="true" />
           <div
-            className={`map-grid ${tex ? 'textured' : ''}`}
+            className={`map-grid ${tex && !lantern ? 'textured' : ''}${lantern ? ' lantern-grid' : ''}`}
             ref={gridRef}
-            style={tex ? { backgroundImage: `url(${tex.ground})`, backgroundSize: 'cover' } : undefined}
+            style={tex && !lantern ? { backgroundImage: `url(${tex.ground})`, backgroundSize: 'cover' } : undefined}
           >
+            {/* THE RENDERER, underneath everything. It draws the board, the
+                blocks, the pieces and all of the light; the cells above it
+                keep every handler, tooltip and ARIA role they had. */}
+            {lantern && (
+              <LanternMap
+                exp={exp}
+                player={player}
+                bossDefeated={state.defeatedBosses.includes(exp.gateId)}
+                cellsRef={cellsRef}
+                surfaceRef={gridRef}
+                debug={lanternDebug}
+              />
+            )}
+            {/* The lattice wrapper exists ONLY under the flag: one element that
+                a single CSS transform carries onto the projected board. Without
+                the flag the rows are direct children exactly as before, so the
+                DOM path's layout, offsets and selectors are untouched. */}
+            <LatticeLayer active={lantern} cellsRef={cellsRef}>
             {floor.grid.map((row, y) => (
               <div className="map-row" key={y}>
                 {row.split('').map((ch, x) => {
@@ -692,6 +753,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 })}
               </div>
             ))}
+            </LatticeLayer>
             {/* THE WALKER. One element for the whole expedition, moved rather
                 than re-created, which is the only way the hero can be
                 animated at all — and, because the light layer tracks this
@@ -724,7 +786,17 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               screen, which is the one thing the layer cannot observe for
               itself (a walking hero is a class change on a different cell, not
               a DOM mutation). No `lamp`: the hero token IS the lantern here,
-              and §5 of lighting.css already draws it. */}
+              and §5 of lighting.css already draws it.
+
+              UNDER `?r=lantern` THIS LAYER DOES NOT RUN, and the reason is
+              ENGINE_PLAN §8 item 1: it measures its occluders, its anchor and
+              its responders out of live DOM with a MutationObserver, and under
+              a canvas there are no `.map-cell.wall` boxes to measure — the
+              geometry comes from the tile grid now. Nothing is deleted: the
+              component, its tests and every `lightresponse.css` rule stay, and
+              those rules degrade to nothing on their own because each is a
+              function of `var(--lit, 0)` and nobody is writing it. */}
+          {!lantern && (
           <LightLayer
             /* Walls block light, and so do the barrels — Paul: "they should
                be lit, but casting a shadow of the barrel."
@@ -766,6 +838,7 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             ambient={0.18}
             version={`${exp.gateId}:${exp.floorIndex}:${exp.x},${exp.y}:${exp.movLeft}`}
           />
+          )}
         </div>
 
         {/* v18 #10: legend chips dock along the map viewport's BOTTOM edge. */}

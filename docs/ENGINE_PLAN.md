@@ -1922,3 +1922,176 @@ exact rather than merely correct, and turns the same machinery into an asset:
 a ledge shadowing the floor below it is the SAME query, answered properly. The
 current fix is the honest interim — it declines to answer rather than
 answering wrongly.
+
+---
+
+## 20. It is wired into the game (2026-07-26)
+
+Every section above §19 ends with some version of the same sentence — *"nothing
+is wired into the game yet"*, *"`?r=lantern` still does not exist"*. It exists.
+Load a real Hollow Gate floor with `?r=lantern` and the map is drawn by the
+renderer: the slab, the wall blocks, the hero piece on his plinth carrying the
+only significant light, painted chests and barrels and monster figures standing
+on their own bases, glowing mushrooms in the corners, wisps drifting over the
+dark, and everything the lantern has not reached genuinely black.
+
+Measured on a real floor at 1154x650: **0.2–0.4 ms CPU, ~1.4 ms GPU, 58 draw
+calls, 7 lights, bin peak 4 of 16, zero drops.**
+
+### What was actually hard, and it was not the rendering
+
+The rendering was the easy half — §§10–18 had already built all of it, and
+`buildFloorScene` is a few hundred lines of "read the grid, emit sprites." The
+hard question was the one §1.2 answers in a single line and does not explain how
+to implement:
+
+> **The GPU draws every SURFACE. The DOM draws TEXT and HIT TARGETS.**
+
+A DOM cell is a square in a flow layout. A tile on a tilted board is a squashed
+parallelogram somewhere else entirely. Keeping the click handler on the cell
+while the art moves to the canvas means those two have to end up in the same
+place, and the obvious implementations are both bad: positioning ~300 cells
+absolutely per frame is layout thrash, and re-deriving the tile rect inside
+`FloorScreen` puts the projection in two places that can disagree.
+
+**The answer is that the projection of the board plane is AFFINE.** For `z = 0`:
+
+    screenX = (x - cx) * zoom              + vw/2
+    screenY = (y - cy) * zoom * cos(tilt)  + vh/2
+
+which is a translate and a non-uniform scale — nothing else. So the DOM keeps
+rendering rows of square cells at ONE fixed pitch, and **one CSS transform on
+one wrapper element** carries the entire lattice onto the projected board.
+Measured against `camera.project` itself rather than against a re-derivation of
+the same algebra: cell corners land within **1.7e-5 px** of their tiles, and
+`elementFromPoint` at the projected centre of a tile returns exactly that tile's
+cell, at every corner of the board.
+
+That is what keeps the whole of §1.2's promise cheap. `nav/` is untouched, all
+22 screens are untouched, the map is still one widget with zero focusable
+children, every `title` and `onClick` and `data-nav-item` is where it was, and
+the transform is written imperatively so a 60 fps camera never re-renders React.
+
+**It also closes §8 item 5 properly.** `--cell` was "the REAL source of truth for
+scale today", resolved at four breakpoints. Under the flag it is pinned at 48px
+and means nothing but lattice pitch; `camera.zoom` decides how big a tile draws.
+The renderer owns the ladder, as §8 said it must.
+
+### What landed
+
+- **`web/src/render/`** — the bridge, and the only directory that imports from
+  both `engine/` and `lantern/`. That is deliberate: it is what lets §2 rule 1
+  keep holding, and a grep for `engine/` under `lantern/` still returns nothing.
+  - `floorScene.ts` — pure `Expedition` + `Character` to `Scene`.
+  - `boardCamera.ts` — pure. Fit, clamped pan, the zoom range, the two
+    framings, the lattice transform, deadzone follow.
+  - `materials.ts` — the GL side: procedural furniture up front, painted art
+    requested asynchronously.
+  - `walk.ts` — `STEP_MS` and the glide, now that there are three consumers.
+  - `flag.ts` — `?r=lantern`, and `dom` for absolutely everything else.
+- **`components/LanternMap.tsx`** — the canvas, the device, the frame loop, the
+  camera and the input. Mounted only under the flag.
+- **`lantern.css`** — every rule scoped under `.lantern-grid`, which does not
+  exist with the flag off.
+- **43 new tests** (1193 total), `tsc -b` clean.
+
+### §8's traps, and which ones bit
+
+- **`Array.includes` (item 6) — real, and fixed where §8 said to.**
+  `snapshotFloor` strips the floor prefix and builds `Set`s once per state
+  change; the builder never scans. `floors.ts` is untouched — its signatures are
+  the game's, and this was a rendering concern all along.
+- **`LightLayer` loses its input (item 1) — real.** It measures occluders,
+  anchor and responders out of live DOM, and under a canvas there are no
+  `.map-cell.wall` boxes. It is not rendered under the flag. Nothing is deleted.
+- **`lightresponse.css` (item 2) — a non-event, by its own design.** Every rule
+  in it is a function of `var(--lit, 0)`, so with nobody writing the property it
+  degrades to nothing on its own. The alpha-dilate rim §8 worried about is not
+  needed yet, because the canvas hero is a lit sprite rather than a DOM one.
+- **`lighting.test.ts`'s ~15 source regexes (item 7) — never at risk**, because
+  the flag means both paths coexist and no DOM or CSS was removed. All 1153
+  pre-existing tests still pass, unchanged.
+
+### Three bugs worth writing down
+
+**1. "EXT_color_buffer_float is missing" was a LIFECYCLE bug, not a capability
+one.** `Device.dispose` ends with `WEBGL_lose_context.loseContext()`, which is
+the right thing to do. But a lost context is permanently lost FOR THAT CANVAS
+ELEMENT: `getContext('webgl2')` hands back the same dead object and every
+`getExtension` on it returns null. React StrictMode mounts, unmounts and
+remounts every effect in dev — so a React-owned `<canvas>` had its context
+created, killed, and then asked for again, and the second `createDevice`
+reported a missing extension. A completely accurate description of a corpse and
+a completely misleading description of the machine; it looked exactly like a
+hardware capability problem. **The canvas is now created and removed by the
+effect that owns the device**, so it cannot recur in dev or after any remount.
+
+**2. The DOM hero was still standing on the board.** `.lantern-grid
+.hero-walker { display: none }` lost an equal-specificity tie to floor.css §12,
+because `FloorScreen` imports `LanternMap` — and therefore `lantern.css` —
+BEFORE its own `../floor.css`. Every override in `lantern.css` is now specific
+enough or `!important`, and every one of them is scoped under `.lantern-grid`,
+which exists only while the flag is on, so none of them can reach the DOM path.
+
+**3. The pan was unusable rather than merely imperfect.** Deadzone follow runs
+every frame, so dragging the view further than the deadzone was undone on the
+very next frame and the board sprang back. Follow is now suspended by a manual
+pan and handed back the next time the hero moves — which is also the moment the
+player has said what they care about.
+
+### Two numbers that had to change from the harness
+
+Both because the harness's board is not a real floor, and both worth stating
+rather than quietly re-tuning:
+
+- **The lantern is 7, not 9.** `lightCells` on a real floor is around 4.7 tiles
+  against the harness's 7, and a shorter falloff window puts more of the same
+  radiance on the nearest tiles. At 9 the pool came out near-white on stone that
+  should read as lit sandstone.
+- **The room lamp is 0.32, not 1.0.** The harness board has a solid ring of
+  border blocks, so the lamp genuinely stopped at the wall — which is what
+  §15.1 recorded and believed in general. A real floor's outer wall is one block
+  tall and the lamp sits 15 tiles up, so the ray from an interior tile clears it
+  almost immediately and a cold wash reaches the dungeon floor: exactly the
+  thing §12 says must not happen. Lowered rather than removed, because without
+  it the rim, the frame and the table are lit by ambient alone and every bit of
+  §11's edge work is invisible.
+
+### What is NOT ported
+
+Stated plainly, because §4 says the DOM map stays the default until the canvas
+map is BETTER, and this list is the distance left:
+
+- **The battlefield.** `BattleScreen` is entirely untouched. §8 item 4
+  (`BattleView.backdrop` is a `ReactNode`) and item 3 (two nav registrations on
+  world elements) are both still open, and both are M7.
+- **Ground clutter (`tileArt`), fog fringes, the leaving marker and the miniboss
+  crown** are not drawn — art the renderer has no material for yet. The `beyond`
+  veil is deliberately gone, since the light IS the veil now.
+- **A unit whose painted art is missing draws as a bare plinth.** 41 of 92
+  monsters have no painting (§8's cleanup list), and the DOM path falls back to
+  a procedural SVG silhouette the canvas has no equivalent for.
+- **Pieces still have no normal maps on this path.** The EDT bevel bake lives in
+  gitignored staging; §15.1's "single biggest remaining win on the pieces"
+  stands, and here it is not even wired up.
+- **Overview/play is a toggle (`O`), not a lerp.** §17 asks for the lerp.
+- **Zoom is centre-anchored, not cursor-anchored.** §18 left that as "one line
+  on top of pan"; pan now exists, so it genuinely is one line, and it is not
+  written yet.
+- **Touch.** Wheel zoom and shift-drag or middle-drag pan only.
+
+### Verified by eye versus by measurement
+
+By **measurement**: the lattice against `camera.project` at six tiles, four
+zooms and three centres; `elementFromPoint` returning the right cell at six
+board positions; click-to-move walking three tiles from a click at a projected
+tile centre; the glide sampled mid-step at y = 2.32 between tiles 2 and 3; the
+HUD's frame, draw, light and bin numbers; 1193 tests; `tsc -b` clean; and with
+the flag OFF, `.map-grid` carrying exactly its old class list, rows still direct
+children of it, no lattice wrapper, the walker still `display: flex`,
+`LightLayer`'s canvas still present, and no `__lantern` hook on `window`.
+
+By **eye**: the frames themselves — that the board reads as a board, that the
+pool reads as a lantern rather than as daylight, that the mushrooms read as
+scenery rather than as decoration, and that the DOM map with the flag off is the
+map that shipped.
