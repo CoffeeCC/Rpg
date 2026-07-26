@@ -28,6 +28,7 @@ import { Icon } from './Icon';
 import { SPRITE_ART, TILE_TEXTURES } from '../art/iconArt';
 import { LanternTurn } from './LanternTurn';
 import { useNavScope, navItem, focusFirstIn } from '../nav';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../floor.css';
 
 const TILE_VIEW: Record<string, { emoji: string; icon: string; cls: string }> = {
@@ -238,6 +239,11 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     el.focus({ preventScroll: true });
     return true;
   };
+
+  // Witchwick home sits in the toolbar one press right of Save, and it BOTH
+  // burns a consumable and throws away the run's unclaimed reward cards. Not
+  // on the C5 list; it belongs on it.
+  const guard = useConfirmAction();
 
   useNavScope(panelRef, {
     id: 'floor',
@@ -480,7 +486,15 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
             </button>
             <button
               className="btn small danger"
-              onClick={() => dispatch({ type: 'LEAVE_GATE' })}
+              onClick={() =>
+                guard.ask({
+                  title: 'Burn a Witchwick and walk home?',
+                  detail: `The wick goes down to the wax — ${witchwicks - 1} left afterwards — the expedition ends where it stands, and the reward cards waiting on this run fade. This cannot be undone.`,
+                  confirmLabel: 'Burn it',
+                  cancelLabel: 'Stay in the gate',
+                  perform: () => dispatch({ type: 'LEAVE_GATE' }),
+                })
+              }
               disabled={witchwicks === 0}
               title={witchwicks > 0 ? `Burn a Witchwick to walk home (${witchwicks} left)` : 'No Witchwick — walk back to the door you came in by, or buy one from Maribel'}
             >
@@ -824,6 +838,8 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
           ))}
         </div>
       )}
+
+      {guard.overlay}
     </div>
   );
 }

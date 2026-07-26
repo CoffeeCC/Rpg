@@ -9,6 +9,7 @@ import { Icon } from './Icon';
 import { ItemLine } from './ItemLine';
 import { setOfItem } from '../engine/data/sets';
 import { useNavScope } from '../nav';
+import { useConfirmAction } from './ConfirmOverlay';
 import {
   MAX_VAULT_SLOTS,
   VAULT_SLOT_COSTS,
@@ -49,6 +50,11 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
   const bankable = player.items.filter((i) => i.rarity === 'Legendary');
   const recastable = recastCandidates(player);
   const recastPrice = recastCost(player);
+
+  // Recast melts a Legendary and hands back a random one — the piece that went
+  // into the fire is gone whatever comes out. Also not on the C5 list, and it
+  // is the only button in town that destroys named steel.
+  const guard = useConfirmAction();
 
   const root = useRef<HTMLDivElement>(null);
   useNavScope(root, {
@@ -224,10 +230,17 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
                   type="button"
                   className="btn small"
                   disabled={player.gold < recastPrice}
-                  onClick={() => {
-                    sfx('gold');
-                    dispatch({ type: 'RECAST_SET_PIECE', uid: item.uid });
-                  }}
+                  onClick={() =>
+                    guard.ask({
+                      title: `Put ${item.name} into the fire?`,
+                      detail: `Grude melts it down for ${recastPrice} gold and names a piece back at random — which one is not up to either of you. ${item.name} does not survive the forge. This cannot be undone.`,
+                      confirmLabel: 'Into the fire',
+                      perform: () => {
+                        sfx('gold');
+                        dispatch({ type: 'RECAST_SET_PIECE', uid: item.uid });
+                      },
+                    })
+                  }
                 >
                   Into the fire
                 </button>
@@ -321,6 +334,7 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }

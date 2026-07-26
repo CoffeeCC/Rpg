@@ -209,6 +209,53 @@ Two of them deliberately omit `onCancel` and still trap — `StoryOverlay` and
 `LegendOverlay`. B does nothing there, which is correct: each has exactly one
 control, A presses it, and "cancel" would mean silently advancing the story.
 
+### Destructive actions
+
+**Anything irreversible goes through `useConfirmAction`.** Not a dialog per
+screen — one dialog, in `ConfirmOverlay.tsx`, borrowed the same way everywhere:
+
+```tsx
+const guard = useConfirmAction();
+
+<button className="btn small danger" onClick={() => guard.ask({
+  title: `Release ${m.nickname}?`,
+  detail: `${m.nickname} walks back into the dusk and does not come back. This cannot be undone.`,
+  confirmLabel: 'Release',
+  perform: () => dispatch({ type: 'RELEASE', uid: m.uid }),
+})}>Release</button>
+
+{guard.overlay}   {/* inside the screen's scope root */}
+```
+
+Why it exists is a pad problem, not a mouse problem (audit C5). Release is
+directly right of "To party", Sell directly right of "Equip", Delete directly
+right of "Load". **A mouse aims; a D-pad traverses** — so on a pad the safe
+control and the irreversible one are one over-travelled press apart, and the
+press that was going to confirm the safe thing confirms the other one.
+
+Three rules, all enforced by `engine/test/controllerNav.test.ts`:
+
+- **It names the thing and the consequence.** "Release Gloomshroom? …This
+  cannot be undone." — never "Are you sure?". A guard that does not say what is
+  about to be destroyed is a speed bump.
+- **Cancel is where the cursor lands.** Always. It is first in document order
+  *and* carries `data-nav-initial`, so the safe half wins under either
+  resolution path. B and Escape answer with it.
+- **It adds a step; it does not change the action.** Mouse, keyboard and pad
+  all reach the same handler they always did.
+
+The nine guarded actions: Release (stable), Sell (gear bag ×2, gear stall),
+Delete and overwrite-Save (save crystals), Breed (both parents are consumed),
+Recast (melts a Legendary), Begin the next telling (victory), and Witchwick
+home (burns the wick and drops the run's unclaimed rewards).
+
+Reversible things are deliberately NOT guarded — "To stable", unequip, and
+Save onto an empty crystal destroy nothing. Neither is `FallenScreen`'s "Begin
+the next telling": the run is already over and it is the only control on the
+screen. The behaviour half of the guard (`confirmAction.ts`) is a pure state
+machine with no React in it, so "cancel runs nothing" and "confirm runs it
+exactly once" are assertable in the node test environment.
+
 If an overlay has its own `window` keydown listener for Escape, **delete it**
 when you add the scope. `CardDetailOverlay` had both for a while and Escape
 closed it twice.

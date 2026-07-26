@@ -8,6 +8,7 @@ import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { FAMILY_INFO } from '../engine/data/species';
 import { MonsterImage } from '../art/MonsterImage';
 import { Icon } from './Icon';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../services.css';
 
 function MonsterCard({
@@ -64,6 +65,9 @@ function MonsterCard({
 }
 
 export function StableScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  // Release is directly right of "To party" (CONTROLLER_AUDIT.md C5). One
+  // over-travelled D-pad press and a tamed monster is gone for good.
+  const guard = useConfirmAction();
   const root = useRef<HTMLDivElement>(null);
   useNavScope(root, {
     id: 'stable',
@@ -141,7 +145,17 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
                 >
                   To party
                 </button>
-                <button className="btn small danger" onClick={() => dispatch({ type: 'RELEASE', uid: m.uid })}>
+                <button
+                  className="btn small danger"
+                  onClick={() =>
+                    guard.ask({
+                      title: `Release ${m.nickname}?`,
+                      detail: `${m.nickname} walks back into the dusk and does not come back. Everything it learned goes with it. This cannot be undone.`,
+                      confirmLabel: 'Release',
+                      perform: () => dispatch({ type: 'RELEASE', uid: m.uid }),
+                    })
+                  }
+                >
                   Release
                 </button>
               </>
@@ -155,6 +169,7 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { loadTellings } from '../platform/tellings';
 import { ordinal } from '../engine/data/tellingsLore';
 import { VICTORY_READING, fillSlots } from '../engine/data/retellingLore';
 import { ChroniclerPassage } from './BookPanel';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../sheets.css';
 
 // v17 (PLAN7 C7): the ending as a cinematic — centered block, big display
@@ -31,6 +32,11 @@ export function VictoryScreen({ state, dispatch }: { state: GameState; dispatch:
   const root = useRef<HTMLDivElement>(null);
   useNavScope(root, { id: 'victory' });
 
+  // B is unbound here for exactly the reason the next telling now asks first:
+  // "Begin the next telling" sits directly right of "Stay in this telling",
+  // and on a pad that is one over-travelled press from ending a won run.
+  const guard = useConfirmAction();
+
   return (
     <div className="panel center-text cine-screen victory-cine" ref={root}>
       <div className="cine-glow" aria-hidden="true" />
@@ -52,7 +58,18 @@ export function VictoryScreen({ state, dispatch }: { state: GameState; dispatch:
           <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: 'town' })}>
             Stay in this telling
           </button>
-          <button className="btn danger cine-quiet" onClick={() => dispatch({ type: 'RESTART' })}>
+          <button
+            className="btn danger cine-quiet"
+            onClick={() =>
+              guard.ask({
+                title: `Begin the ${ordinal(meta.telling)} telling?`,
+                detail: `${heroName}, their party and their gear end here. Verses, boons, premises and the standing record carry over; nothing else does. This cannot be undone.`,
+                confirmLabel: 'Begin it',
+                cancelLabel: 'Stay in this telling',
+                perform: () => dispatch({ type: 'RESTART' }),
+              })
+            }
+          >
             Begin the {ordinal(meta.telling)} telling
           </button>
         </div>
@@ -61,6 +78,7 @@ export function VictoryScreen({ state, dispatch }: { state: GameState; dispatch:
           standing record carry over. This hero, their party and their gear do not.
         </p>
       </div>
+      {guard.overlay}
     </div>
   );
 }

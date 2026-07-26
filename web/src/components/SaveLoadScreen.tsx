@@ -5,6 +5,7 @@ import { SLOT_COUNT, saveToSlot, loadFromSlot, deleteSlot, getSlotSummary, expor
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
 import { useNavScope } from '../nav';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../sheets.css';
 
 // v17 (PLAN7 C4): slots as save-crystal cards — gem, hero name, level, realm,
@@ -39,10 +40,40 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
   const savableState: GameState = { ...state, screen: backScreen };
   const canSave = isSavable(savableState);
 
+  // Delete is directly right of Load, and Save onto a filled crystal is a
+  // silent overwrite (CONTROLLER_AUDIT.md C5). Both are guarded; Save onto an
+  // EMPTY crystal is not, because it destroys nothing.
+  const guard = useConfirmAction();
+
   function handleSave(slot: number) {
     const ok = saveToSlot(slot, savableState);
     setMessage(ok ? `Saved to slot ${slot}.` : 'Cannot save right now.');
     setTick((n) => n + 1);
+  }
+
+  function askSave(slot: number) {
+    const occupant = getSlotSummary(slot);
+    if (!occupant) {
+      handleSave(slot);
+      return;
+    }
+    guard.ask({
+      title: `Write over slot ${slot}?`,
+      detail: `${occupant.name}, level ${occupant.level}, ${occupant.orbs}/4 orbs, saved ${formatDate(occupant.savedAt)}. That telling is overwritten and cannot be recovered.`,
+      confirmLabel: 'Overwrite',
+      perform: () => handleSave(slot),
+    });
+  }
+
+  function askDelete(slot: number) {
+    const occupant = getSlotSummary(slot);
+    if (!occupant) return;
+    guard.ask({
+      title: `Delete slot ${slot}?`,
+      detail: `${occupant.name}, level ${occupant.level}, ${occupant.orbs}/4 orbs, saved ${formatDate(occupant.savedAt)}. The crystal goes dark. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      perform: () => handleDelete(slot),
+    });
   }
 
   function handleLoad(slot: number) {
@@ -121,8 +152,8 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
                   className="btn small"
                   disabled={!canSave}
                   data-nav-initial={!firstFilled && slot === 1 ? '' : undefined}
-                  aria-label={`Save to slot ${slot}`}
-                  onClick={() => handleSave(slot)}
+                  aria-label={summary ? `Save over slot ${slot}` : `Save to slot ${slot}`}
+                  onClick={() => askSave(slot)}
                 >
                   Save
                 </button>
@@ -135,7 +166,7 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
                 >
                   Load
                 </button>
-                <button className="btn small danger" disabled={!summary} aria-label={`Delete slot ${slot}`} onClick={() => handleDelete(slot)}>
+                <button className="btn small danger" disabled={!summary} aria-label={`Delete slot ${slot}`} onClick={() => askDelete(slot)}>
                   Delete
                 </button>
               </div>
@@ -164,6 +195,7 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }

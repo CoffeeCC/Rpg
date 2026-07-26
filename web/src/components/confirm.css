@@ -1,0 +1,70 @@
+/* =========================================================================
+   The destructive-action guard (ConfirmOverlay.tsx).
+
+   Deliberately the same object as the duel's yield confirm — dark scrim, gold
+   hairline, centred box — because it answers the same shape of question and a
+   player should not have to learn a second one. It sits at z-index 520, above
+   the Arrangement codex (500) and the merchant mat, because it is always the
+   last thing asked and must never open behind the thing that opened it.
+   ========================================================================= */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 3, 2, 0.74);
+  backdrop-filter: blur(2px);
+  animation: confirmIn 0.16s ease both;
+}
+
+@keyframes confirmIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-overlay { animation: none; }
+}
+
+.confirm-box {
+  max-width: 440px;
+  padding: 22px 26px 18px;
+  border: 1px solid rgba(200, 162, 74, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(24, 18, 13, 0.97), rgba(12, 9, 7, 0.98));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(246, 226, 155, 0.07);
+  text-align: center;
+}
+
+.confirm-title {
+  font-family: var(--font-display);
+  font-size: 1.04rem;
+  letter-spacing: 0.03em;
+  color: #ded3b6;
+  margin: 0 0 8px;
+}
+
+.confirm-detail {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-dim, #9a8f7a);
+  margin: 0 0 16px;
+}
+
+.confirm-actions {
+  justify-content: center;
+  gap: 12px;
+}
+
+/* The safe half reads as the default answer, not as the timid one. */
+.confirm-safe {
+  min-width: 108px;
+}
+
+.confirm-danger {
+  min-width: 108px;
+}

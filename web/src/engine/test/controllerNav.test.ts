@@ -33,6 +33,7 @@ import {
   scrollNeededFor,
   type NavRect,
 } from '../../nav/geometry';
+import { CANCEL_LABEL, stepConfirm, type ConfirmRequest } from '../../components/confirmAction';
 
 // ===========================================================================
 // Controller navigation — input interpretation and focus geometry.
@@ -547,6 +548,10 @@ const CONVERTED: NavScreenSpec[] = [
   { file: 'CardCodexScreen.tsx', ids: ['cardCodex'], cancels: true },
   { file: 'ChronicleScreen.tsx', ids: ['chronicle'], cancels: true },
   { file: 'MultiplayerScreen.tsx', ids: ['multiplayer', 'duel.concede'], cancels: true, traps: true },
+
+  // Wave 6 — the destructive-action guard (audit C5). Not a screen: the one
+  // modal every screen that can destroy something borrows.
+  { file: 'ConfirmOverlay.tsx', ids: ['confirm'], cancels: true, traps: true },
 ];
 
 /**
@@ -758,6 +763,203 @@ describe('screen layouts, as geometry', () => {
     for (let i = 0; i < chips.length - 1; i++) expect(pickInDirection(chips[i], chips, 'right'), `chip ${i}`).toBe(i + 1);
     expect(pickInDirection(chips[3], chips, 'right', { wrap: true })).toBe(0);
   });
+});
+
+// ===========================================================================
+// The destructive-action guard (CONTROLLER_AUDIT.md C5).
+//
+// The problem is adjacency plus traversal. Release is directly right of "To
+// party"; Sell is directly right of "Equip"; Delete is directly right of
+// "Load". A mouse AIMS, so the neighbour costs nothing. A D-pad TRAVERSES, so
+// one over-travelled press lands on the irreversible one — and the press that
+// was going to confirm the safe thing confirms the destructive thing instead.
+//
+// Two halves are tested two ways, because they fail two ways:
+//
+//   * BEHAVIOUR — cancel must never run the action and confirm must run it
+//     exactly once. `stepConfirm` is pure precisely so this is assertable in
+//     the node environment, with no DOM and no React.
+//   * WIRING — the dialog traps, opens on Cancel, and no screen still has a
+//     bare destructive dispatch hanging off an onClick. Source-level, for the
+//     reasons argued above the per-screen block.
+// ===========================================================================
+
+describe('destructive-action guard: behaviour', () => {
+  const req = (perform: () => void, title = 'Release Gloomshroom?'): ConfirmRequest => ({
+    title,
+    detail: 'This cannot be undone.',
+    confirmLabel: 'Release',
+    perform,
+  });
+
+  it('asking never performs anything', () => {
+    let ran = 0;
+    const step = stepConfirm(null, { type: 'ask', request: req(() => ran++) });
+    expect(step.run).toBeNull();
+    expect(ran).toBe(0);
+    expect(step.pending?.title).toBe('Release Gloomshroom?');
+  });
+
+  it('leaves state untouched on cancel', () => {
+    let ran = 0;
+    const asked = stepConfirm(null, { type: 'ask', request: req(() => ran++) });
+    const cancelled = stepConfirm(asked.pending, { type: 'cancel' });
+    expect(cancelled.run).toBeNull();
+    expect(cancelled.pending).toBeNull();
+    expect(ran).toBe(0);
+  });
+
+  it('performs the action exactly once on confirm', () => {
+    let ran = 0;
+    const asked = stepConfirm(null, { type: 'ask', request: req(() => ran++) });
+    const confirmed = stepConfirm(asked.pending, { type: 'confirm' });
+    expect(confirmed.run).not.toBeNull();
+    confirmed.run!();
+    expect(ran).toBe(1);
+    expect(confirmed.pending).toBeNull();
+  });
+
+  it('a second confirm against the closed dialog does nothing', () => {
+    // The bounced A press, or a pad whose button chatters. The dialog is gone
+    // by then, so there is nothing left to perform.
+    let ran = 0;
+    const asked = stepConfirm(null, { type: 'ask', request: req(() => ran++) });
+    const first = stepConfirm(asked.pending, { type: 'confirm' });
+    first.run?.();
+    const second = stepConfirm(first.pending, { type: 'confirm' });
+    expect(second.run).toBeNull();
+    second.run?.();
+    expect(ran).toBe(1);
+  });
+
+  it('confirming with nothing asked performs nothing at all', () => {
+    expect(stepConfirm(null, { type: 'confirm' }).run).toBeNull();
+  });
+
+  it('keeps the first question when a second ask arrives on top of it', () => {
+    // Auto-repeat walking onto the next row's Sell and firing must not swap
+    // the item out from under a player who is reading the name they are about
+    // to destroy.
+    let a = 0;
+    let b = 0;
+    const first = stepConfirm(null, { type: 'ask', request: req(() => a++, 'Sell Dawnbrand?') });
+    const second = stepConfirm(first.pending, { type: 'ask', request: req(() => b++, 'Sell Ashcloak?') });
+    expect(second.pending?.title).toBe('Sell Dawnbrand?');
+    stepConfirm(second.pending, { type: 'confirm' }).run!();
+    expect(a).toBe(1);
+    expect(b).toBe(0);
+  });
+
+  it('cancel and confirm are the only two answers, and they are exclusive', () => {
+    // Whatever the event, `run` is non-null on exactly one path: a confirm
+    // with a question open. Anything else that performs work is a bug.
+    let ran = 0;
+    const open = stepConfirm(null, { type: 'ask', request: req(() => ran++) }).pending;
+    const outcomes = [
+      stepConfirm(open, { type: 'ask', request: req(() => ran++) }),
+      stepConfirm(open, { type: 'cancel' }),
+      stepConfirm(null, { type: 'cancel' }),
+      stepConfirm(null, { type: 'confirm' }),
+      stepConfirm(open, { type: 'confirm' }),
+    ];
+    expect(outcomes.filter((o) => o.run !== null).length).toBe(1);
+    // And every path closes the dialog except the second ask, which holds it.
+    expect(outcomes.map((o) => o.pending !== null)).toEqual([true, false, false, false, false]);
+  });
+});
+
+describe('destructive-action guard: wiring', () => {
+  const overlay = componentSource('ConfirmOverlay.tsx');
+
+  it('traps focus at the overlay layer, like every other modal', () => {
+    expect(overlay).toMatch(/trap: true/);
+    expect(overlay).toMatch(/layer: 10/);
+    expect(overlay).toMatch(/id: 'confirm'/);
+  });
+
+  it('answers B / Escape with the safe half', () => {
+    // onCancel is bound, and what it calls is the cancel path — never confirm.
+    const onCancel = overlay.slice(overlay.indexOf('onCancel: () =>'), overlay.indexOf('return true'));
+    expect(onCancel).toContain('onCancel()');
+    expect(onCancel).not.toContain('onConfirm');
+  });
+
+  it('opens on Cancel — marked initial AND first in document order', () => {
+    // Both, deliberately. `data-nav-initial` is what the nav layer honours;
+    // document order is its fallback when nothing is marked, so the safe half
+    // wins under either resolution path.
+    const safe = overlay.indexOf('confirm-safe');
+    const danger = overlay.indexOf('confirm-danger');
+    expect(safe).toBeGreaterThan(-1);
+    expect(danger).toBeGreaterThan(-1);
+    expect(safe).toBeLessThan(danger);
+    const safeButton = overlay.slice(safe, danger);
+    expect(safeButton).toContain('data-nav-initial=""');
+    // ...and the destructive half must NOT be the one the cursor lands on.
+    expect(overlay.slice(danger)).not.toContain('data-nav-initial');
+  });
+
+  it('is a dialog to a screen reader, not a div', () => {
+    expect(overlay).toMatch(/role="dialog"/);
+    expect(overlay).toMatch(/aria-modal="true"/);
+  });
+
+  it('names its safe half something, always', () => {
+    expect(CANCEL_LABEL).toBeTruthy();
+    expect(overlay).toContain('CANCEL_LABEL');
+  });
+
+  /**
+   * Every irreversible action in the game, and the token that would prove it
+   * is still wired straight to a click. `bare` patterns must NOT match: the
+   * dispatch has to sit inside a `perform:`, behind the question.
+   */
+  const GUARDED: { file: string; what: string; bare: RegExp[] }[] = [
+    { file: 'StableScreen.tsx', what: 'Release', bare: [/onClick=\{\(\) => dispatch\(\{ type: 'RELEASE'/] },
+    { file: 'GearScreen.tsx', what: 'Sell', bare: [/onClick=\{\(\) => dispatch\(\{ type: 'SELL_GEAR'/] },
+    { file: 'ShopScreens.tsx', what: 'Sell', bare: [/onClick=\{\(\) => dispatch\(\{ type: 'SELL_GEAR'/] },
+    { file: 'SaveLoadScreen.tsx', what: 'Delete / overwrite', bare: [/onClick=\{\(\) => handleDelete\(/, /onClick=\{\(\) => handleSave\(/] },
+    { file: 'BreedingScreen.tsx', what: 'Breed (both parents are consumed)', bare: [/onClick=\{doBreed\}/] },
+    { file: 'SmithScreen.tsx', what: 'Recast (melts a Legendary)', bare: [/dispatch\(\{ type: 'RECAST_SET_PIECE'[\s\S]{0,40}\}\);\s*\}\}/] },
+    { file: 'VictoryScreen.tsx', what: 'Begin the next telling', bare: [/onClick=\{\(\) => dispatch\(\{ type: 'RESTART'/] },
+    { file: 'FloorScreen.tsx', what: 'Witchwick home (burns the wick, drops the run)', bare: [/onClick=\{\(\) => dispatch\(\{ type: 'LEAVE_GATE'/] },
+  ];
+
+  for (const spec of GUARDED) {
+    describe(`${spec.file} — ${spec.what}`, () => {
+      const source = componentSource(spec.file);
+
+      it('routes through the shared guard rather than its own dialog', () => {
+        expect(source).toMatch(/useConfirmAction/);
+        expect(source).toContain("from './ConfirmOverlay'");
+        // One dialog for the whole game: a screen must not grow its own.
+        expect(source).not.toMatch(/id: 'confirm'/);
+      });
+
+      it('actually renders the overlay it asks with', () => {
+        // `ask` without `{guard.overlay}` in the tree is a button that now
+        // does nothing at all — the worst possible failure of this change.
+        expect(source).toContain('guard.ask({');
+        expect(source).toContain('{guard.overlay}');
+      });
+
+      it('has no bare path to the irreversible action left', () => {
+        for (const pattern of spec.bare) expect(source, String(pattern)).not.toMatch(pattern);
+      });
+
+      it('names the thing and the consequence in every question it asks', () => {
+        const asks = source.match(/guard\.ask\(\{/g)?.length ?? 0;
+        expect(asks).toBeGreaterThan(0);
+        for (const field of ['title:', 'detail:', 'confirmLabel:', 'perform:']) {
+          expect(source.match(new RegExp(field, 'g'))?.length ?? 0, field).toBe(asks);
+        }
+        // "Are you sure?" is not a warning. Every detail states the loss.
+        const details = [...source.matchAll(/detail: `([^`]*)`/g)].map((m) => m[1]);
+        expect(details.length).toBe(asks);
+        for (const d of details) expect(d, d).toMatch(/cannot be (undone|recovered)/);
+      });
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------

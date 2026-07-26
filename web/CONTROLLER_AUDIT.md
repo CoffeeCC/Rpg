@@ -598,6 +598,15 @@ On a mouse this is fine. On a D-pad, one extra press right + A destroys a save o
 **Decision needed:** a shared confirm affordance (hold-to-confirm or a small modal) for
 `.btn.danger`.
 
+> **Answered — one shared trapping modal, `useConfirmAction` / `ConfirmOverlay.tsx`.**
+> Cancel is first in document order and marked `data-nav-initial`, so the cursor always opens
+> on the safe half; B/Escape answers with it. The dialog names the thing and the loss.
+> Nine actions guarded, four of them found beyond this table: overwriting a filled save slot,
+> `BREED` (consumes both parents), `RECAST_SET_PIECE` (melts a Legendary), and `LEAVE_GATE`
+> (burns a Witchwick and drops the run's unclaimed rewards). `MonsterSheetScreen`'s "Remove"
+> and `StableScreen`'s "To stable" are NOT guarded — both are reversible. See CONTROLLER.md
+> § 4, "Destructive actions".
+
 ### C6 — Scroll containers with no keyboard/controller path 🟠
 Seven independent scroll boxes, none reachable except incidentally via a focused child:
 `App.css:40-58` (`.game-main`, every screen), `App.css:419-420` (`.log`, **zero focusable

@@ -10,6 +10,7 @@ import { Icon } from './Icon';
 import { setAttribution, setStandings } from '../engine/data/sets';
 import { UNIQUES } from '../engine/data/uniques';
 import { useNavScope, useRefocusOn } from '../nav';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../sheets.css';
 import '../charsheet.css';
 import '../gearsets.css';
@@ -169,6 +170,18 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
   };
 
   const slotFilters: ItemV2['slot'][] = ['weapon', 'armor', 'headpiece', 'gloves', 'boots', 'ring', 'amulet', 'pendant'];
+
+  // Sell sits directly right of Equip on every bag row (CONTROLLER_AUDIT.md
+  // C5), and half value on a Legendary is not a trade anyone makes twice.
+  const guard = useConfirmAction();
+  const sellPrice = (item: ItemV2) => Math.max(1, Math.floor(item.value / 2));
+  const askSell = (item: ItemV2) =>
+    guard.ask({
+      title: `Sell ${item.name}?`,
+      detail: `It leaves the bag for ${sellPrice(item)} gold and does not come back — ${item.rarity} pieces are not restocked. This cannot be undone.`,
+      confirmLabel: `Sell for ${sellPrice(item)}g`,
+      perform: () => dispatch({ type: 'SELL_GEAR', uid: item.uid }),
+    });
 
   const root = useRef<HTMLDivElement>(null);
   useNavScope(root, {
@@ -375,8 +388,8 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
                   </button>
                   <button
                     className="btn small danger"
-                    aria-label={`Sell ${item.name} for ${Math.max(1, Math.floor(item.value / 2))} gold`}
-                    onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}
+                    aria-label={`Sell ${item.name} for ${sellPrice(item)} gold`}
+                    onClick={() => askSell(item)}
                   >
                     Sell
                   </button>
@@ -391,7 +404,7 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
                   <ItemLine item={item} showAffixes={false} iconSize={36} />
                   <span className="pill">monster accessory — fit it from a monster's sheet</span>
                 </div>
-                <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
+                <button className="btn small danger" aria-label={`Sell ${item.name}`} onClick={() => askSell(item)}>
                   Sell
                 </button>
               </div>
@@ -408,6 +421,7 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }

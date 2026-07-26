@@ -8,6 +8,7 @@ import { FAMILY_INFO } from '../engine/data/species';
 import { getSkill } from '../engine/data/skills';
 import { MonsterImage } from '../art/MonsterImage';
 import { Icon } from './Icon';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../services.css';
 
 /** One side of the ritual: a filled parent socket or a waiting hollow. */
@@ -61,12 +62,27 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
     setChosenSkills((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : prev.length < 3 ? [...prev, id] : prev));
   }
 
+  // Not on the C5 list, and it belongs there: BREED deletes both parents from
+  // party and stable ("Both are gone", game.ts). Two levelled monsters is the
+  // largest single loss any button in the game can cause.
+  const guard = useConfirmAction();
+
   function doBreed() {
     if (!a || !b) return;
     dispatch({ type: 'BREED', parentA: a.uid, parentB: b.uid, skillIds: chosenSkills });
     setParentA(null);
     setParentB(null);
     setChosenSkills([]);
+  }
+
+  function askBreed() {
+    if (!a || !b) return;
+    guard.ask({
+      title: `Give ${a.nickname} and ${b.nickname} to the egg?`,
+      detail: `Both parents are consumed — Lv${a.level} ${a.species.name} and Lv${b.level} ${b.species.name} — and only the hatchling comes out. This cannot be undone.`,
+      confirmLabel: '🥚 Breed them',
+      perform: doBreed,
+    });
   }
 
   const root = useRef<HTMLDivElement>(null);
@@ -178,7 +194,7 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
             })}
           </div>
           <div className="btn-row">
-            <button className="btn primary" disabled={chosenSkills.length === 0} onClick={doBreed}>
+            <button className="btn primary" disabled={chosenSkills.length === 0} onClick={askBreed}>
               🥚 Breed them
             </button>
           </div>
@@ -190,6 +206,7 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }

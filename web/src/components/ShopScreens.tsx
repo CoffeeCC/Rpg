@@ -5,6 +5,7 @@ import { ItemLine } from './ItemLine';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
 import { useNavScope } from '../nav';
+import { useConfirmAction } from './ConfirmOverlay';
 import '../services.css';
 
 export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
@@ -63,6 +64,9 @@ export function ShopGearScreen({ state, dispatch }: { state: GameState; dispatch
   // Two stacked unbounded lists (stock, then the whole bag). The bag can run to
   // thirty rows, so this is one of the screens where LT/RT paging and the right
   // stick earn their keep — both work off `.game-main` with no code here.
+  // Sell here is one column right of Buy on the row above it, in a list that
+  // can run thirty rows deep. Same guard as the bag on the Gear screen.
+  const guard = useConfirmAction();
   const root = useRef<HTMLDivElement>(null);
   useNavScope(root, {
     id: 'shopGear',
@@ -120,7 +124,18 @@ export function ShopGearScreen({ state, dispatch }: { state: GameState; dispatch
             </div>
             <div className="svc-buy">
               <span className="price-chip">☉ {Math.max(1, Math.floor(item.value / 2))}g</span>
-              <button className="btn small" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
+              <button
+                className="btn small"
+                aria-label={`Sell ${item.name}`}
+                onClick={() =>
+                  guard.ask({
+                    title: `Sell ${item.name}?`,
+                    detail: `Grude pays ${Math.max(1, Math.floor(item.value / 2))} gold and the piece is gone from the bag for good. Stock rotates; this does not come back. This cannot be undone.`,
+                    confirmLabel: `Sell for ${Math.max(1, Math.floor(item.value / 2))}g`,
+                    perform: () => dispatch({ type: 'SELL_GEAR', uid: item.uid }),
+                  })
+                }
+              >
                 Sell
               </button>
             </div>
@@ -133,6 +148,7 @@ export function ShopGearScreen({ state, dispatch }: { state: GameState; dispatch
           Back
         </button>
       </div>
+      {guard.overlay}
     </div>
   );
 }
