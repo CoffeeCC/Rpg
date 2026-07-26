@@ -73,6 +73,31 @@
   visibility: hidden !important;
 }
 
+/* THE IMPACT FLARE (ENGINE_PLAN §21.7). `art/impactFx.tsx` draws it as an SVG
+   with two `drop-shadow` glows — a flat, unlit overlay, which cost nothing on
+   the old flat battlefield and costs a great deal on a lit one: everything
+   around it now has depth and it does not. §1.2 again — the GPU draws every
+   surface — so the same eight shapes are an emissive quad standing on the
+   piece's own measured box, and the burst is a real `Light` that illuminates
+   the board and the combatants beside it (`battleScene.IMPACT_LOOK`).
+
+   SCOPED TO `.bf-figure`, WHICH IS THE WHOLE PRECISION OF THIS RULE. That is
+   the box the renderer measures and stands a piece in, so it is exactly where
+   a drawn flare replaces this one. `BattleScreen` renders a SECOND copy on the
+   rival tamer's portrait chip in a duel (`.bf-ring`), and no piece stands
+   behind a HUD chip — nothing would be drawn in its place, so it stays.
+
+   The damage popups inside the same box are deliberately untouched: they are
+   TEXT, and §1.2 gives text to the DOM. So is the `.aim-reticle` on the unit
+   above, which marks which hit target the d-pad is sitting on. And so are the
+   `flash-*` classes on `.bf-unit` itself — they light the nameplate and the
+   badges, which are still DOM; what they could never reach on this path is the
+   figure `<img>` (hidden below), and THAT is what the renderer now flashes,
+   as a tint multiplier on the lit piece. */
+.lantern-battle .bf-figure .impact-fx-anchor {
+  display: none !important;
+}
+
 /* The painted scene. It is a texture now, standing UP at the back of the board
    as a lit flat, which is what a diorama backdrop is — see `battleScene.ts`.
    This is what ENGINE_PLAN §8 item 6 bought: while `BattleView.backdrop` was a

@@ -28,13 +28,15 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BAKED_BOARD_ROOT } from '../battleMaterials';
+import { BAKED_BOARD_ROOT, IMPACT_CELL_MARGIN, impactAtlasPixels } from '../battleMaterials';
+import { COMBAT_FX_KINDS } from '../battleScene';
 
 const ROOT = join(__dirname, '..', '..', '..', '..');
 const PUBLISH_DIR = join(ROOT, 'web', 'public', BAKED_BOARD_ROOT);
 const STAGE_DIR = join(ROOT, 'web', 'art-staging', 'materials', 'board');
 const battleMaterialsSource = readFileSync(join(ROOT, 'web', 'src', 'render', 'battleMaterials.ts'), 'utf8');
 const publishSource = readFileSync(join(ROOT, 'tools', 'art', 'blender', 'publish.mjs'), 'utf8');
+const battleSceneSource = readFileSync(join(ROOT, 'web', 'src', 'render', 'battleScene.ts'), 'utf8');
 
 /** The ten shapes ENGINE_PLAN §19.1 lists, plus the three pre-existing wall
  *  fittings the same commit's header names alongside them. */
@@ -223,5 +225,145 @@ describe('the fight draws the same cut of a sprite the floor does', () => {
     // that forced derived tile normals down to 0.35.
     const fig = battleMaterialsSource.slice(battleMaterialsSource.indexOf('function requestFigure('));
     expect(fig).toMatch(/normalStrength: PIECE_RELIEF/);
+  });
+});
+
+// =========================================================================
+// THE IMPACT ATLAS (ENGINE_PLAN §21.7)
+//
+// `impactAtlasPixels` is the only part of the combat-FX port that is PIXELS,
+// and pixels are exactly where this project's silent failures live: a shape
+// generator that returns zero everywhere, a cell that bleeds into its
+// neighbour, an atlas uploaded through the wrong colour rule. None of those
+// throws, none of them fails `tsc`, and all of them look like art direction.
+// So the coverage is asserted as arithmetic here rather than looked at once.
+// =========================================================================
+describe('the impact atlas is eight distinct, self-contained shapes', () => {
+  const CELL = 64;
+  const SIZE = CELL * 3;
+  const atlas = impactAtlasPixels(CELL);
+
+  /** Alpha at a pixel of one kind's cell, 0..255. */
+  function alphaAt(index: number, x: number, y: number): number {
+    const cx = (index % 3) * CELL;
+    const cy = Math.floor(index / 3) * CELL;
+    return atlas[((cy + y) * SIZE + (cx + x)) * 4 + 3];
+  }
+
+  function coverage(index: number): number {
+    let n = 0;
+    for (let y = 0; y < CELL; y++) for (let x = 0; x < CELL; x++) if (alphaAt(index, x, y) > 8) n++;
+    return n / (CELL * CELL);
+  }
+
+  it('is a square RGBA8 buffer of exactly the size createRGBATexture demands', () => {
+    // `createRGBATexture` throws on a mismatch rather than uploading a
+    // garbled, offset-by-one-row texture — but only if the number agrees, and
+    // the number is `cell * IMPACT_ATLAS_COLS` squared.
+    expect(atlas.length).toBe(SIZE * SIZE * 4);
+    expect(impactAtlasPixels(128).length).toBe((128 * 3) ** 2 * 4);
+  });
+
+  it('draws SOMETHING in every one of the eight cells', () => {
+    // The failure this rejects is a shape function that falls through and
+    // returns 0: the flare then draws a fully transparent quad, the light
+    // still fires, and the fight looks like it has an invisible element.
+    for (let i = 0; i < COMBAT_FX_KINDS.length; i++) {
+      const c = coverage(i);
+      expect(c, `${COMBAT_FX_KINDS[i]} has no coverage`).toBeGreaterThan(0.02);
+      expect(c, `${COMBAT_FX_KINDS[i]} fills its whole cell`).toBeLessThan(0.75);
+    }
+  });
+
+  it('draws a DIFFERENT something in each — no two kinds share a shape', () => {
+    // A copy-paste in the switch passes the coverage test above perfectly
+    // well. `hit` and `holy` are the two that are legitimately the same
+    // family (the SVG draws one star for both), and they are deliberately
+    // baked at different radii so even they are not byte-identical.
+    const fingerprints = new Set<string>();
+    for (let i = 0; i < COMBAT_FX_KINDS.length; i++) {
+      let f = '';
+      for (let y = 2; y < CELL; y += 3) for (let x = 2; x < CELL; x += 3) f += alphaAt(i, x, y) > 8 ? '1' : '0';
+      expect(fingerprints.has(f), `${COMBAT_FX_KINDS[i]} is a duplicate shape`).toBe(false);
+      fingerprints.add(f);
+    }
+  });
+
+  it('keeps a transparent margin, so a cell cannot bleed into its neighbour', () => {
+    // The atlas is uploaded WITHOUT mipmaps for this reason, and the margin
+    // is the second belt: even at LINEAR magnification a sample that strays
+    // past a cell edge has to land on nothing.
+    const band = Math.max(1, Math.floor(CELL * IMPACT_CELL_MARGIN) - 1);
+    for (let i = 0; i < COMBAT_FX_KINDS.length; i++) {
+      for (let k = 0; k < CELL; k++) {
+        for (let b = 0; b < band; b++) {
+          expect(alphaAt(i, b, k), `${COMBAT_FX_KINDS[i]} touches its left edge`).toBe(0);
+          expect(alphaAt(i, CELL - 1 - b, k), `${COMBAT_FX_KINDS[i]} touches its right edge`).toBe(0);
+          expect(alphaAt(i, k, b), `${COMBAT_FX_KINDS[i]} touches its top edge`).toBe(0);
+          expect(alphaAt(i, k, CELL - 1 - b), `${COMBAT_FX_KINDS[i]} touches its bottom edge`).toBe(0);
+        }
+      }
+    }
+  });
+
+  it('leaves the ninth cell empty, because nothing ever addresses it', () => {
+    expect(coverage(8)).toBe(0);
+  });
+
+  it('is a MASK: white wherever it is anything at all', () => {
+    // The element's colour arrives as the sprite's tint (`IMPACT_LOOK`, which
+    // is `art/impactFx.tsx`'s own palette in linear light). Baking colour into
+    // the atlas as well would multiply the two and desaturate every flare.
+    for (let p = 0; p < SIZE * SIZE; p++) {
+      if (atlas[p * 4 + 3] === 0) continue;
+      expect(atlas[p * 4]).toBe(255);
+      expect(atlas[p * 4 + 1]).toBe(255);
+      expect(atlas[p * 4 + 2]).toBe(255);
+    }
+  });
+
+  it('is deterministic — the same bytes every time', () => {
+    // No `Math.random` in a generator, for the same reason there is none in a
+    // scene builder: two uploads of the same atlas must be byte-identical or
+    // a pixel diff of a fight means nothing.
+    const again = impactAtlasPixels(CELL);
+    expect(again.length).toBe(atlas.length);
+    for (let i = 0; i < atlas.length; i++) {
+      if (atlas[i] !== again[i]) throw new Error(`byte ${i} differs between two generations`);
+    }
+  });
+
+  it('has no Math.random anywhere on the fx path', () => {
+    // Comments stripped: both files ARGUE about `Math.random` at length, and a
+    // raw scan would fail on the argument rather than on a call.
+    const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(code(battleMaterialsSource)).not.toMatch(/Math\.random/);
+    expect(code(battleSceneSource)).not.toMatch(/Math\.random/);
+    // And the check is not vacuous — the stripper leaves real code alone.
+    expect(code(battleSceneSource)).toMatch(/export function buildBattleScene/);
+  });
+
+  it('uploads the atlas as a mask, not a colour, and never mipmaps it', () => {
+    // Both are call-site rules, and both are silent when broken: an sRGB
+    // decode would bend the mask's midtones, and a mipmapped atlas bleeds
+    // adjacent cells into each other at the coarse levels — a fire flare with
+    // a ghost of a frost star in it.
+    const call = /createRGBATexture\(gl, 128 \* IMPACT_ATLAS_COLS, impactAtlasPixels\(128\)([^)]*)\)/.exec(
+      battleMaterialsSource,
+    );
+    expect(call, 'the impact atlas is not uploaded at all').not.toBeNull();
+    expect(call![1]).not.toContain('srgb');
+    expect(call![1]).not.toContain('mipmap');
+  });
+
+  it('is emissive, or a flare is only as bright as the light hitting it', () => {
+    // `lighting.ts`: `albedo * (ambient + lit + uEmissive)`. Without the
+    // emissive term a burst in a dark corner of the board is invisible — the
+    // exact failure mode a lit renderer introduces that a DOM overlay never
+    // had, and the reason the flame already carries one.
+    const block = battleMaterialsSource.slice(
+      battleMaterialsSource.indexOf('materials.set(MAT_IMPACT'),
+    );
+    expect(block.slice(0, 400)).toMatch(/emissiveStrength:\s*[\d.]+/);
   });
 });
