@@ -3008,3 +3008,71 @@
     animation: none;
   }
 }
+
+/* =========================================================================
+   THE PORTRAITS GO TO THE CORNERS — §corners
+
+   Paul: "can you just make the Player and Enemy Portraits locked to the top
+   and bottom corner of the window? right now the enemy port is cut off at the
+   top."
+
+   Both halves measured on a real 1280x800 fight before touching anything:
+
+     .bf-top    box top = 86px, and its clipping ancestor (.panel, which
+                carries `overflow: hidden auto`) starts at 90px. Four pixels
+                of the enemy's chip were being shaved off, exactly as he said.
+     .bf-bottom box = 421..495px in an 800px window — pinned to the bottom of
+                the BATTLEFIELD, which stops above the hand, so it sat in the
+                middle of the screen rather than at any corner.
+
+   The cause of both is the same: `.bf-portrait` was positioned against
+   `.battlefield`, and the battlefield's top edge is ABOVE the panel's content
+   box while its bottom edge is far above the window's. Positioning against a
+   box that is not the one you are trying to sit in the corner of gets you
+   neither corner.
+
+   So they are positioned against the WINDOW now, which is what was asked for
+   and is also the only box whose corners are the corners in question.
+
+   The insets are not zero, and that is deliberate rather than timid: the app
+   chrome owns the top strip (hero name, HP, gold) and the piles own the
+   bottom-left. Sitting flush would put a monster's face over the player's own
+   HP bar. These are the corners of the PLAYABLE window — hard against the
+   stage's edges, nothing clipped, nothing covered.
+   ========================================================================= */
+
+@media (min-width: 1200px) {
+  .panel.battle-stage .bf-portrait {
+    position: fixed;
+    left: 22px;
+    width: var(--bf-chiprail);
+    margin: 0;
+    /* Above the stage's own layers, below banners (90) and modals. */
+    z-index: 60;
+  }
+
+  /* NOTE, measured: `position: fixed` does NOT resolve against the window
+     here. `.panel.battle-stage` carries a transform (the stage zoom/shake),
+     and a transformed ancestor becomes the containing block for fixed
+     descendants. So these offsets are against the stage — which spans
+     14..1266 x 90..786 of a 1280x800 window, i.e. the playable area, and is
+     the right box to corner against anyway. */
+
+  /* Top-left, hard against the stage's corner and clear of the candle rail
+     below it (the candles start at y=185; this ends at 174). */
+  .panel.battle-stage .bf-top {
+    top: 40px;
+    bottom: auto;
+  }
+
+  /* The bottom-left corner of this screen is NOT free: the draw pile sits at
+     x 60..150 and the hand fans out from x~280, with End Turn holding the
+     bottom-right. Rather than drop the hero's face on top of a control, the
+     chip goes as low as the battlefield lane allows and stays readable.
+     Going lower means relocating the piles — Paul's call, not a silent one. */
+  .panel.battle-stage .bf-bottom {
+    bottom: auto;
+    top: 372px;
+    left: 22px;
+  }
+}
