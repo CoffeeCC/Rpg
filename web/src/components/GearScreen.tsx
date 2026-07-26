@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { ItemV2 } from '../engine/types';
 import type { EquipKey } from '../engine/entities/Character';
@@ -9,6 +9,7 @@ import { ItemLine } from './ItemLine';
 import { Icon } from './Icon';
 import { setAttribution, setStandings } from '../engine/data/sets';
 import { UNIQUES } from '../engine/data/uniques';
+import { useNavScope, useRefocusOn } from '../nav';
 import '../sheets.css';
 import '../charsheet.css';
 import '../gearsets.css';
@@ -139,6 +140,14 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
         style={{ gridArea: SLOT_AREA[key] }}
         onClick={() => setBagFilter(bagFilter === slotType ? 'all' : slotType)}
         title={item ? `${item.name} — click to sort the bag to this slot.` : `${SLOT_LABEL[key]} — empty. Click to sort the bag to this slot.`}
+        // The slot's entire purpose used to be explained only in that `title`,
+        // which on a Deck never fires. Said out loud here instead, where a
+        // screen reader and the focus ring can both get at it.
+        aria-label={
+          item
+            ? `${SLOT_LABEL[key]}: ${item.name}. Sorts the bag to this slot.`
+            : `${SLOT_LABEL[key]}: empty. Sorts the bag to this slot.`
+        }
       >
         {item ? (
           icon ? <img src={icon} alt="" className="doll-slot-img" draggable={false} /> : <span className="doll-slot-emoji">{SLOT_EMOJI[key]}</span>
@@ -161,8 +170,25 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
 
   const slotFilters: ItemV2['slot'][] = ['weapon', 'armor', 'headpiece', 'gloves', 'boots', 'ring', 'amulet', 'pendant'];
 
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'equipment',
+    onCancel: () => {
+      // A filtered bag is a state the player can be stuck in with no visible
+      // way out on a pad, so B clears the filter before it leaves the screen.
+      if (bagFilter !== 'all') {
+        setBagFilter('all');
+        return true;
+      }
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+  // Filtering, equipping and selling all rebuild the bag list under the cursor.
+  useRefocusOn([bagFilter, bag.length, worn.length]);
+
   return (
-    <div className="panel geq-screen">
+    <div className="panel geq-screen" ref={root}>
       <div className="sheet-head">
         <div>
           <h1 className="title" style={{ margin: 0 }}>
@@ -344,10 +370,14 @@ export function GearScreen({ state, backScreen, dispatch }: { state: GameState; 
                       {cmp.replaces && <span className="equip-delta-replaces">replaces {cmp.replaces.name}</span>}
                     </div>
                   </div>
-                  <button className="btn small primary" onClick={() => dispatch({ type: 'EQUIP', uid: item.uid })}>
+                  <button className="btn small primary" aria-label={`Equip ${item.name}`} onClick={() => dispatch({ type: 'EQUIP', uid: item.uid })}>
                     Equip
                   </button>
-                  <button className="btn small danger" onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}>
+                  <button
+                    className="btn small danger"
+                    aria-label={`Sell ${item.name} for ${Math.max(1, Math.floor(item.value / 2))} gold`}
+                    onClick={() => dispatch({ type: 'SELL_GEAR', uid: item.uid })}
+                  >
                     Sell
                   </button>
                 </div>

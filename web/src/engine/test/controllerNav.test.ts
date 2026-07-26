@@ -533,19 +533,16 @@ const CONVERTED: NavScreenSpec[] = [
   { file: 'BreedingScreen.tsx', ids: ['breeding'], cancels: true },
   { file: 'SaveLoadScreen.tsx', ids: ['saveLoad'], cancels: true },
   { file: 'TavernScreen.tsx', ids: ['tavern'], cancels: true },
+
+  // Wave 4 — character creation and the deep-information sheets.
+  { file: 'CreateScreen.tsx', ids: ['create'], cancels: true },
+  { file: 'MonsterSheetScreen.tsx', ids: ['monsterSheet'], cancels: true },
+  { file: 'CharacterSheetScreen.tsx', ids: ['characterSheet', 'characterSheet.codex'], cancels: true, traps: true },
+  { file: 'GearScreen.tsx', ids: ['equipment'], cancels: true },
 ];
 
 /** Still mouse-only. This list must reach zero before the Steam build. */
-const NOT_YET_CONVERTED: string[] = [
-  'CardCodexScreen.tsx',
-  'CharacterSheetScreen.tsx',
-  'ChronicleScreen.tsx',
-  'CreateScreen.tsx',
-  'DeckScreen.tsx',
-  'GearScreen.tsx',
-  'MonsterSheetScreen.tsx',
-  'MultiplayerScreen.tsx',
-];
+const NOT_YET_CONVERTED: string[] = ['CardCodexScreen.tsx', 'ChronicleScreen.tsx', 'DeckScreen.tsx', 'MultiplayerScreen.tsx'];
 
 describe('screen conversion coverage', () => {
   const screenFiles = readdirSync(COMPONENT_DIR).filter((f) => /(Screen|Overlay)\.tsx$/.test(f));
@@ -588,6 +585,12 @@ describe('screen conversion coverage', () => {
           expect(source).toMatch(/layer: 10/);
         });
       }
+
+      it('has a ref on the element it registers', () => {
+        // A scope whose ref never lands on a DOM node registers nothing and
+        // fails completely silently.
+        expect(source).toMatch(/ref=\{/);
+      });
 
       it('never auto-focuses a text field', () => {
         // `data-nav-initial` on an <input> pops the Steam on-screen keyboard
@@ -668,6 +671,27 @@ describe('screen layouts, as geometry', () => {
     expect(pickInDirection(all[2], all, 'right')).toBe(3);
     expect(pickInDirection(all[3], all, 'left')).toBe(2);
     expect(pickInDirection(all[5], all, 'right')).toBe(6);
+  });
+
+  it('keeps glossary terms out of the pad ring but inside Tab order', () => {
+    // KeywordText spans carry tabIndex 0 AND data-nav-skip. The controller
+    // must not stop on forty proper nouns in a paragraph; Tab and a screen
+    // reader still must reach every one of them.
+    const source = componentSource('KeywordText.tsx');
+    expect(source).toMatch(/tabIndex=\{0\}/);
+    expect(source).toMatch(/data-nav-skip=\{navigable \? undefined : ''\}/);
+    // The card inspector opts back in — a card's rules text IS the content.
+    expect(componentSource('CardDetailOverlay.tsx')).toMatch(/<KeywordText[^>]*navigable/);
+  });
+
+  it('gives ItemHover a focus path, not only a cursor one', () => {
+    // Rarity, affixes, set thresholds and the equip-compare deltas lived in a
+    // window bound to onMouseEnter and positioned from e.clientX. There is no
+    // clientX on a Steam Deck.
+    const source = componentSource('ItemHover.tsx');
+    expect(source).toMatch(/onFocus=\{anchor\}/);
+    expect(source).toMatch(/onBlur=\{release\}/);
+    expect(source).toMatch(/getBoundingClientRect\(\)/);
   });
 
   it('walks the depth chip row', () => {

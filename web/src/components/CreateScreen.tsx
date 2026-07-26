@@ -10,6 +10,7 @@ import { RACE_ART } from '../art/raceArt';
 import { PAINTED_TOWN } from '../art/painted';
 import { SLOT_COUNT, getSlotSummary, loadFromSlot, importSaveFromFile } from '../platform/browserSave';
 import { loadTellings } from '../platform/tellings';
+import { useNavScope } from '../nav';
 
 /** What the book calls a hero who never gave it a name. */
 const THE_NAMELESS = 'The Nameless';
@@ -20,6 +21,32 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
   const [className, setClassName] = useState<ClassName>('Warrior');
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const beginRef = useRef<HTMLButtonElement>(null);
+
+  // This screen is rendered outside the game shell — no HUD, no sidebar, no
+  // Back chip — and there is nowhere behind it, so B does not go back.
+  //
+  // What it does instead is get you out of the nameplate. A text field is the
+  // one place the keyboard path goes quiet on purpose (arrows move the caret,
+  // Space types a space) and Escape is the only key that still reaches us. On
+  // a pad the D-pad would walk out of the field anyway; this makes B do the
+  // obvious thing on both, and lands on the button the player came here to
+  // press.
+  //
+  // Note what is NOT a problem here any more: naming the hero is optional
+  // (`heroName` falls back to The Nameless), so a Deck player with no keyboard
+  // can still start a game. The audit filed that as the single highest-risk
+  // control in the game; the fix was in the game design, not the input layer.
+  useNavScope(root, {
+    id: 'create',
+    onCancel: () => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLInputElement) || active.type !== 'text') return false;
+      beginRef.current?.focus();
+      return true;
+    },
+  });
 
   // A hero left unnamed is not a blocked form — it's an unwritten story, and the
   // Chronicler has a word for that. Leaving this optional is also what makes the
@@ -57,7 +84,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
   }
 
   return (
-    <div className="forge">
+    <div className="forge" ref={root}>
       <div className="forge-backdrop">
         <img src={PAINTED_TOWN} alt="" draggable={false} />
       </div>
@@ -171,6 +198,7 @@ export function CreateScreen({ dispatch }: { dispatch: (a: GameAction) => void }
           />
           <button
             className="btn primary forge-begin"
+            ref={beginRef}
             onClick={() => dispatch({ type: 'CREATE_CHARACTER', name: heroName, race, className })}
           >
             {telling > 1 ? 'Begin the Next Telling' : 'Begin the Telling'}

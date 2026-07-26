@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { Stat } from '../engine/types';
 import { RACE_TRAITS, CLASS_TRAITS, TALENTS, unlockedTalents } from '../engine/data/traits';
@@ -22,6 +22,7 @@ import { HeroImage, MonsterImage } from '../art/MonsterImage';
 import { ELEMENT_ICON } from '../art/elementIcons';
 import { KeywordText } from './KeywordText';
 import { NpcHost } from './NpcHost';
+import { useNavScope, useRefocusOn } from '../nav';
 import '../sheets.css';
 import '../charsheet.css';
 
@@ -99,8 +100,33 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
   const mitigations = mitigationLines(player);
   const shaping = shapingMultipliers(player).filter((s) => s.value !== 1);
 
+  // The densest focus surface in the game: eighteen `<details>` disclosures,
+  // seven `+` buttons that exist only while there are points to spend, two
+  // folds, and — until KeywordText grew a `navigable` switch — forty to eighty
+  // inline glossary spans. The terms are out of the pad's ring now (Tab still
+  // reaches them), which leaves this screen as roughly thirty real controls.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'characterSheet',
+    onCancel: () => {
+      // The codex closes first. B meaning "close the thing on top of the thing"
+      // is what it means everywhere else, and the overlay has its own scope
+      // below anyway — this branch only catches the case where the overlay's
+      // root has not mounted yet.
+      if (codex) {
+        setCodex(false);
+        return true;
+      }
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+  // Spending the last attribute point unmounts every `+` button at once,
+  // including the one the cursor is standing on.
+  useRefocusOn([player.attributePoints]);
+
   return (
-    <div className="panel char-screen cdd-screen">
+    <div className="panel char-screen cdd-screen" ref={root}>
       <div className="sheet-head">
         <div>
           <h1 className="title" style={{ margin: 0 }}>
@@ -457,23 +483,45 @@ export function CharacterSheetScreen({ state, backScreen, dispatch }: { state: G
         </button>
       </div>
 
-      {codex && (
-        <div className="codex-overlay" onClick={() => setCodex(false)}>
-          <div className="codex-box" onClick={(e) => e.stopPropagation()}>
-            <h2 className="title">{THE_ARRANGEMENT.title}</h2>
-            {THE_ARRANGEMENT.paragraphs.map((p, i) => (
-              <p className="codex-text" key={i}>
-                {p}
-              </p>
-            ))}
-            <div className="btn-row">
-              <button className="btn primary" onClick={() => setCodex(false)}>
-                Close the book
-              </button>
-            </div>
-          </div>
+      {codex && <ArrangementCodex onClose={() => setCodex(false)} />}
+    </div>
+  );
+}
+
+/**
+ * The Arrangement, as a proper modal.
+ *
+ * It was click-outside-to-close and nothing else: no Escape, no focus trap, no
+ * focus restore. Its own scope one layer up fixes all three at once — B and
+ * Escape close it, the cursor cannot walk out into the sheet behind it, and
+ * when it unmounts the sheet's scope takes the cursor back to where it was.
+ */
+function ArrangementCodex({ onClose }: { onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useNavScope(ref, {
+    id: 'characterSheet.codex',
+    layer: 10,
+    trap: true,
+    onCancel: () => {
+      onClose();
+      return true;
+    },
+  });
+  return (
+    <div className="codex-overlay" ref={ref} onClick={onClose}>
+      <div className="codex-box" onClick={(e) => e.stopPropagation()}>
+        <h2 className="title">{THE_ARRANGEMENT.title}</h2>
+        {THE_ARRANGEMENT.paragraphs.map((p, i) => (
+          <p className="codex-text" key={i}>
+            {p}
+          </p>
+        ))}
+        <div className="btn-row">
+          <button className="btn primary" onClick={onClose}>
+            Close the book
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }

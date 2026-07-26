@@ -31,12 +31,47 @@ export function ItemHover({
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
 
   const move = (e: React.MouseEvent) => {
     const h = tipRef.current?.offsetHeight ?? 300;
     const x = Math.min(e.clientX + 18, window.innerWidth - TIP_W - 12);
     const y = Math.min(Math.max(8, e.clientY - 40), window.innerHeight - h - 12);
     setPos({ x, y });
+  };
+
+  /**
+   * The same window, opened by FOCUS instead of by a cursor.
+   *
+   * This is the fix for the single worst thing in the controller audit. Every
+   * detail that decides whether a piece of gear is worth equipping — rarity,
+   * material, ilvl, implicits, named affixes, set thresholds, gold value, and
+   * above all the before/after equip-compare GearScreen computes — lived only
+   * inside a tooltip bound to `onMouseEnter`/`onMouseMove` and positioned from
+   * `e.clientX`. On a Steam Deck there is no clientX, ever. A controller
+   * player was equipping blind.
+   *
+   * Position comes off the wrapped element's own rect rather than a pointer:
+   * to its right if the window fits there, flipped to its left if not, and
+   * clamped vertically. React's onFocus is focusin underneath, so this fires
+   * for the button inside the wrapper without every call site rewiring itself.
+   */
+  const anchor = () => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const h = tipRef.current?.offsetHeight ?? 300;
+    const right = r.right + 14;
+    const x = right + TIP_W + 12 <= window.innerWidth ? right : Math.max(12, r.left - TIP_W - 14);
+    const y = Math.min(Math.max(8, r.top - 8), Math.max(8, window.innerHeight - h - 12));
+    setPos({ x, y });
+  };
+
+  // focusout carries the incoming node; ignore a move between two focusables
+  // inside the same row, which would otherwise flicker the window shut.
+  const release = (e: React.FocusEvent) => {
+    if (anchorRef.current?.contains(e.relatedTarget as Node | null)) return;
+    setPos(null);
   };
 
   const implicits: string[] = [];
@@ -52,7 +87,15 @@ export function ItemHover({
   const set = setOfItem(item);
 
   return (
-    <span className="item-hover-anchor" onMouseEnter={move} onMouseMove={move} onMouseLeave={() => setPos(null)}>
+    <span
+      className="item-hover-anchor"
+      ref={anchorRef}
+      onMouseEnter={move}
+      onMouseMove={move}
+      onMouseLeave={() => setPos(null)}
+      onFocus={anchor}
+      onBlur={release}
+    >
       {children}
       {pos &&
         createPortal(

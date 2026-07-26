@@ -80,7 +80,7 @@ export function CardDetailOverlay({
               {card.exhaust && (
                 <>
                   {' · '}
-                  <KeywordText text="Exhaust" />
+                  <KeywordText text="Exhaust" navigable />
                 </>
               )}
               {sourceMonster ? ` · from ${sourceMonster.nickname}` : ''}
@@ -88,7 +88,7 @@ export function CardDetailOverlay({
             <ul className="card-inspect-effects">
               {card.effects.map((effect, i) => (
                 <li key={i}>
-                  <KeywordText text={describeEffect(effect, hero, sourceMonster, upgraded)} />
+                  <KeywordText text={describeEffect(effect, hero, sourceMonster, upgraded)} navigable />
                 </li>
               ))}
             </ul>

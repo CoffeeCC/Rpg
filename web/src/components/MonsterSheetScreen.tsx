@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import type { ItemV2 } from '../engine/types';
 import { FAMILY_INFO, familyWeakness } from '../engine/data/species';
@@ -6,6 +7,7 @@ import { MonsterImage } from '../art/MonsterImage';
 import { ELEMENT_ICON } from '../art/elementIcons';
 import { ItemLine } from './ItemLine';
 import { Icon } from './Icon';
+import { useNavScope } from '../nav';
 import '../sheets.css';
 
 // v17 (PLAN7 C3): companion sheet matching the hero's — portrait panel with
@@ -77,9 +79,26 @@ export function MonsterSheetScreen({ state, backScreen: from, dispatch }: { stat
   // whichever room you opened it from; the Stable remains the default.
   const backScreen: Screen = state.expedition ? 'floor' : (from ?? 'stable');
   const backLabel = BACK_LABEL[backScreen] ?? 'Back';
+
+  // Mostly a reading screen: the only controls are Remove/Fit on the two
+  // accessory sockets, and Back. B follows the same context-aware backScreen
+  // the button does — mid-expedition that is the floor, never the stable.
+  //
+  // One ref serves both faces of this component (the sheet, and the "that
+  // companion is no longer with you" card). They render the same element type
+  // in the same position, so React keeps the same DOM node under it.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'monsterSheet',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+
   if (!monster) {
     return (
-      <div className="panel">
+      <div className="panel" ref={root}>
         <p className="subtitle">That companion is no longer with you.</p>
         <button className="btn primary" onClick={() => dispatch({ type: 'GOTO', screen: backScreen })}>
           {backLabel}
@@ -100,7 +119,7 @@ export function MonsterSheetScreen({ state, backScreen: from, dispatch }: { stat
   const bondWord = monster.bond >= 25 ? '(devoted)' : monster.bond >= 10 ? '(loyal)' : '';
 
   return (
-    <div className="panel monster-sheet">
+    <div className="panel monster-sheet" ref={root}>
       <h1 className="title">{monster.nickname}</h1>
       <p className="subtitle">
         {monster.species.name} · Lv {monster.level} {monster.plus > 0 ? `· +${monster.plus} (gen ${monster.plus})` : ''} ·{' '}
