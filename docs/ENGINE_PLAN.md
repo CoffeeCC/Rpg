@@ -996,3 +996,83 @@ At 1280x800 with a 22x14 board and 55 degrees of tilt, tiles land near 50px
 wide and a hero piece stands roughly 70px tall on screen. Readable. A board
 much larger than that starts to make pieces too small to identify at a glance,
 which is the practical limit on option 1 above.
+
+---
+
+## 14. Vertical layers (2026-07-26)
+
+> Paul: *"if we have a large game area that the playable space fits within the
+> confines of the board. in order to get more space we may have to think
+> vertically and add depth and layers to the map. which im sure our lighting
+> would benefit from. like some tiles are climable revealing a 2nd layer or 3rd
+> layer and the map beneath the current layer becomes invisible"*
+
+This answers the open question left by §13. The camera frames the whole board,
+so floors must fit a board — and rather than shrinking floors or scrolling
+them, **the board grows upward**. A tiered board is more board-game-like, not
+less; stacked tiers are a physical thing you can hold.
+
+### Why the lighting gains more from this than from anything else planned
+
+Not "more surfaces" — something sharper. **The only vertical surfaces in the
+game today are wall front faces.** Everything else is flat floor, and a lantern
+on flat floor is a circle. Elevation introduces cliff faces, stair risers,
+ledge undersides and drop edges: surfaces at many angles, which is what makes
+light read as light rather than as a radius.
+
+Two specific images to build toward, both nearly free once tile heights exist:
+
+- **A shaft of lantern-light falling from an upper layer into a dark room
+  below.** Probably the most striking single thing a 2D lighting engine can
+  produce, and the reason to keep light spilling downward even while the lower
+  layer is not drawn.
+- **A piece's contact shadow falling OFF a ledge** rather than stopping at it.
+  Contact shadow is already the cue that something rests on a surface (§11);
+  at an edge it becomes the cue for how far the drop is.
+
+### What it costs the engine
+
+**1. The occupancy grid stops being binary.** `scene/scene.ts` stores one byte
+per tile, solid or not. M3 added a `uOccluderHeight` uniform meaning "every
+block is this tall", with a comment that per-tile heights were not yet needed.
+**That assumption is now retired.**
+
+The right structure is a **height field**: each tile stores the height of its
+solid column, and `traceShadow` compares the ray's height against that column
+as it steps. Cheap, standard, and it yields ledge-shadows-floor for free
+rather than as a special case. It also subsumes `uOccluderHeight` instead of
+extending it.
+
+**2. Painter order changes meaning.** `camera.sortKey` deliberately clamps the
+height term so a raised object can never sort past its own row — that is what
+stops a held lantern drawing through the wall in front of it, and there is a
+test for it. Layers need the opposite in some cases. The `LAYER_` constants
+added in M3 are a *paint order* concept (table / board / decal / piece); layer
+ELEVATION is a second axis and the two have to compose rather than compete.
+
+**3. Legibility is the real risk, and it is a design risk rather than a
+rendering one.** Multi-level maps are famously hard to read from above. Board
+games get away with it by being physically tiered, where the step is visible.
+The drop edge must be unmistakable, which is as much an art and lighting job
+as a geometry one.
+
+Paul's "the map beneath the current layer becomes invisible" is doing most of
+the work on that risk and is the right call — it sidesteps stacked-layer
+legibility entirely. The refinement worth keeping: **light still spills
+downward even when the lower layer is not drawn**, because that is how a player
+learns there is something below.
+
+### Open, for Paul
+
+- Does exploring an upper layer reveal or remember the one below it?
+- Is climbing a move, an action, or a tile property?
+- Can a piece fall, or be pushed off an edge?
+- Does line of sight cross layers — can you see a lit thing one tier down?
+
+### Sequencing
+
+Not next. The order stands: finish M3's board physicality, then **light
+binning** (§12.3, which the emitter direction blocks on), then layers. But the
+height-field data model should be designed before more code is written against
+the binary grid, because every day it stays binary is another consumer to
+migrate.
