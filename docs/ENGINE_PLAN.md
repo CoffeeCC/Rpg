@@ -695,3 +695,32 @@ have to author for every occluder to get a result RC gives free).
 - Whether hero assets eventually move to a 3D-authored G-buffer pipeline
   (the Dead Cells route — they never derived normals because they never had flat
   art). Revisit after M4, when there is something on screen to judge against.
+
+---
+
+## M1 progress (2026-07-26)
+
+Landed since the device/camera/quality/bloom/tonemap/program/target commits:
+`scene/sprite.ts` + `gl/spriteBatcher.ts` (painter-order-preserving batching —
+sorts by `camera.sortKey`, then groups only ADJACENT same-texture runs, never
+reordering across a depth boundary to shrink the draw call count), `gl/lut.ts`
+(the §9.6 3D-LUT slot, `sampler3D`, `uLutMix` defaulting to 0 so it costs one
+fetch and changes nothing until a grade ships), and `debug/hud.ts`
+(`FrameTimer` + `TierAdapter`, which is the §9.2 piece that turns a frame-time
+stream into the `stableFrames` count `quality.ts`'s `adaptTier` needs — that
+glue did not exist before this pass — plus a thin
+`EXT_disjoint_timer_query_webgl2` wrapper). All wired end to end in
+`lantern-forge.html` and verified by `gl.readPixels` (rAF does not fire in a
+headless preview pane; the forge already rendered synchronously for this
+reason). 810 tests, `tsc` clean.
+
+**What M1 still needs**, in order: a `Scene` type and a builder that turns
+game/render state into one (today only the forge demo's synthetic board
+exercises the sprite path — there is no bridge from `engine/` state yet, and
+per the architecture rule `lantern/` must never import `engine/`, so this is a
+`components/`-side adapter); wiring the whole chain into an actual
+`?r=lantern` route behind the flag (§4) so it runs against the real map
+instead of only the standalone HTML lab; and the G-buffer pass, which M1's
+device/target/program plumbing supports but nothing has built yet — though
+that may be better scoped as the start of M2 (materials + per-pixel
+lighting), since M1's own bar is "looks the same, deliberately."
