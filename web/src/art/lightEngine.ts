@@ -33,6 +33,8 @@
 // and not an animated SVG filter graph. See `renderLight` for the budget.
 // =========================================================================
 
+import { mergeOccluders } from './occluderMerge';
+
 export interface Vec2 {
   x: number;
   y: number;
@@ -325,6 +327,19 @@ function facingEdges(o: Occluder, light: Vec2): [Vec2, Vec2][] {
 const FLAME_SAMPLES = 7;
 
 /**
+ * How many when the player has asked for no motion.
+ *
+ * Higher, not lower, and the reason is the whole argument for `flameSpin`
+ * below. Seven samples make seven discrete steps of penumbra; with motion on,
+ * the spin smears them across frames and the eye integrates a smooth edge.
+ * Frozen, there are no other frames to smear into, so the steps are all there
+ * ever is and they band. More samples is the only remaining answer — and it
+ * is free, because a still frame is drawn ONCE. The rAF loop is not running:
+ * see LightLayer.
+ */
+const REDUCED_FLAME_SAMPLES = 11;
+
+/**
  * Where on the flame each sample sits — spread over a DISC, not along a line.
  *
  * Paul: "the lighting still looks a little broken on the map... there are
@@ -348,12 +363,52 @@ const FLAME_SAMPLES = 7;
  */
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-export function flameSample(src: Vec2, size: number, i: number, n: number): Vec2 {
+export function flameSample(src: Vec2, size: number, i: number, n: number, rotation = 0): Vec2 {
   // +0.5 keeps the first sample off the exact centre, so no single sample is
   // privileged and the set stays symmetric about the flame.
   const r = Math.sqrt((i + 0.5) / n) * (size / 2);
-  const theta = i * GOLDEN_ANGLE;
+  const theta = i * GOLDEN_ANGLE + rotation;
   return { x: src.x + Math.cos(theta) * r, y: src.y + Math.sin(theta) * r };
+}
+
+/** Rad/s the sample disc turns at. A full revolution in about seven seconds. */
+const FLAME_SPIN_RATE = 0.9;
+
+/**
+ * The orientation the sample disc sits at when the light is frozen.
+ *
+ * Any value off the axes; the point is only that it is not zero, which would
+ * put sample 0 due east of the flame and hand every vertical wall on screen
+ * the same phase of the banding.
+ */
+const FIXED_SPIN = 0.7;
+
+/**
+ * How far round the sample disc has turned by now.
+ *
+ * SEVEN SAMPLES IS SEVEN STEPS. The penumbra is built by cutting N shadows at
+ * partial alpha, so its gradient has exactly N levels in it — and with the
+ * sample angles fixed, each level lands in the same place on screen every
+ * frame. Fixed steps in a fixed place are a visible contour: the soft edge
+ * gets a faint ribbing, strongest at the corners where several edges' penumbrae
+ * overlap, which is the other half of the fan of lines Paul keeps reporting.
+ *
+ * Turning the disc moves where each step falls, so over two or three frames
+ * the eye integrates the levels into a continuous ramp. This is temporal
+ * dithering, and it is the same bargain the sample count already makes: the
+ * cost of a smooth edge is paid in samples, and frames are samples that are
+ * already free.
+ *
+ * A STEADY turn plus a noise wobble, not noise alone. Noise alone never
+ * guarantees the disc visits every orientation, and can sit near one for
+ * seconds at a time — which is the banding back again, just intermittently.
+ * The steady term covers the full circle on a known period; the wobble keeps
+ * it from being a metronome, on the same argument `fractalNoise` exists for.
+ */
+export function flameSpin(timeSeconds: number, animate = true): number {
+  if (!animate) return FIXED_SPIN;
+  const steady = (timeSeconds * FLAME_SPIN_RATE) % (Math.PI * 2);
+  return steady + (fractalNoise(timeSeconds * 0.8 + 13.1) - 0.5) * 1.2;
 }
 
 /**
@@ -404,6 +459,13 @@ const NIGHT: [number, number, number] = [6, 9, 18];
  * further from the flame than the light reaches cannot occlude anything that
  * is lit, so it is dropped before any geometry is computed. What survives is
  * the handful of walls actually around the hero.
+ *
+ * MERGING is what makes the survivors look like walls rather than like a row
+ * of boxes pretending to be one. A straight run of grid cells becomes a single
+ * rectangle before anything is cast, which removes both the doubled-up dark
+ * seams between overlapping cells and the leaked bright ones between gapped
+ * cells — and cuts the polygon count on that wall by roughly five to one.
+ * See `occluderMerge.ts`, which is where the argument lives.
  */
 export function renderLight(
   ctx: CanvasRenderingContext2D,
@@ -428,7 +490,29 @@ export function renderLight(
    * player and the thing he is trying to fight, and then it is a blindfold.
    */
   murkStrength: number = 0.5,
-): { flicker: number; lean: number; bob: number; casters: number; src: Vec2 } {
+  /**
+   * Collapse runs of occluders into single rectangles before casting.
+   *
+   * On by default and there is no good reason to turn it off in the game —
+   * it exists so the seams it removes can be MEASURED rather than described.
+   * A test that only checks the merged path is green whether or not the bug
+   * was ever there; one that can run both proves the old geometry alternated
+   * and the new one does not. Doubles as the `?light=debug` switch for looking
+   * at what the raw DOM sweep actually handed in.
+   */
+  mergeRuns: boolean = true,
+): {
+  flicker: number;
+  lean: number;
+  bob: number;
+  /** Occluders near enough to matter, before merging. */
+  casters: number;
+  /** Rectangles actually cast from. The polygon budget is this x faces x samples. */
+  merged: number;
+  /** Where the sample disc is pointing this frame. See `flameSpin`. */
+  spin: number;
+  src: Vec2;
+} {
   ctx.clearRect(0, 0, width, height);
 
   // --- flicker ---------------------------------------------------------
@@ -495,7 +579,8 @@ export function renderLight(
   // painted lantern bobbing on its own CSS animation while its pool guttered
   // on a different clock would be two lights pretending to be one — the very
   // disagreement this engine exists to remove.
-  const out = { flicker, lean, bob, casters: 0, src };
+  const spin = flameSpin(timeSeconds, animate);
+  const out = { flicker, lean, bob, casters: 0, merged: 0, spin, src };
 
   // Only what the light can actually reach. Distance to the box, not to its
   // centre, so a long wall running past the hero is not dropped because its
@@ -505,25 +590,38 @@ export function renderLight(
     const dy = Math.max(o.y - src.y, 0, src.y - (o.y + o.h));
     return dx * dx + dy * dy <= reach * reach;
   });
+  // Cull first, THEN merge: culling is a filter over every wall on the floor
+  // and merging is a sort, so the cheap pass belongs on the big list.
+  const cast = mergeRuns ? mergeOccluders(near) : near;
   out.casters = near.length;
+  out.merged = cast.length;
 
   // --- shadows ----------------------------------------------------------
   // Shadows PUT NIGHT BACK, now that the layer is darkness. Same identity as
   // before, inverted: each flame sample restores a share of the night, so a
   // point that can see none of the flame ends up fully dark and one that sees
   // part of it lands in between.
-  const cutAlpha = 1 - Math.pow(Math.max(0.001, ambient), 1 / FLAME_SAMPLES);
+  //
+  // The sample COUNT is the only thing that changes when motion is off, and
+  // the floor does not move with it: `ambient^(1/N)` is solved for whatever N
+  // is in hand, so N cuts still leave exactly `ambient` either way. A still
+  // frame is a smoother shadow, not a darker one.
+  const samples = animate ? FLAME_SAMPLES : REDUCED_FLAME_SAMPLES;
+  const cutAlpha = 1 - Math.pow(Math.max(0.001, ambient), 1 / samples);
   ctx.globalCompositeOperation = 'source-over';
 
-  for (let s = 0; s < FLAME_SAMPLES; s++) {
+  for (let s = 0; s < samples; s++) {
     // Sample over the flame's AREA. This spread IS the penumbra: widen it and
     // every shadow edge in the scene softens, exactly as it would if you
     // swapped a candle for a lamp. Over a disc rather than along a line, so
     // that softening does not depend on which way the edge happens to run —
     // see `flameSample`.
-    const sample = flameSample(src, light.size, s, FLAME_SAMPLES);
+    // `spin` turns the whole disc a little every frame, so the N steps of
+    // penumbra do not land in the same place twice and the eye integrates them
+    // into a smooth edge instead of reading them as contours. See `flameSpin`.
+    const sample = flameSample(src, light.size, s, samples, spin);
     ctx.globalAlpha = cutAlpha;
-    for (const o of near) {
+    for (const o of cast) {
       for (const [a, bEdge] of facingEdges(o, sample)) {
         const mid = { x: (a.x + bEdge.x) / 2, y: (a.y + bEdge.y) / 2 };
         // Each shadow REACHES on its own clock. Bounce light is not a constant
