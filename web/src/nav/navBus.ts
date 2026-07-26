@@ -26,7 +26,7 @@ import {
   type NavSource,
   type RepeatState,
 } from './input';
-import { pickInDirection } from './geometry';
+import { pickInDirection, type NavRect } from './geometry';
 import {
   focusElement,
   focusKeyOf,
@@ -200,6 +200,89 @@ function activeIn(scope: NavScope): HTMLElement | null {
   return isInRoots(scope.roots, active) ? active : null;
 }
 
+// ---------------------------------------------------------------------------
+// Geometry snapshot — an animation must not be able to re-route a keypress
+// ---------------------------------------------------------------------------
+
+/**
+ * Paul, on the Steam Deck: "when navigating through the cards with a d-pad you
+ * can't navigate fast because the animation has to finish, and it ends up
+ * going back to the previous card if you go too quickly left or right."
+ *
+ * That is a geometry bug, not a pacing one. `getBoundingClientRect()` reports
+ * where a thing is being DRAWN, which for anything mid-transition is a lie
+ * about where it is. The hand fan lifts the focused card 64px and scales it
+ * 1.16 over 280ms (battle.css), and the pad repeats every 130ms — so at any
+ * realistic speed the card you just left is still enormous and still
+ * overlapping the one you moved onto. Ask "what is to the right of here?" in
+ * the middle of that and the honest geometric answer is "the card you came
+ * from", which is exactly what the player saw.
+ *
+ * So: while a burst of navigation is in flight, everyone gets measured ONCE
+ * and the whole burst is resolved against that snapshot. The frozen geometry
+ * is the layout the player is actually looking at — the fan's resting
+ * positions — rather than a smear of half-finished transforms. The moment
+ * input goes quiet for longer than a transition takes, the snapshot expires
+ * and the next press measures fresh.
+ *
+ * Anything that genuinely MOVES the candidates invalidates it: a changed
+ * candidate list (a card was played, a list re-rendered), or a scroll. Scroll
+ * is the subtle one — `focusElement` scrolls the new target into view, which
+ * really does change every rect in the container, so we record the scroller's
+ * offsets with the snapshot and translate cached rects by the delta instead of
+ * throwing the snapshot away. Freezing through a scroll is the point: a long
+ * menu scrolling under a held stick has exactly the same problem the card fan
+ * has.
+ */
+const NAV_SETTLE_MS = 400;
+
+interface RectSnapshot {
+  els: HTMLElement[];
+  rects: NavRect[];
+  /** Last time this snapshot was USED, so a continuous hold keeps it alive. */
+  at: number;
+  scroller: HTMLElement | null;
+  sx: number;
+  sy: number;
+}
+
+let snapshot: RectSnapshot | null = null;
+
+function sameElements(a: readonly HTMLElement[], b: readonly HTMLElement[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** Rects for `candidates`, frozen for the duration of a navigation burst. */
+function snapshotRects(candidates: HTMLElement[], scope: NavScope, now: number): NavRect[] {
+  const scroller = scrollParent(candidates[0], scope.roots[0]) ?? scope.roots[0] ?? null;
+  if (snapshot && now - snapshot.at <= NAV_SETTLE_MS && sameElements(snapshot.els, candidates)) {
+    // Same controls, still mid-burst: reuse, shifted by however far the
+    // container has scrolled since (focusElement may have scrolled it itself).
+    const dx = (scroller?.scrollLeft ?? 0) - snapshot.sx;
+    const dy = (scroller?.scrollTop ?? 0) - snapshot.sy;
+    snapshot.at = now;
+    if (dx === 0 && dy === 0) return snapshot.rects;
+    return snapshot.rects.map((r) => ({
+      left: r.left - dx,
+      right: r.right - dx,
+      top: r.top - dy,
+      bottom: r.bottom - dy,
+    }));
+  }
+  const rects = candidates.map(rectOf);
+  snapshot = {
+    els: candidates,
+    rects,
+    at: now,
+    scroller,
+    sx: scroller?.scrollLeft ?? 0,
+    sy: scroller?.scrollTop ?? 0,
+  };
+  return rects;
+}
+
 function moveFocus(scope: NavScope, dir: NavDir): boolean {
   const candidates = navCandidates(scope.roots);
   if (candidates.length === 0) return false;
@@ -209,8 +292,11 @@ function moveFocus(scope: NavScope, dir: NavDir): boolean {
     if (target) focusElement(target, { limit: scope.roots[0] });
     return !!target;
   }
-  const rects = candidates.map(rectOf);
+  const rects = snapshotRects(candidates, scope, performance.now());
   const fromIndex = candidates.indexOf(current);
+  // The CURRENT element is the one being animated, so its cached rect is the
+  // one that matters most — fall back to a live read only if it is not in the
+  // candidate list at all.
   const from = fromIndex >= 0 ? rects[fromIndex] : rectOf(current);
   const hit = pickInDirection(from, rects, dir, { wrap: scope.wrap });
   if (hit === null) return false;

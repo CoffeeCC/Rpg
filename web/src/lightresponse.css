@@ -53,6 +53,46 @@
   );
 }
 
+/* --- 2b · Combatants: the rim is what makes a body readable -------------- */
+/*
+   Paul: "the fog on the battle screen looks good but it's way too much, I
+   can't even see the characters... I do like the fog in battle. But I just
+   can't see anything."
+
+   The fog was only half the problem. The other half is that a dark figure
+   painted on a dark backdrop has NO EDGE, and the eye finds a body by its
+   edge before it finds it by anything else. Turning the fog down alone would
+   have meant turning it down until the backdrop went pale enough to silhouette
+   them against — losing the atmosphere he actually likes to solve a problem
+   that is not really about atmosphere.
+
+   So the fighters get a rim instead, and a stronger one than the map's props
+   get: a real light behind a real body throws a bright line down the side
+   facing it, and that line is the single cheapest thing that separates a
+   figure from what is behind it. Two of them, in fact — a tight bright rim
+   for the edge and a wider, dimmer one that reads as the air around them
+   catching light. Both track --lx/--ly, so the lit side swings with the
+   candle rail rather than sitting where an artist put it.
+
+   The FLOOR is the important part. It never fully leaves, even at zero vigor:
+   `0.34 + --lit`. When the room goes properly dark the fighters do not
+   disappear, they go to silhouette-plus-edge, which is legible AND is what a
+   figure in a nearly-dark room actually looks like. A combat you cannot read
+   is not atmospheric, it is broken.
+*/
+.lit-fig > img,
+.lit-fig > svg {
+  filter:
+    drop-shadow(
+      calc(var(--lx, 0) * 2px) calc(var(--ly, 0) * 2px) 2px
+        rgba(255, 224, 170, calc(0.34 + var(--lit, 0) * 0.5))
+    )
+    drop-shadow(0 0 calc(7px + var(--lit, 0) * 9px) rgba(255, 198, 120, calc(0.2 + var(--lit, 0) * 0.34)))
+    /* A touch of lift so the midtones of the sprite clear the backdrop's
+       murk rather than sinking into it. */
+    brightness(calc(1.06 + var(--lit, 0) * 0.2));
+}
+
 /* --- 3 · Glint: a point highlight that CATCHES --------------------------- */
 /* Two crossed spikes, which is what a point highlight does to any real lens
    or wet surface, scaled by --twinkle. It spends most of its cycle at zero:

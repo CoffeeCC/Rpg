@@ -387,6 +387,15 @@ export function renderLight(
   maxDarkness: number = 0.62,
   /** Baked once by the caller. Omit and the dark is flat. */
   murk?: MurkTiles,
+  /**
+   * How thick the air is, 0..1.
+   *
+   * A room and a wilderness are not the same amount of fog, and this is the
+   * knob that says so. Paul on the battlefield: "I do like the fog in battle.
+   * But I just can't see anything." Murk is atmosphere until it is between the
+   * player and the thing he is trying to fight, and then it is a blindfold.
+   */
+  murkStrength: number = 0.5,
 ): { flicker: number; lean: number; bob: number; casters: number; src: Vec2 } {
   ctx.clearRect(0, 0, width, height);
 
@@ -525,7 +534,7 @@ export function renderLight(
   // Last, and only into what is already dark. See `drawMurk`: the lit pool was
   // cut to transparent several steps ago, so `source-atop` cannot reach it and
   // the shadows — which by now ARE the darkness — get the swirl for nothing.
-  if (murk) drawMurk(ctx, murk, width, height, animate ? timeSeconds : 0, 0.5);
+  if (murk && murkStrength > 0) drawMurk(ctx, murk, width, height, animate ? timeSeconds : 0, murkStrength);
 
   ctx.globalCompositeOperation = 'source-over';
   return out;

@@ -788,27 +788,71 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         setHoveredEnemyUid(null);
       }}
     >
-      {/* THE VIGOR CANDLES, FINALLY CASTING.
-          lighting.css §7 already argued this screen's case: there are literal
-          lit candles on the rail, they gutter and smoke, and they "cast
-          NOTHING — a light source that is drawn but not modelled". §7 got as
-          close as CSS can, scaling a painted blob off `:has()`. This is the
-          modelled version: the light is AT the rail, the combatants standing
-          in the room are what block it, and the intensity is the vigor you
-          have left. Spend down to one candle and the room genuinely goes dark
-          around you; the shadows the fighters throw lengthen as it does. */}
+      {/* THE LANTERN OVER THE FIGHT — vigor is its FUEL, not its address.
+          The first cut hung the light on `.vigor-candles`, reasoning that
+          there are literal lit candles drawn on that rail so the light should
+          be where they are. Measured on the real screen, that put the only
+          light source 400-600px from every combatant: the fighters came back
+          with `--lit` between 0.01 and 0.15, which is why Paul could not see
+          them. The physics was right and the STAGING was wrong.
+
+          The candle rail is a HUD gutter pinned to the left edge of a 1280px
+          screen, not an object standing in the room, and treating a readout as
+          scenery is what broke this. What actually lights a fight in this
+          world is the lantern the party carries into it — so the source hangs
+          over the arena (no anchor: top centre of the stage) and the candles
+          go back to being what they always were, a count of how much fuel is
+          left. Vigor still drives INTENSITY, so the thing Paul liked survives
+          intact: spend down to one candle and the room genuinely darkens
+          around you, and the shadows the fighters throw lengthen as it does.
+          Only now they are lit well enough to throw one. */}
       <LightLayer
         occluderSelector=".battle-stage .bf-figure"
-        anchorSelector=".battle-stage .vigor-candles"
-        reach={760}
+        /* Set down BETWEEN the two rows, not above them. Hung at the top of
+           the stage the enemies came back at --lit 1.5 and the hero at 0.4 —
+           the near row blown out, the far row still in the dark, which is just
+           the original complaint pointed the other way. The battlefield's own
+           centre sits in the gap between the lines, so both rows are the same
+           distance from the flame and both read. */
+        anchorSelector=".battle-stage .battlefield"
+        /* Sized so the pool actually has a GRADIENT across the field. At 700 both
+           rows pinned at --lit 1.0 and the whole point of a falloff was gone —
+           a flat bright disc is the "yellow circle" failure wearing a different
+           number. 460 puts the fighters in the bright middle of the curve and
+           lets the backdrop's far trees fall off into the murk. */
+        reach={460}
         /* No floor on this. The first cut used `0.2 + 0.5 * ratio`, so at zero
            candles the room was still lit by a light with nothing burning in
            it — Paul caught it. Vigor spent to nothing means the rail is out,
            and out means out. */
         intensity={0.78 * (view.maxEnergy ? view.energy / view.maxEnergy : 1)}
         flameSize={18}
-        ambient={0.24}
-        version={`${view.energy}/${view.maxEnergy}`}
+        /* The fighters RESPOND to the rail: rim light down the side facing the
+           candles, swinging as the flame leans. See lightresponse.css §2b —
+           this is what makes a body readable in a dark room, and it is why the
+           numbers below could come up without the fog having to come off. */
+        responderSelector=".battle-stage .bf-figure"
+        /* ===== READABILITY, tuned against the real screen at 1280x800 =====
+           Paul, on the first cut: "I can't even see the characters."
+
+           An enclosed room is not a moor at night, and these three numbers are
+           where that difference lives:
+
+           ambient 0.24 -> 0.52  A stone room bounces. 0.24 is the amount of
+             fill light you get outdoors with nothing but sky above you, and
+             using it indoors is what made everything outside the candle rail
+             read as a hole rather than as the far side of a room.
+           maxDarkness -> 0.44  (default 0.62 is the outdoor night). Same
+             reason. The far wall is dim, not absent.
+           murkStrength -> 0.2  (default 0.5). This is the one Paul named. On
+             the map the murk IS the unknown and wants to be thick; here it
+             sits between the player and the enemy he is aiming a card at, and
+             at 0.5 it was a blindfold. At 0.2 the air still moves — which is
+             the part he said he liked — without hiding what he is fighting. */
+        ambient={0.52}
+        maxDarkness={0.44}
+        murkStrength={0.2}
+        version={`${view.energy}/${view.maxEnergy}:${view.enemies.length}`}
       />
 
       {/* v19: the iris wipe that used to sit here is gone. App.tsx's "Seal"
@@ -989,7 +1033,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                     )}
                   </div>
                 )}
-                <div className="bf-figure">
+                <div className="bf-figure lit-fig">
                   <MonsterImage speciesId={enemy.speciesId} size={enemy.isBoss ? 250 : 150} rarity={enemy.rarity} boss={enemy.isBoss} />
                   {block > 0 && <span className="bf-badge badge-block">🛡 {block}</span>}
                   <span className="bf-badge badge-lv">Lv{enemy.level}</span>
@@ -1064,7 +1108,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
-            <div className="bf-figure">
+            <div className="bf-figure lit-fig">
               <HeroImage className={hero.className} size={132} />
               {view.heroBlock > 0 && <span className="bf-badge badge-block">🛡 {view.heroBlock}</span>}
               {(hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
@@ -1120,7 +1164,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                     : undefined
               }
             >
-              <div className="bf-figure">
+              <div className="bf-figure lit-fig">
                 <MonsterImage speciesId={m.speciesId} size={124} facing="right" />
                 {!m.isAlive() && <span className="ko-label">FALLEN</span>}
                 {renderPopups(m.uid)}

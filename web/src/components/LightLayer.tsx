@@ -51,6 +51,7 @@ export function LightLayer({
   lamp = false,
   ambient,
   maxDarkness,
+  murkStrength,
   version,
 }: {
   /** Elements that stop light. Measured live. */
@@ -85,6 +86,15 @@ export function LightLayer({
   ambient?: number;
   /** How dark unlit ground gets, 0..1. */
   maxDarkness?: number;
+  /**
+   * How thick the air is, 0..1. Defaults to the outdoor amount.
+   *
+   * The battlefield runs this low deliberately. Murk reads as atmosphere when
+   * it is filling a space and as a blindfold when it is between the player and
+   * the enemy he is aiming a card at — a distinction the map does not have to
+   * make, because on the map the murk IS the unknown. See BattleScreen.
+   */
+  murkStrength?: number;
   /**
    * Bump to force a re-measure.
    *
@@ -203,8 +213,21 @@ export function LightLayer({
         const dist = Math.hypot(dx, dy) || 1;
         const d = Math.min(1, dist / reachPx);
         // The same profile the canvas cuts with, so an object never claims to
-        // be catching light the pool around it says is not there.
-        const lit = Math.max(0, (1 / (1 + 14 * d * d)) * Math.pow(Math.max(0, 1 - d * d), 2) * 3.2) * flicker;
+        // be catching light the pool around it says is not there. `intensity`
+        // belongs in here for exactly that reason and was missing: the canvas
+        // computes `peak = intensity * flicker` and this did not, so on the
+        // battlefield — where intensity IS the vigor left — objects went on
+        // reporting a fully-fuelled sheen into a room the canvas had already
+        // darkened. Every candle you spend now dims the shine on the fighters
+        // too, which is the whole claim this file makes.
+        // Clamped, like the canvas clamps its own gradient stops. Without this
+        // an object standing near the flame reports `--lit` above 1 and every
+        // consumer downstream — a brightness(), an alpha, a scale — quietly
+        // runs off the end of its sensible range.
+        const lit = Math.min(
+          1,
+          Math.max(0, (1 / (1 + 14 * d * d)) * Math.pow(Math.max(0, 1 - d * d), 2) * 3.2) * flicker * intensity,
+        );
         const st = r.el.style;
         st.setProperty('--lit', lit.toFixed(3));
         st.setProperty('--lx', (dx / dist).toFixed(3));
@@ -232,6 +255,7 @@ export function LightLayer({
         ambient,
         maxDarkness,
         murkTiles(),
+        murkStrength,
       );
       if (tick++ % 4 === 0) paintResponders(live.src, live.flicker, t);
       // ONE custom-property write, on ONE element, per frame. The lamp is a
@@ -272,7 +296,7 @@ export function LightLayer({
       document.removeEventListener('visibilitychange', onVisibility);
       reduced.removeEventListener('change', onVisibility);
     };
-  }, [occluderSelector, anchorSelector, responderSelector, reach, reachCells, intensity, flameSize, lamp, ambient, maxDarkness, version]);
+  }, [occluderSelector, anchorSelector, responderSelector, reach, reachCells, intensity, flameSize, lamp, ambient, maxDarkness, murkStrength, version]);
 
   return (
     <div className="light-layer" ref={hostRef} aria-hidden="true">
