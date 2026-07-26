@@ -686,3 +686,103 @@
     --lt-flame-y: calc(var(--lt-inset-y) + 41px - 6px);
   }
 }
+
+/* =========================================================================
+   THE WALK — §12
+   (Appended at the END of this file on purpose: a rule inside a media query
+   loses to any later unconditional rule of the same specificity, so overrides
+   belong last. Same reason §11 sits where it does.)
+
+   Paul: "it's kind of jarring moving tile to tile instantly. Do you think it's
+   possible to create some kind of movement and footstep sounds when moving on
+   the map? Some kind of slow walk cycle would make the light look nicer too."
+
+   The last sentence is the load-bearing one. The hero is the light source on
+   this screen, so a hero that teleports is a lantern that teleports — the
+   pool, every wall shadow and every rim on every chest all re-arranged between
+   two frames. Soft shadows do not read as soft if the thing casting them never
+   travels.
+   ========================================================================= */
+
+/* The walker is positioned against the grid's padding box, so its offsets are
+   exactly the player cell's own offsetLeft/offsetTop. Nothing here needs to
+   know --cell, the gap, or the padding — which is the point, because all three
+   change across breakpoints and a hand-computed transform would drift. */
+.map-grid {
+  position: relative;
+}
+
+.map-grid .hero-walker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--cell, 48px);
+  height: var(--cell, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  /* Above the tiles and their props, below the light layer — he is IN the
+     room, so the dark and the murk still land on him. */
+  z-index: 6;
+  will-change: transform;
+}
+
+/* The step itself. 190ms, matched to the cadence FloorScreen walks paths at —
+   the two have to agree or a queued walk either stutters (transition longer
+   than the step) or snaps at the end of each tile (shorter).
+
+   `linear` is deliberate and is the difference between walking and hopping.
+   An eased step accelerates and decelerates within EVERY tile, so a five-tile
+   walk reads as five separate lunges; linear segments chain into one
+   continuous travel, and the foot contacts land evenly. */
+.map-grid .hero-walker.glide {
+  transition: transform 190ms linear;
+}
+
+/* The gait. Two footfalls per tile — the body rises and falls twice per step
+   cycle, which is what a walk actually does (the hips lift over each planted
+   foot), and it is what makes a slide read as legs. Tiny: 2px of lift and a
+   hair under a degree of roll. Any bigger and it becomes a bounce. */
+.map-grid .hero-walker.glide .hero-walker-art {
+  animation: hero-gait 190ms linear;
+}
+
+@keyframes hero-gait {
+  0% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-0.8deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(-2px) rotate(0.8deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+.map-grid .hero-walker .hero-walker-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell, 48px) * 0.58);
+}
+
+.map-grid .hero-walker .ui-icon {
+  width: calc(var(--cell, 48px) * 0.82);
+  height: calc(var(--cell, 48px) * 0.82);
+}
+
+/* The ring travels with him rather than being re-drawn on each new cell. */
+.map-grid .hero-walker .hero-ring {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The same bargain the rest of the lighting makes: the position is real
+     information and stays, the travel between positions is motion and goes.
+     The footstep still plays — it is a cue, not an animation. */
+  .map-grid .hero-walker.glide {
+    transition: none;
+  }
+  .map-grid .hero-walker.glide .hero-walker-art {
+    animation: none;
+  }
+}

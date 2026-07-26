@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LightLayer } from './LightLayer';
+import { play as sfx } from '../platform/sfx';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { CONSUMABLES } from '../engine/data/items';
@@ -165,6 +166,12 @@ function MerchantMat({ state, dispatch }: { state: GameState; dispatch: (a: Game
   );
 }
 
+/**
+ * How long one tile takes, in ms. MUST match the `.hero-walker.glide`
+ * transition and the `hero-gait` animation in floor.css §12.
+ */
+const STEP_MS = 190;
+
 const NAV_MOVE = {
   up: 'north',
   down: 'south',
@@ -297,6 +304,58 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
     });
   }, [exp?.gateId, exp?.floorIndex, exp?.x, exp?.y]);
 
+  // --- THE WALK ------------------------------------------------------------
+  //
+  // Paul: "it's kind of jarring moving tile to tile instantly... some kind of
+  // slow walk cycle would make the light look nicer too."
+  //
+  // He is right about the light, and it is the more interesting half. The hero
+  // IS the light source on this screen, so a hero that teleports is a lantern
+  // that teleports: the pool, every shadow the walls throw, and the rim on
+  // every chest all snapped to a new arrangement between two frames. All the
+  // work the engine does on soft shadows is invisible if the thing casting
+  // them never travels.
+  //
+  // The hero is drawn INSIDE a grid cell, so there is no persistent element to
+  // animate — walking replaces one `<span>` with another. So there is now a
+  // separate walker token floating over the grid, and the cell keeps only the
+  // ground it stands on. Its position is the player cell's own layout offset,
+  // read after commit: exact at every breakpoint, and it never needs to know
+  // the grid's padding, gap or cell size (a transform computed from --cell
+  // would silently drift the moment any of those changed).
+  //
+  // React writes the new offset, CSS transitions between them, and the light
+  // layer re-reads the walker's box every frame (`trackAnchor`) — so the pool
+  // travels WITH him rather than waiting for him to arrive.
+  const [walk, setWalk] = useState<{ x: number; y: number; glide: boolean } | null>(null);
+  const floorKey = `${exp?.gateId}:${exp?.floorIndex}`;
+  const lastFloorRef = useRef(floorKey);
+  useLayoutEffect(() => {
+    const cell = playerCellRef.current;
+    if (!cell) return;
+    // Arriving on a new floor is a CUT, not a walk: gliding there would send
+    // the hero sailing across the map from wherever he stood on the last one.
+    const cut = lastFloorRef.current !== floorKey;
+    lastFloorRef.current = floorKey;
+    setWalk((prev) => {
+      const next = { x: cell.offsetLeft, y: cell.offsetTop, glide: !!prev && !cut };
+      // One footfall per position change, which is the one place that catches
+      // EVERY way to move — click-to-move, keyboard, and the pad all end in the
+      // same reducer, and all of them land here exactly once.
+      if (next.glide && (prev!.x !== next.x || prev!.y !== next.y)) sfx('step');
+      return next;
+    });
+  }, [exp?.x, exp?.y, floorKey]);
+
+  // Something came apart. `broken` only ever grows, so its length is the
+  // honest signal that a barrel went in — no guessing from tiles or log text.
+  const brokenCount = exp?.broken.length ?? 0;
+  const prevBrokenRef = useRef(brokenCount);
+  useEffect(() => {
+    if (brokenCount > prevBrokenRef.current) sfx('smash');
+    prevBrokenRef.current = brokenCount;
+  }, [brokenCount]);
+
   if (!exp || !player) return null;
 
   // v18 #7: a fogged tile orthogonally adjacent to any REVEALED tile is
@@ -323,7 +382,12 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
       window.setTimeout(() => {
         dispatch({ type: 'MOVE', dir });
         if (i === path.length - 1) walkingRef.current = false;
-      }, i * 95);
+        // STEP_MS, not 95. The old cadence was twice a real walking pace and
+        // predates there being anything to see between two tiles; now that the
+        // hero glides it has to agree with the transition in floor.css §12, or
+        // a multi-tile walk either stutters (steps slower than the glide) or
+        // snaps at each tile (faster). Same number, stated once, both places.
+      }, i * STEP_MS);
     });
   };
   const gate = GATES[exp.gateId];
@@ -479,17 +543,13 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                   }
                   if (x === exp.x && y === exp.y) {
                     return (
+                      // The hero's TILE, which is now only the ground he is
+                      // standing on — the figure itself rides `.hero-walker`
+                      // below so it can travel between cells instead of being
+                      // re-created in a different one each step.
                       <span key={x} ref={playerCellRef} className="map-cell player hero-here">
                         {!tex && <TileFill gateId={exp.gateId} tile={ch} vx={x} vy={y} size={96} />}
                         {fogFringe(x, y)}
-                        <span className="hero-ring" aria-hidden="true" />
-                        <span className="cell-top">
-                          {SPRITE_ART.player ? (
-                            <img src={SPRITE_ART.player} width={ART.player} height={ART.player} className="ui-icon" alt="" />
-                          ) : (
-                            '🧝'
-                          )}
-                        </span>
                       </span>
                     );
                   }
@@ -597,6 +657,28 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
                 })}
               </div>
             ))}
+            {/* THE WALKER. One element for the whole expedition, moved rather
+                than re-created, which is the only way the hero can be
+                animated at all — and, because the light layer tracks this
+                element's box every frame, the only way the lantern travels
+                with him. `glide` is off for the first placement and for a
+                floor change, so arriving somewhere new is a cut. */}
+            {walk && (
+              <div
+                className={`hero-walker ${walk.glide ? 'glide' : ''}`}
+                style={{ transform: `translate3d(${walk.x}px, ${walk.y}px, 0)` }}
+                aria-hidden="true"
+              >
+                <span className="hero-ring" />
+                <span className="hero-walker-art">
+                  {SPRITE_ART.player ? (
+                    <img src={SPRITE_ART.player} width={ART.player} height={ART.player} className="ui-icon" alt="" />
+                  ) : (
+                    '🧝'
+                  )}
+                </span>
+              </div>
+            )}
           </div>
           {/* The Last Lantern, computed. The hero carries the only light down
               here, so this is the screen the engine was actually worth writing
@@ -610,7 +692,9 @@ export function FloorScreen({ state, dispatch }: { state: GameState; dispatch: (
               and §5 of lighting.css already draws it. */}
           <LightLayer
             occluderSelector=".map-grid .map-cell.wall"
-            anchorSelector=".map-grid .map-cell.player"
+            anchorSelector=".map-grid .hero-walker"
+            /* Follow him as he walks, not once he lands. See LightLayer. */
+            trackAnchor
             responderSelector=".map-grid .map-cell.lit-obj"
             /* THE LIGHT IS THE MOVE RANGE. The map used to carry two circles
                that meant different things — the Lantern's radius (what you can

@@ -24,12 +24,14 @@ export type SfxName =
   | 'endTurn'
   | 'draw'
   | 'gold'
-  | 'uiClick';
+  | 'uiClick'
+  | 'step'
+  | 'smash';
 
 const SFX_NAMES: SfxName[] = [
   'cardHover', 'cardPlay', 'slash', 'pierce', 'fire', 'frost', 'bolt', 'dark', 'holy',
   'hit', 'block', 'heal', 'hurt', 'ko', 'tameSuccess', 'tameFail', 'victory', 'defeat',
-  'endTurn', 'draw', 'gold', 'uiClick',
+  'endTurn', 'draw', 'gold', 'uiClick', 'step', 'smash',
 ];
 
 let muted = false;
@@ -262,6 +264,36 @@ function synth(name: SfxName) {
       break;
     case 'cardHover':
       tone(1100, 0.03, { type: 'sine', vol: 0.05 });
+      break;
+    /**
+     * A boot on stone. The quietest sound in the game on purpose: this one
+     * fires every step of every walk, several times a second, and anything
+     * with a pitch you can name becomes a melody you cannot stop hearing
+     * within about ten seconds of play.
+     *
+     * So: no oscillator at all. A short lowpassed noise thud is the body of
+     * the footfall, and a much shorter, quieter highpassed tick on top is the
+     * grit under the sole. `stepVary` in FloorScreen alternates the pitch
+     * slightly left-right-left, which is what stops two identical samples in a
+     * row from reading as a machine.
+     */
+    case 'step':
+      noise(0.075, { filter: 'lowpass', freq: 420, to: 150, vol: 0.16, q: 0.7 });
+      noise(0.03, { filter: 'highpass', freq: 2600, vol: 0.035 });
+      break;
+    /**
+     * Something wooden coming apart. Three layers, because a break is three
+     * events: the hit (a hard low thud), the SPLIT (a fast downward sweep
+     * through the mids — this is the part the ear reads as "broken open"
+     * rather than "struck"), and the debris settling after.
+     */
+    case 'smash':
+      noise(0.09, { filter: 'lowpass', freq: 900, to: 200, vol: 0.5 });
+      noise(0.22, { filter: 'bandpass', freq: 1800, to: 380, vol: 0.4, q: 0.9 });
+      tone(180, 0.14, { type: 'square', to: 60, vol: 0.18 });
+      // The scatter. Offset so it lands after the break rather than inside it.
+      noise(0.16, { filter: 'highpass', freq: 3400, vol: 0.16, at: 0.07 });
+      noise(0.12, { filter: 'highpass', freq: 2400, vol: 0.1, at: 0.14 });
       break;
   }
 }

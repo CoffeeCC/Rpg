@@ -44,6 +44,7 @@ export function LightLayer({
   occluderSelector,
   anchorSelector,
   responderSelector,
+  trackAnchor = false,
   reach = 620,
   reachCells,
   intensity = 0.62,
@@ -58,6 +59,21 @@ export function LightLayer({
   occluderSelector: string;
   /** Element the flame hangs at the top-centre of. Falls back to the layer. */
   anchorSelector?: string;
+  /**
+   * Re-read the anchor's position EVERY FRAME instead of only on re-measure.
+   *
+   * Off by default, because measuring forces layout and this file's whole
+   * performance argument is that it does not do that in the loop. But when the
+   * anchor is a thing that physically moves — the hero gliding from one tile to
+   * the next — the alternative is worse: the light would sit still through the
+   * whole step and then teleport, which is the exact jump the walk animation
+   * exists to remove.
+   *
+   * The cost is bounded and small: ONE getBoundingClientRect, on one element.
+   * The expensive measure is the occluder sweep over every wall on the floor,
+   * and that stays where it was.
+   */
+  trackAnchor?: boolean;
   /**
    * Elements that RESPOND to the light — chests, shrines, units, the things
    * worth picking up. Each gets `--lit` (how much light is landing on it) and
@@ -155,9 +171,14 @@ export function LightLayer({
     let w = 0;
     let h = 0;
 
+    /** The anchor element and the host box, kept for the per-frame track. */
+    let anchorEl: Element | null = null;
+    let hostBox: DOMRect | null = null;
+
     /** Re-measure everything. Layout-reading, so never called from the loop. */
     const measure = () => {
       const box = host.getBoundingClientRect();
+      hostBox = box;
       w = Math.max(1, Math.round(box.width * SCALE));
       h = Math.max(1, Math.round(box.height * SCALE));
       // ONLY when the size actually changed. Assigning `canvas.width` — even
@@ -182,7 +203,7 @@ export function LightLayer({
         // would produce a degenerate shadow quad.
         .filter((o) => o.w > 1 && o.h > 1);
 
-      const anchorEl = anchorSelector ? document.querySelector(anchorSelector) : null;
+      anchorEl = anchorSelector ? document.querySelector(anchorSelector) : null;
       if (anchorEl) {
         const a = anchorEl.getBoundingClientRect();
         anchorRef.current = { x: (a.left + a.width / 2 - box.left) * SCALE, y: (a.top + a.height * 0.5 - box.top) * SCALE };
@@ -277,6 +298,18 @@ export function LightLayer({
     /** One frame of light, drawn but NOT scheduling the next. */
     const draw = (now: number) => {
       const t = (now - start) / 1000;
+      // Follow a moving anchor. The hero glides between tiles on a CSS
+      // transform, and getBoundingClientRect reports where a thing is being
+      // DRAWN — which for a transition in flight is exactly the intermediate
+      // position we want. (The nav layer wants the opposite from the same call;
+      // see navBus's geometry snapshot. Same API, opposite need, both correct.)
+      if (trackAnchor && anchorEl && hostBox) {
+        const a = anchorEl.getBoundingClientRect();
+        anchorRef.current = {
+          x: (a.left + a.width / 2 - hostBox.left) * SCALE,
+          y: (a.top + a.height * 0.5 - hostBox.top) * SCALE,
+        };
+      }
       // Read the dials fresh every frame. Spending vigor now dims the room
       // between one frame and the next, which is what it always looked like it
       // was doing — it just used to get there by restarting the whole layer.
@@ -366,7 +399,7 @@ export function LightLayer({
     // DELIBERATELY NOT the numeric props — see `dials` above. Only the things
     // that change what is being observed belong here; putting `intensity` in
     // this list is what made the screen flash every time a card was played.
-  }, [occluderSelector, anchorSelector, responderSelector, lamp]);
+  }, [occluderSelector, anchorSelector, responderSelector, trackAnchor, lamp]);
 
   // Geometry moved: re-measure in place, keeping the running loop.
   useEffect(() => {
