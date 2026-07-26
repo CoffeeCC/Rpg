@@ -1972,6 +1972,26 @@ inset drops back.
 
 Wood with visible grain, brass with a soft bevel, straps across the seams.
 
+### Wear, later — but model for it now
+
+Paul, immediately after: *"we can play with it in the future and add some wear
+on the player board, some melted candle wax build up near the candles, and
+stuff like that"*.
+
+Deferred, not dropped, and it changes one thing about how the furniture is
+built today. **Wear is where an object has been USED**, so it has to land in
+specific places rather than as an overall grunge pass: wax pooling in and
+around the candle sockets and running down the rail, brass polished bright
+where a thumb rests and dull where it does not, the discard tray scuffed in a
+card-shaped patch, scorch around the exhaust slot, timber darker along the near
+edge where hands sit.
+
+The consequence for the bake: **keep the sockets, trays and straps as separate
+parts with their own UV space** rather than merging the console into one shell.
+A wax layer that has to be painted onto a single atlas of the whole board is a
+much worse job than one authored per fitting, and merged geometry cannot be
+re-lit or re-textured independently later.
+
 ### The one open question
 
 **Cards in hand: undecided, and deliberately left so.** Paul: *"im debating
