@@ -524,11 +524,19 @@ const CONVERTED: NavScreenSpec[] = [
   { file: 'LegendOverlay.tsx', ids: ['legend'], cancels: false, traps: true },
   { file: 'LeavingOverlay.tsx', ids: ['leaving'], cancels: true, traps: true },
   { file: 'CardDetailOverlay.tsx', ids: ['cardDetail'], cancels: true, traps: true },
+
+  // Wave 3 — the town services. Long lists, disabled rows, and two screens
+  // whose focusable set mutates while the player is standing in it.
+  { file: 'ShopScreens.tsx', ids: ['shopItems', 'shopGear'], cancels: true },
+  { file: 'SmithScreen.tsx', ids: ['smith'], cancels: true },
+  { file: 'StableScreen.tsx', ids: ['stable'], cancels: true },
+  { file: 'BreedingScreen.tsx', ids: ['breeding'], cancels: true },
+  { file: 'SaveLoadScreen.tsx', ids: ['saveLoad'], cancels: true },
+  { file: 'TavernScreen.tsx', ids: ['tavern'], cancels: true },
 ];
 
 /** Still mouse-only. This list must reach zero before the Steam build. */
 const NOT_YET_CONVERTED: string[] = [
-  'BreedingScreen.tsx',
   'CardCodexScreen.tsx',
   'CharacterSheetScreen.tsx',
   'ChronicleScreen.tsx',
@@ -537,11 +545,6 @@ const NOT_YET_CONVERTED: string[] = [
   'GearScreen.tsx',
   'MonsterSheetScreen.tsx',
   'MultiplayerScreen.tsx',
-  'SaveLoadScreen.tsx',
-  'ShopScreens.tsx',
-  'SmithScreen.tsx',
-  'StableScreen.tsx',
-  'TavernScreen.tsx',
 ];
 
 describe('screen conversion coverage', () => {
@@ -633,6 +636,45 @@ describe('screen layouts, as geometry', () => {
     expect(pickInDirection(choices[0], choices, 'down')).toBe(1);
     // Off the bottom with wrap off: stay put rather than jumping to the top.
     expect(pickInDirection(choices[2], choices, 'down', { wrap: false })).toBeNull();
+  });
+
+  it('walks a shop row: price chip is not focusable, Buy is', () => {
+    // `.svc-shop-row` puts the description left and the Buy button hard right.
+    // Down from one Buy must reach the next Buy, not drift into another column.
+    const buys = [rect(820, 20, 90, 34), rect(820, 100, 90, 34), rect(820, 180, 90, 34)];
+    const back = rect(20, 300, 100, 40);
+    const all = [...buys, back];
+    expect(pickInDirection(buys[0], all, 'down')).toBe(1);
+    expect(pickInDirection(buys[1], all, 'down')).toBe(2);
+    expect(pickInDirection(buys[2], all, 'down')).toBe(3); // and out to Back
+  });
+
+  it('walks a stable card row: View, then the actions beside it', () => {
+    // The portrait is out of the ring (data-nav-skip), so a card is exactly
+    // View + its one or two actions, side by side.
+    const card = [rect(20, 0, 70, 30), rect(100, 0, 90, 30), rect(200, 0, 80, 30)];
+    const nextCard = [rect(20, 200, 70, 30), rect(100, 200, 90, 30)];
+    const all = [...card, ...nextCard];
+    expect(pickInDirection(card[0], all, 'right')).toBe(1);
+    expect(pickInDirection(card[1], all, 'right')).toBe(2);
+    expect(pickInDirection(card[0], all, 'down')).toBe(3); // same column, next card
+  });
+
+  it('walks the save/load grid without falling off a crystal', () => {
+    // Three crystals across, three buttons each. Right from Delete on slot 1
+    // must reach Save on slot 2 rather than stopping at the crystal's edge.
+    const crystal = (x: number) => [rect(x, 0, 60, 30), rect(x + 70, 0, 60, 30), rect(x + 140, 0, 70, 30)];
+    const all = [...crystal(0), ...crystal(240), ...crystal(480)];
+    expect(pickInDirection(all[2], all, 'right')).toBe(3);
+    expect(pickInDirection(all[3], all, 'left')).toBe(2);
+    expect(pickInDirection(all[5], all, 'right')).toBe(6);
+  });
+
+  it('walks the depth chip row', () => {
+    // Six chips in a row, the last two sealed (disabled → not candidates).
+    const chips = [0, 1, 2, 3].map((i) => rect(i * 60, 0, 50, 34));
+    for (let i = 0; i < chips.length - 1; i++) expect(pickInDirection(chips[i], chips, 'right'), `chip ${i}`).toBe(i + 1);
+    expect(pickInDirection(chips[3], chips, 'right', { wrap: true })).toBe(0);
   });
 });
 

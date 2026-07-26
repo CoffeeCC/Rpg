@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { NpcHost } from './NpcHost';
+import { useNavScope, useRefocusOn } from '../nav';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import { canBreed, offspringSpecies, skillPool, MIN_BREEDING_LEVEL } from '../engine/systems/breeding';
 import { FAMILY_INFO } from '../engine/data/species';
@@ -68,8 +69,33 @@ export function BreedingScreen({ state, dispatch }: { state: GameState; dispatch
     setChosenSkills([]);
   }
 
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'breeding',
+    onCancel: () => {
+      // B undoes the selection before it leaves the room. Picking parents is a
+      // stateful two-step with no visible cursor to say where you are in it,
+      // and "get me out of this half-made choice" is what cancel means here.
+      if (parentB) {
+        setParentB(null);
+        setChosenSkills([]);
+        return true;
+      }
+      if (parentA) {
+        setParentA(null);
+        setChosenSkills([]);
+        return true;
+      }
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+  // The skill chips and the Breed button exist only while a valid pair stands.
+  // Breeding unmounts the button the cursor is sitting on.
+  useRefocusOn([!!preview]);
+
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title title-with-icon"><Icon name="breeding" size={26} emoji="" /> Breeding Lab</h1>
       <NpcHost npcId="ott" state={state} />
       <p className="subtitle">

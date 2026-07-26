@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { GameState } from '../engine/game';
 import {
   bindingUnlocked,
@@ -66,6 +66,19 @@ export function NextDraftPanel({
 
   const speciesSeen = meta.ledger.species.length;
   const wardensFelled = meta.ledger.wardens.length;
+
+  // A depth chip renders one character — "Surface 1 2 3 4 5" — and everything
+  // that makes it mean anything used to live in a native `title`. `title`
+  // fires on hover only: on a Deck, with no mouse, it never fires at all, so a
+  // controller player was choosing between six unlabelled numbers.
+  //
+  // The terms line below the row now previews whichever chip the cursor is on
+  // — focus OR hover, so pad, keyboard and mouse all get the same reading —
+  // and falls back to the standing choice when the cursor is elsewhere. The
+  // `title` stays for mouse users who are used to it.
+  const [previewDepth, setPreviewDepth] = useState<number | null>(null);
+  const shownDepth = previewDepth === null ? nextDepth : depthByLevel(previewDepth);
+  const previewing = previewDepth !== null && previewDepth !== meta.depth;
 
   return (
     <div className="next-draft">
@@ -196,6 +209,11 @@ export function NextDraftPanel({
                   className={`depth-chip${meta.depth === d.depth ? ' chosen' : ''}${reachable ? '' : ' locked'}`}
                   disabled={!reachable}
                   title={reachable ? `${d.name} — ${d.terms}` : 'Carry the reading above this one to the end first.'}
+                  aria-label={reachable ? `${d.name}. ${d.terms}` : `${d.name}, sealed. Carry the reading above this one to the end first.`}
+                  onFocus={() => setPreviewDepth(d.depth)}
+                  onBlur={() => setPreviewDepth((cur) => (cur === d.depth ? null : cur))}
+                  onMouseEnter={() => setPreviewDepth(d.depth)}
+                  onMouseLeave={() => setPreviewDepth((cur) => (cur === d.depth ? null : cur))}
                   onClick={() => {
                     sfx('uiClick');
                     setMeta(setDepth(d.depth));
@@ -207,7 +225,8 @@ export function NextDraftPanel({
             })}
           </div>
           <div className="draft-terms depth-terms">
-            <b>{nextDepth.name}.</b> {nextDepth.terms}
+            <b>{shownDepth.name}.</b> {shownDepth.terms}
+            {previewing && <span className="depth-preview-note"> — not yet inscribed.</span>}
           </div>
         </div>
       ) : (

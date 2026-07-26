@@ -168,6 +168,12 @@
   border-radius: 7px;
   background: rgba(9, 7, 13, 0.5);
 }
+/* The line doubles as a reading of whichever chip the cursor is on. It has to
+   say so, or a player will think they have already chosen it. */
+.depth-preview-note {
+  font-style: italic;
+  opacity: 0.72;
+}
 .depth-sealed {
   font-style: italic;
   font-size: 0.74rem;

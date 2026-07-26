@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { NpcHost } from './NpcHost';
+import { useNavScope } from '../nav';
 import { COVENANT_INTRO, OTT_COVENANT_LINES } from '../engine/data/covenantLore';
 import { STABLE_CAP } from '../engine/game';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
@@ -8,11 +10,25 @@ import { MonsterImage } from '../art/MonsterImage';
 import { Icon } from './Icon';
 import '../services.css';
 
-function MonsterCard({ monster, actions, onView }: { monster: MonsterInstance; actions: React.ReactNode; onView: () => void }) {
+function MonsterCard({
+  monster,
+  actions,
+  onView,
+  initial,
+}: {
+  monster: MonsterInstance;
+  actions: React.ReactNode;
+  onView: () => void;
+  initial?: boolean;
+}) {
   const p = monster.personality;
   return (
     <div className="stable-card">
-      <button className="stable-card-portrait" onClick={onView} title="Open character sheet">
+      {/* The portrait and "View ▸" below fire the same thing. On a mouse that
+          redundancy is a convenience; on a D-pad walking twenty stalls it is
+          twenty extra presses to no end, so the portrait is out of the ring
+          (data-nav-skip for the pad, tabIndex -1 for Tab) and stays clickable. */}
+      <button className="stable-card-portrait" data-nav-skip="" tabIndex={-1} onClick={onView} title="Open character sheet">
         <MonsterImage speciesId={monster.speciesId} size={88} rarity={monster.rarity} />
       </button>
       <div className="stable-card-name">
@@ -38,7 +54,7 @@ function MonsterCard({ monster, actions, onView }: { monster: MonsterInstance; a
         {(monster.charm || monster.trinket) && <span> · 🧿 {[monster.charm, monster.trinket].filter(Boolean).length} worn</span>}
       </div>
       <div className="stable-card-actions">
-        <button className="btn small" onClick={onView}>
+        <button className="btn small" onClick={onView} data-nav-initial={initial ? '' : undefined} aria-label={`View ${monster.nickname}`}>
           View ▸
         </button>
         {actions}
@@ -48,8 +64,21 @@ function MonsterCard({ monster, actions, onView }: { monster: MonsterInstance; a
 }
 
 export function StableScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'stable',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+  // Where the cursor opens: the first companion actually walking with you, or
+  // failing that the first one in the stalls. Otherwise the first candidate in
+  // document order is the Covenant disclosure, which is prose, not an action.
+  const firstPartyUid = state.party[0]?.uid;
+  const firstStableUid = state.stable[0]?.uid;
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title title-with-icon"><Icon name="stable" size={26} emoji="" /> The Stable</h1>
       <NpcHost npcId="ott" state={state} />
       <details className="covenant-panel">
@@ -76,6 +105,7 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterCard
             key={m.uid}
             monster={m}
+            initial={m.uid === firstPartyUid}
             onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
             actions={
               <button className="btn small" onClick={() => dispatch({ type: 'PARTY_REMOVE', uid: m.uid })}>
@@ -100,6 +130,7 @@ export function StableScreen({ state, dispatch }: { state: GameState; dispatch: 
           <MonsterCard
             key={m.uid}
             monster={m}
+            initial={!firstPartyUid && m.uid === firstStableUid}
             onView={() => dispatch({ type: 'OPEN_MONSTER', uid: m.uid })}
             actions={
               <>

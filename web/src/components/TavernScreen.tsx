@@ -11,6 +11,7 @@ import { PAINTED_NPCS } from '../art/paintedCharacters';
 import { play as sfx, isMuted } from '../platform/sfx';
 import { Icon } from './Icon';
 import { NextDraftPanel } from './NextDraftPanel';
+import { useNavScope } from '../nav';
 import '../services.css';
 
 const AUDIO_BASE = (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '';
@@ -34,8 +35,22 @@ export function TavernScreen({ state, dispatch }: { state: GameState; dispatch: 
     audio.play().catch(() => {});
     return () => audio.pause();
   }, [state.lastTalk]);
+
+  // One scope covers the tavern AND the Chronicler's desk it hosts, including
+  // NextDraftPanel — the panel is inline, not an overlay, so its rows are just
+  // more controls inside this root. It is one of the three longest screens in
+  // the game; LT/RT paging and the right stick both work off `.game-main`.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'tavern',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+
   return (
-    <div className="panel tavern">
+    <div className="panel tavern" ref={root}>
       <h1 className="title title-with-icon"><Icon name="tavern" size={26} emoji="" /> The Held Breath</h1>
       <p className="subtitle">Everdusk's only tavern. The fire is low, the talk is lower, and both are warm.</p>
 

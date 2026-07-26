@@ -4,6 +4,7 @@ import { isSavable } from '../engine/systems/saveGame';
 import { SLOT_COUNT, saveToSlot, loadFromSlot, deleteSlot, getSlotSummary, exportSaveToFile, importSaveFromFile } from '../platform/browserSave';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import { useNavScope } from '../nav';
 import '../sheets.css';
 
 // v17 (PLAN7 C4): slots as save-crystal cards — gem, hero name, level, realm,
@@ -71,15 +72,32 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
     dispatch({ type: 'LOAD_STATE', state: result });
   }
 
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'saveLoad',
+    onCancel: () => {
+      // backScreen, not 'town' — this screen is reachable from the floor
+      // (FloorScreen's toolbar), and B must not walk anyone out of a run.
+      dispatch({ type: 'GOTO', screen: backScreen });
+      return true;
+    },
+  });
+
+  // Open on Load for the first filled slot: a player who came here from the
+  // floor is nearly always saving, but a player at the title is loading, and
+  // the loading case is the one where landing on the wrong control costs them.
+  const slots = Array.from({ length: SLOT_COUNT }, (_, i) => i + 1);
+  const firstFilled = slots.find((slot) => !!getSlotSummary(slot));
+
   return (
-    <div className="panel saveload-screen">
+    <div className="panel saveload-screen" ref={root}>
       <h1 className="title title-with-icon"><Icon name="save" size={26} emoji="" /> Save / Load</h1>
       <NpcHost npcId="fennick" state={state} />
       {!canSave && <p className="subtitle">Saving is only possible in town or while exploring (not mid-battle or mid-event).</p>}
       {message && <p className="sl-message">{message}</p>}
 
       <div className="sl-grid">
-        {Array.from({ length: SLOT_COUNT }, (_, i) => i + 1).map((slot) => {
+        {slots.map((slot) => {
           const summary = getSlotSummary(slot);
           return (
             <div key={slot} className={`sl-crystal ${summary ? 'filled' : 'empty'}`}>
@@ -99,13 +117,25 @@ export function SaveLoadScreen({ state, backScreen, dispatch }: { state: GameSta
                 <div className="sl-empty-label">(empty)</div>
               )}
               <div className="sl-actions">
-                <button className="btn small" disabled={!canSave} onClick={() => handleSave(slot)}>
+                <button
+                  className="btn small"
+                  disabled={!canSave}
+                  data-nav-initial={!firstFilled && slot === 1 ? '' : undefined}
+                  aria-label={`Save to slot ${slot}`}
+                  onClick={() => handleSave(slot)}
+                >
                   Save
                 </button>
-                <button className="btn small" disabled={!summary} onClick={() => handleLoad(slot)}>
+                <button
+                  className="btn small"
+                  disabled={!summary}
+                  data-nav-initial={slot === firstFilled ? '' : undefined}
+                  aria-label={`Load slot ${slot}`}
+                  onClick={() => handleLoad(slot)}
+                >
                   Load
                 </button>
-                <button className="btn small danger" disabled={!summary} onClick={() => handleDelete(slot)}>
+                <button className="btn small danger" disabled={!summary} aria-label={`Delete slot ${slot}`} onClick={() => handleDelete(slot)}>
                   Delete
                 </button>
               </div>

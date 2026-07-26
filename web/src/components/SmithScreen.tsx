@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { recastCandidates, recastCost, type GameAction, type GameState } from '../engine/game';
 import { CLASS_DECKS, RACE_CARDS, TAME_CARD_ID, getCard } from '../engine/data/cards';
 import { BALANCE } from '../engine/data/balance';
@@ -8,6 +8,7 @@ import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
 import { ItemLine } from './ItemLine';
 import { setOfItem } from '../engine/data/sets';
+import { useNavScope } from '../nav';
 import {
   MAX_VAULT_SLOTS,
   VAULT_SLOT_COSTS,
@@ -49,8 +50,17 @@ export function SmithScreen({ state, dispatch }: { state: GameState; dispatch: (
   const recastable = recastCandidates(player);
   const recastPrice = recastCost(player);
 
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'smith',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
+
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title title-with-icon"><Icon name="smith" size={26} emoji="" /> The Forge</h1>
       <NpcHost npcId="grude" state={state} />
       <div className="svc-stock-head">

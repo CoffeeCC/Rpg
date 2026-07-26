@@ -1,14 +1,26 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { CONSUMABLES } from '../engine/data/items';
 import { ItemLine } from './ItemLine';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import { useNavScope } from '../nav';
 import '../services.css';
 
 export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
+  // A column of Buy buttons. Rows the player cannot afford are `disabled`, so
+  // the cursor steps over them and lands on the first thing actually for sale.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'shopItems',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title title-with-icon"><Icon name="itemshop" size={26} emoji="" /> Found Things</h1>
       <NpcHost npcId="maribel" state={state} />
       <div className="svc-stock-head">
@@ -48,8 +60,19 @@ export function ShopItemsScreen({ state, dispatch }: { state: GameState; dispatc
 
 export function ShopGearScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player!;
+  // Two stacked unbounded lists (stock, then the whole bag). The bag can run to
+  // thirty rows, so this is one of the screens where LT/RT paging and the right
+  // stick earn their keep — both work off `.game-main` with no code here.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'shopGear',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title title-with-icon"><Icon name="gearshop" size={26} emoji="" /> The Gear Stall</h1>
       <NpcHost npcId="grude" state={state} />
       <div className="svc-stock-head">
