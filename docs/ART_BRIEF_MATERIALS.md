@@ -195,3 +195,53 @@ which the engine composites as LIGHT rather than as transparency.
 
 A quick check: the fraction of non-clear pixels that are fully opaque should be
 **above 90%**. The current best is 76% and the worst is 23%.
+
+### The baker now fixes it — but the requirement above still stands
+
+`tools/art/pipeline.mjs` grew a **sharpening step in front of the bevel**
+(`sharpenAlpha`), because the alternative was repainting 92 monsters.
+
+Looking at the alpha channel as an image says what actually went wrong: it is
+legibly a *drawing* of the character. Dark cloth is low alpha, a highlight is
+high alpha. These were cut out with something luminance-keyed, and the ghosting
+is that key, not a feathered edge. It follows that the damage is worst on the
+darkest art — `obsidianWarden` is 16.5% opaque at a mean alpha of 121, and at
+the old 0.5 silhouette threshold it lost **53% of its own outline**. What the
+EDT then bevelled was a lace doily.
+
+The step remaps alpha to a hard silhouette with a one-to-two pixel
+antialiasing band, and the band's position is sub-pixel — taken from the source
+alpha's own contour rather than the pixel grid — so the edges do not stair. It
+exports the result twice: as the alpha the derived maps carry, and as
+`<name>_albedo.png`, the source art wearing the cleaned matte, which is what
+the renderer should draw.
+
+Measured over the 23 bevel assets in the manifest, `npm run art:bake`:
+
+| | before | after |
+|---|---|---|
+| mean fully-opaque fraction | 59.6% | **91.6%** |
+| assets at or above the 90% target | 1 of 23 | **20 of 23** |
+| `tamer` relief — mean height inside the silhouette | 0.595, lowest of any asset | 0.723, mid-pack |
+| `tamer` silhouette area | 7,033 px | 12,107 px |
+
+Three assets still miss, and each miss says something:
+
+- **`tamer` 78.6%** — a slender figure holding a two-pixel-wide rope. Every
+  remaining partial pixel is inside the antialiasing band (measured: zero
+  partial pixels more than 1.6px from the silhouette), so this is perimeter,
+  not softness. It is the one number the art could still improve.
+- **`hollowMarionette` 89.3%** — the same, a hair under.
+- **`obsidianWarden` — refused outright.** Its "matte" reaches all four canvas
+  edges: there is no cut-out, there is a smoky backdrop baked into the art.
+  Sharpening it would paste a rectangle onto the board, so the baker declines
+  and records why. **This asset needs re-cutting at source; nothing downstream
+  can fix it.** `lastLightBargain` is the same, a full lava scene.
+
+**None of this retires the requirement.** The sharpener is recovering a
+silhouette from a bad key, and it can only recover what the key left behind: it
+cannot invent a limb that keyed away to nothing, it cannot tell a soft aura
+(`phylacteryPulse`'s glow) from a soft body and will harden both, and it cannot
+help art with no cut-out at all. New art still ships with a hard matte. For art
+that genuinely wants translucency, set `"sharpen": 0` on that asset in
+`tools/art/materials.json`.

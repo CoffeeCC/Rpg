@@ -93,6 +93,12 @@ export function main(argv) {
     const wasPass = a.measured.orbitPass;
     const dSpread = orbit.spread - a.measured.orbitSpread;
     const dRange = baked.levels.span - a.measured.tonalRange;
+    // The sharpened alpha is drift-guarded on the same terms as everything
+    // else: the whole point of the manifest is that a change in the baker
+    // cannot slip through on a source file that never moved, and the alpha is
+    // now a baker output with a target attached to it.
+    const opaque = baked.alphaSharpen ? baked.alphaSharpen.after.opaqueFraction : null;
+    const dOpaque = opaque !== null && a.measured.alpha ? opaque - a.measured.alpha.opaqueAfter : 0;
 
     const row = {
       id: a.id,
@@ -105,6 +111,8 @@ export function main(argv) {
       separation: orbit.separation,
       tonalRange: baked.levels.span,
       deltaRange: dRange,
+      opaque,
+      deltaOpaque: dOpaque,
       sourceChanged: moved,
       status: 'ok',
     };
@@ -116,13 +124,19 @@ export function main(argv) {
           `peak ${orbit.peak}° trough ${orbit.trough}° (${orbit.separation}° apart)` +
           (moved ? '. The source changed, so this is new art with light painted into it.' : ''),
       );
-    } else if (!moved && (Math.abs(dSpread) > opts.tolerance || Math.abs(dRange) > opts.tolerance)) {
+    } else if (
+      !moved &&
+      (Math.abs(dSpread) > opts.tolerance || Math.abs(dRange) > opts.tolerance || Math.abs(dOpaque) > opts.tolerance)
+    ) {
       row.status = 'drift';
       problems.push(
         `${a.id} — source is unchanged but the measurement moved: spread ` +
           `${a.measured.orbitSpread.toFixed(3)} -> ${orbit.spread.toFixed(3)}, range ` +
-          `${(a.measured.tonalRange * 100).toFixed(0)}% -> ${(baked.levels.span * 100).toFixed(0)}%. ` +
-          'The baker changed behaviour; re-bake deliberately or fix it.',
+          `${(a.measured.tonalRange * 100).toFixed(0)}% -> ${(baked.levels.span * 100).toFixed(0)}%` +
+          (opaque !== null && a.measured.alpha
+            ? `, opaque ${(a.measured.alpha.opaqueAfter * 100).toFixed(1)}% -> ${(opaque * 100).toFixed(1)}%`
+            : '') +
+          '. The baker changed behaviour; re-bake deliberately or fix it.',
       );
     } else if (!orbit.pass) {
       row.status = a.mode === 'bevel' ? 'advisory' : 'known-fail';
@@ -165,14 +179,16 @@ export function main(argv) {
 
 function format(r) {
   const tag = { ok: 'ok', drift: 'DRIFT', regression: 'REGRESSION', 'known-fail': 'FAIL', advisory: 'note', 'source-changed': 'changed' }[r.status];
-  return [
+  const cols = [
     r.id.padEnd(28),
     tag.padEnd(11),
     `spread ${r.spread.toFixed(3)}`,
     `(rec ${r.recorded.toFixed(3)}, d${r.deltaSpread >= 0 ? '+' : ''}${r.deltaSpread.toFixed(3)})`,
     `sep ${String(r.separation).padStart(5)}`,
     `range ${(r.tonalRange * 100).toFixed(0)}%`,
-  ].join('  ');
+  ];
+  if (r.opaque !== null && r.opaque !== undefined) cols.push(`opaque ${(r.opaque * 100).toFixed(0)}%`);
+  return cols.join('  ');
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

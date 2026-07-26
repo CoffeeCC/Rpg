@@ -161,12 +161,20 @@ export function bakeOne(src, mode, params, io = {}) {
     height: relative(ROOT, join(outDir, `${name}_height.png`)).replaceAll('\\', '/'),
     ao: relative(ROOT, join(outDir, `${name}_ao.png`)).replaceAll('\\', '/'),
   };
+  // The fourth map, and the only one that is not a derivative: the source art
+  // wearing the cleaned alpha. It exists so the renderer can stop drawing
+  // ghosts without anyone repainting 92 monsters. Bevel only — a tile has no
+  // alpha to clean.
+  if (baked.albedo) {
+    outputs.albedo = relative(ROOT, join(outDir, `${name}_albedo.png`)).replaceAll('\\', '/');
+  }
 
   if (write) {
     const { width: w, height: h } = bitmap;
     writePng(join(ROOT, outputs.normal), w, h, normalToRgba(baked.normals, baked.alpha));
     writePng(join(ROOT, outputs.height), w, h, planeToRgba(baked.height, baked.alpha));
     writePng(join(ROOT, outputs.ao), w, h, planeToRgba(baked.ao, baked.alpha));
+    if (baked.albedo) writePng(join(ROOT, outputs.albedo), w, h, baked.albedo);
   }
 
   // Silhouette facts that only matter on the character path, and that a human
@@ -184,7 +192,25 @@ export function bakeOne(src, mode, params, io = {}) {
     silhouette = {
       coverage: round(opaque / baked.mask.length, 4),
       touchesBorder: border,
-      bevelRadius: round(baked.params.bevelRadius, 2),
+      bevelRadius: round(baked.bevelRadius ?? baked.params.bevelRadius, 2),
+    };
+  }
+
+  // What the alpha sharpener did, in the numbers the target is stated in.
+  // `opaqueAfter` above 0.90 is the bar; where an asset misses it, this row is
+  // what says whether the remainder is honest antialiasing on a thin figure or
+  // a matte that is still soft.
+  let alphaStats = null;
+  if (baked.alphaSharpen) {
+    const s = baked.alphaSharpen;
+    alphaStats = {
+      sharpened: s.applied,
+      opaqueBefore: round(s.before.opaqueFraction, 4),
+      opaqueAfter: round(s.after.opaqueFraction, 4),
+      meanBefore: round(s.before.meanAlpha, 4),
+      meanAfter: round(s.after.meanAlpha, 4),
+      borderCoverage: round(s.borderCoverage, 4),
+      reason: s.reason,
     };
   }
 
@@ -222,6 +248,7 @@ export function bakeOne(src, mode, params, io = {}) {
       altSpread: round(alt.spread, 4),
       altSeparation: alt.separation,
       silhouette,
+      alpha: alphaStats,
     },
     verdict: verdictFor(mode, orbit),
   };
@@ -361,7 +388,7 @@ export function main(argv) {
 export function formatRow(r) {
   const m = r.measured;
   const tag = { pass: 'pass', fail: 'FAIL', advisory: 'note' }[r.verdict.status];
-  return [
+  const cols = [
     r.id.padEnd(28),
     r.mode.padEnd(6),
     tag.padEnd(5),
@@ -371,7 +398,16 @@ export function formatRow(r) {
     `sep ${String(m.orbitSeparation).padStart(5)}`,
     `ctl ${m.controlSpread.toFixed(3)}`,
     `range ${(m.tonalRange * 100).toFixed(0)}%`,
-  ].join('  ');
+  ];
+  if (m.alpha) {
+    const a = m.alpha;
+    cols.push(
+      a.sharpened
+        ? `opaque ${(a.opaqueBefore * 100).toFixed(0)}%->${(a.opaqueAfter * 100).toFixed(0)}%`
+        : `opaque ${(a.opaqueBefore * 100).toFixed(0)}% NOT SHARPENED`,
+    );
+  }
+  return cols.join('  ');
 }
 
 function summary(rows, ms) {
@@ -381,6 +417,25 @@ function summary(rows, ms) {
     '',
     `${rows.length} asset(s) in ${(ms / 1000).toFixed(1)}s · ${rows.length - fails.length - notes.length} pass · ${fails.length} fail · ${notes.length} advisory`,
   ];
+
+  // The alpha ledger. The target is 90% of visible pixels fully opaque; what
+  // remains under it should be the antialiasing band and nothing else, so a
+  // thin figure with a lot of perimeter can miss honestly. Printed either way.
+  const alphas = rows.filter((r) => r.measured.alpha);
+  if (alphas.length) {
+    const refused = alphas.filter((r) => !r.measured.alpha.sharpened);
+    const under = alphas.filter((r) => r.measured.alpha.sharpened && r.measured.alpha.opaqueAfter < 0.9);
+    const mean = (k) => alphas.reduce((s, r) => s + r.measured.alpha[k], 0) / alphas.length;
+    lines.push(
+      `  alpha  mean opaque ${(mean('opaqueBefore') * 100).toFixed(1)}% -> ${(mean('opaqueAfter') * 100).toFixed(1)}% · ` +
+        `${alphas.length - under.length - refused.length}/${alphas.length} at or above the 90% target`,
+    );
+    for (const r of under) {
+      lines.push(`  alpha  ${r.id} — ${(r.measured.alpha.opaqueAfter * 100).toFixed(1)}% opaque, under target`);
+    }
+    for (const r of refused) lines.push(`  alpha  ${r.id} — NOT SHARPENED: ${r.measured.alpha.reason}`);
+  }
+
   for (const r of fails) lines.push(`  FAIL ${r.id} — ${r.verdict.note}`);
   for (const r of notes) lines.push(`  note ${r.id} — spread ${r.measured.orbitSpread.toFixed(3)}, ${r.measured.orbitSeparation}° apart`);
   return lines.join('\n');

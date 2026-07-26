@@ -24,7 +24,7 @@
  * The pipeline splits by asset class, per ENGINE_PLAN.md §9.1:
  *
  *   tiles  luminance -> denoise -> auto-level -> [detail | form] -> Sobel
- *   bevel  alpha silhouette -> EDT -> profile -> smooth -> Sobel
+ *   bevel  alpha sharpen -> silhouette -> EDT -> profile -> smooth -> Sobel
  *
  * They share everything from the Sobel onwards. They must not share anything
  * before it: `bevel` exists precisely because it never looks at painted tone,
@@ -46,6 +46,45 @@ export const TILE_DEFAULTS = {
 export const BEVEL_DEFAULTS = {
   /** Alpha above this counts as inside the silhouette. */
   alphaThreshold: 0.5,
+  /**
+   * Alpha sharpening — see `sharpenAlpha` for what it fixes and why.
+   *
+   * `sharpenThreshold` is where the TRUE silhouette is, read off the raw alpha.
+   * It is deliberately low. The mattes on this art are luminance-keyed, so a
+   * dark pauldron is a low alpha and a mid-height threshold eats it; measured
+   * across the shipped set, moving 0.5 -> 0.06 recovers 53% of obsidianWarden's
+   * silhouette and 25% of player's. Below ~0.04 there is nothing left to
+   * recover — coverage stops moving — so this is not a knob that wants pushing.
+   *
+   * `sharpenBand` is the width in PIXELS of the antialiasing ramp kept at that
+   * silhouette. 1.5 is a pixel and a half of edge; 0 would be a hard key and
+   * would show every stair.
+   *
+   * `sharpen` is the blend back toward the raw alpha, in the style of `detail`
+   * and `form`. 0 leaves the alpha exactly as authored, which is what a
+   * genuinely translucent asset — glass, a ghost, a flame — would want.
+   */
+  sharpen: 1.0,
+  sharpenThreshold: 0.06,
+  sharpenBand: 1.5,
+  /**
+   * Refuse to sharpen when this much of the canvas BORDER is inside the
+   * silhouette — because then it is not a silhouette, it is a photograph.
+   *
+   * Two of the hundred assets are not cut out at all: `obsidianWarden` carries
+   * a smoky backdrop out to all four edges and `lastLightBargain` is a full
+   * lava scene. Forcing their alpha opaque does not de-ghost a character, it
+   * pastes a rectangle onto the board — which is worse than the faint wash it
+   * replaces, and worse in a way nobody would notice until they saw it in
+   * game. The measured split is clean: 89 of 100 assets sit under 2%, the
+   * highest legitimate one (`roostVigil`, a gargoyle on a plinth that runs off
+   * the bottom of the frame) is 22.9%, and `obsidianWarden` is 36.2%. 0.30 is
+   * the gap between those two, chosen with both of them on screen.
+   *
+   * A refusal is recorded in the manifest rather than swallowed: the asset
+   * wants re-cutting, and the manifest is where that gets noticed.
+   */
+  sharpenBorderLimit: 0.3,
   /**
    * How far in from the edge the bulge takes to reach full height, in pixels.
    * `auto` derives it from the shape itself — the 85th percentile of the
@@ -319,8 +358,14 @@ export function deriveAo(detail, form, w, h) {
  * each interior pixel to the nearest exterior one. Outside the image counts as
  * exterior, so a sprite that runs off the canvas still bevels at the canvas
  * edge instead of claiming to be infinitely thick there.
+ *
+ * `clampToBorder` is that last rule, and it is the default because the bevel
+ * wants it. The alpha sharpener does not: it runs this over the INVERTED mask
+ * to measure how far outside the silhouette a pixel is, and there the rule
+ * caps every pixel in the outermost row at distance 1 — which would leave a
+ * one-pixel frame of 17%-opaque nothing around the whole canvas.
  */
-export function distanceTransform(mask, w, h) {
+export function distanceTransform(mask, w, h, { clampToBorder = true } = {}) {
   const INF = 1e20;
   const f = new Float64Array(Math.max(w, h));
   const d = new Float64Array(Math.max(w, h));
@@ -368,12 +413,181 @@ export function distanceTransform(mask, w, h) {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
+      const d = Math.sqrt(grid[i]);
+      if (!clampToBorder) {
+        out[i] = d;
+        continue;
+      }
       // Nearest pixel outside the canvas, in case the art is cropped tight.
       const border = Math.min(x + 1, y + 1, w - x, h - y);
-      out[i] = Math.min(Math.sqrt(grid[i]), border);
+      out[i] = Math.min(d, border);
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Alpha sharpening — the step in front of the bevel
+// ---------------------------------------------------------------------------
+
+/**
+ * Below one 8-bit step per pixel the alpha is flat to the precision it was
+ * stored in, so the local gradient carries no information about where the edge
+ * is and must not be divided by.
+ */
+const MIN_ALPHA_SLOPE = 1 / 255;
+
+/** Alpha statistics, the shape the manifest records them in. */
+function alphaProfile(plane) {
+  let opaque = 0;
+  let partial = 0;
+  let sum = 0;
+  for (let i = 0; i < plane.length; i++) {
+    const a = plane[i];
+    if (a >= 0.999) opaque++;
+    else if (a > 0.004) partial++;
+    if (a > 0.004) sum += a;
+  }
+  const visible = opaque + partial;
+  return {
+    /** Of the pixels that show at all, how many are fully opaque. */
+    opaqueFraction: visible ? opaque / visible : 0,
+    partialFraction: visible ? partial / visible : 0,
+    meanAlpha: visible ? sum / visible : 0,
+    visible,
+  };
+}
+
+/**
+ * Turn a soft matte into a silhouette with a clean edge.
+ *
+ * WHAT IS WRONG WITH THE ART. These sprites were cut out with something
+ * luminance-keyed: the alpha channel is legibly a *drawing* of the character,
+ * not a matte. Dark cloth is low alpha, a highlight is high alpha. Measured on
+ * the shipped set, `tamer` is 23% fully opaque with a mean alpha of 148/255 and
+ * `obsidianWarden` 16.5% at 121/255. It cost nothing on the old DOM map, which
+ * put sprites on a near-black background where a half-transparent dark pixel is
+ * indistinguishable from an opaque one. On a lit board there is brightness
+ * underneath, and every soft pixel blends toward the floor — the figures read
+ * as ghosts.
+ *
+ * IT ALSO COSTS GEOMETRY. `bevelHeight` takes its silhouette from this same
+ * alpha, so the luminance key does not just fade the art, it *erodes the
+ * shape*: at the old 0.5 threshold `obsidianWarden` lost 53% of its silhouette
+ * and `tamer` 44%, and what the EDT then bevels is a lace doily rather than a
+ * body. `tamer`'s auto bevel radius collapsed to 3px against 12px for the one
+ * sprite whose matte is sound (`merchant`), which is why it came out flattest.
+ *
+ * HOW IT WORKS. Two estimates of the same signed distance to the silhouette,
+ * each used where it is the better one:
+ *
+ *   - AWAY FROM THE EDGE, an exact EDT off the thresholded mask. It is
+ *     quantised to whole pixels, which does not matter a pixel and a half in,
+ *     and it is immune to the interior texture that makes the gradient estimate
+ *     wobble.
+ *   - AT THE EDGE, the first-order estimate `(a - T) / |grad a|`, which is
+ *     SUB-PIXEL. This is the part that keeps the silhouette from going jagged:
+ *     the ramp position varies continuously with the source alpha, so the edge
+ *     follows the contour the artist drew rather than the pixel grid. A plain
+ *     `alpha > T ? 1 : 0` key would put every stair on show.
+ *
+ * The distance then becomes coverage across a band `sharpenBand` pixels wide,
+ * centred on the silhouette. Everything further in is 1, everything further out
+ * is 0, and the band is the antialiasing.
+ *
+ * WHAT IT DOES NOT DO: fill holes. Measured at this threshold, `player` has
+ * none at all and `merchant` has 32 pixels of them; `tamer`'s are the loop of
+ * her leash, which encloses real background and must stay a hole. A blanket
+ * flood fill would weld it shut. Holes are a threshold problem, and the
+ * threshold is where they get solved.
+ *
+ * @param {Float32Array} alpha 0..1, w*h
+ * @returns {{ alpha: Float32Array, applied: boolean, before: object, after: object }}
+ */
+export function sharpenAlpha(alpha, w, h, params = {}) {
+  const p = { ...BEVEL_DEFAULTS, ...params };
+  const before = alphaProfile(alpha);
+  const amount = clamp(p.sharpen ?? 0, 0, 1);
+  if (amount <= 0) {
+    return { alpha, applied: false, reason: 'sharpen is 0', borderCoverage: 0, before, after: before };
+  }
+
+  const T = clamp(p.sharpenThreshold, 0, 1);
+  const band = Math.max(1e-3, p.sharpenBand);
+
+  const core = new Uint8Array(w * h);
+  const shell = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    core[i] = alpha[i] >= T ? 1 : 0;
+    shell[i] = core[i] ? 0 : 1;
+  }
+
+  // Is this a cut-out at all? See `sharpenBorderLimit`.
+  let ring = 0;
+  let ringIn = 0;
+  for (let x = 0; x < w; x++) {
+    ring += 2;
+    ringIn += core[x] + core[(h - 1) * w + x];
+  }
+  for (let y = 1; y < h - 1; y++) {
+    ring += 2;
+    ringIn += core[y * w] + core[y * w + w - 1];
+  }
+  const borderCoverage = ring ? ringIn / ring : 0;
+  if (borderCoverage > p.sharpenBorderLimit) {
+    return {
+      alpha,
+      applied: false,
+      reason:
+        `the silhouette covers ${(borderCoverage * 100).toFixed(1)}% of the canvas border, over the ` +
+        `${(p.sharpenBorderLimit * 100).toFixed(0)}% limit — this art is not cut out, it has a background ` +
+        'baked into it, and forcing it opaque would paste a rectangle on the board. Re-cut the source.',
+      borderCoverage,
+      before,
+      after: before,
+    };
+  }
+  // Unclamped both ways: a figure that runs off the canvas is not thereby thin,
+  // and the transparent surround is not thereby half-there.
+  const dIn = distanceTransform(core, w, h, { clampToBorder: false });
+  const dOut = distanceTransform(shell, w, h, { clampToBorder: false });
+
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+
+      // Whole-pixel signed distance from this pixel's CENTRE to the boundary.
+      // A pixel just inside has dIn = 1 and sits half a pixel in; its outside
+      // neighbour has dOut = 1 and sits half a pixel out. The boundary is the
+      // zero between them.
+      const edt = core[i] ? dIn[i] - 0.5 : -(dOut[i] - 0.5);
+
+      let sd = edt;
+      if (edt > -1.5 && edt < 1.5) {
+        // On the boundary itself, where sub-pixel accuracy is the whole game.
+        const xm = clamp(x - 1, 0, w - 1);
+        const xp = clamp(x + 1, 0, w - 1);
+        const ym = clamp(y - 1, 0, h - 1) * w;
+        const yc = y * w;
+        const yp = clamp(y + 1, 0, h - 1) * w;
+        // Sobel over a linear ramp of slope s returns 8s, hence the /8: this is
+        // alpha units per pixel, which is what the division below needs.
+        const gx = (alpha[ym + xp] + 2 * alpha[yc + xp] + alpha[yp + xp] - (alpha[ym + xm] + 2 * alpha[yc + xm] + alpha[yp + xm])) / 8;
+        const gy = (alpha[yp + xm] + 2 * alpha[yp + x] + alpha[yp + xp] - (alpha[ym + xm] + 2 * alpha[ym + x] + alpha[ym + xp])) / 8;
+        const g = Math.hypot(gx, gy);
+        const sub = (alpha[i] - T) / Math.max(g, MIN_ALPHA_SLOPE);
+        // A boundary pixel cannot be further than a pixel from the boundary;
+        // clamping keeps a flat patch of alpha from claiming otherwise.
+        sd = clamp(sub, -1, 1);
+      }
+
+      const sharp = clamp(0.5 + sd / band, 0, 1);
+      out[i] = alpha[i] + (sharp - alpha[i]) * amount;
+    }
+  }
+
+  return { alpha: out, applied: true, reason: null, borderCoverage, before, after: alphaProfile(out) };
 }
 
 /**
@@ -478,7 +692,17 @@ export function bakeBevel(bitmap, params = {}) {
   const p = { ...BEVEL_DEFAULTS, ...params };
   const { width: w, height: h, data } = bitmap;
 
-  const alpha = alphaPlane(data, w, h);
+  // Sharpen FIRST. Everything after this line — the silhouette, the EDT, the
+  // alpha the exported maps carry, and the de-ghosted sprite the renderer
+  // wants — reads the cleaned alpha, so there is exactly one silhouette in
+  // play and the maps cannot disagree with the art they belong to.
+  //
+  // `alphaThreshold` is still 0.5 and still what cuts the mask, and on the
+  // sharpened plane that is the same contour as `sharpenThreshold` on the raw
+  // one by construction: sharpening maps the T-contour to 0.5. When `sharpen`
+  // is 0 it degrades to exactly the old behaviour.
+  const sharpened = sharpenAlpha(alphaPlane(data, w, h), w, h, p);
+  const alpha = sharpened.alpha;
   const { height: hgt, mask, bevelRadius } = bevelHeight(alpha, w, h, p);
   // The coarse band is computed whatever `form` is weighted at, because AO is
   // the difference between the two and wants it regardless.
@@ -501,12 +725,37 @@ export function bakeBevel(bitmap, params = {}) {
     height: hgt,
     ao,
     levels,
-    params: { ...p, bevelRadius },
+    // `bevelRadius` stays as AUTHORED — usually the string 'auto'. It used to
+    // be overwritten here with the number `auto` resolved to, which made the
+    // manifest replay a radius instead of re-deriving one, and that is only
+    // harmless while the silhouette never changes. Alpha sharpening changes
+    // the silhouette on every asset, and a radius measured off the old eroded
+    // outline is not tuning, it is a stale measurement wearing tuning's
+    // clothes. The resolved number is a measurement and lives beside the other
+    // ones, in `measured.silhouette.bevelRadius`.
+    params: { ...p },
+    bevelRadius,
     alpha: (() => {
       const a = new Uint8ClampedArray(w * h);
-      for (let i = 0; i < w * h; i++) a[i] = data[i * 4 + 3];
+      for (let i = 0; i < w * h; i++) a[i] = Math.round(clamp(alpha[i], 0, 1) * 255);
       return a;
     })(),
+    /**
+     * The source art wearing the cleaned alpha. This is the deliverable that
+     * lets the renderer stop drawing ghosts without anyone repainting 92
+     * monsters: same RGB, same silhouette, opaque where the character is.
+     */
+    albedo: (() => {
+      const out = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        out[i * 4] = data[i * 4];
+        out[i * 4 + 1] = data[i * 4 + 1];
+        out[i * 4 + 2] = data[i * 4 + 2];
+        out[i * 4 + 3] = Math.round(clamp(alpha[i], 0, 1) * 255);
+      }
+      return out;
+    })(),
+    alphaSharpen: sharpened,
     mask,
   };
 }

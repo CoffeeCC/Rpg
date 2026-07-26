@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated": "2026-07-26T11:03:09.054Z",
+  "generated": "2026-07-26T13:42:14.018Z",
   "orbit": {
     "angles": 16,
     "radius": 0.34,
@@ -34,6 +34,10 @@
     },
     "bevel": {
       "alphaThreshold": 0.5,
+      "sharpen": 1,
+      "sharpenThreshold": 0.06,
+      "sharpenBand": 1.5,
+      "sharpenBorderLimit": 0.3,
       "bevelRadius": "auto",
       "bevelPercentile": 0.85,
       "smooth": 2,
@@ -56,7 +60,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 38.601,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -67,33 +75,373 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/absorbCourt_normal.png",
         "height": "web/art-staging/materials/monsters/absorbCourt_height.png",
-        "ao": "web/art-staging/materials/monsters/absorbCourt_ao.png"
+        "ao": "web/art-staging/materials/monsters/absorbCourt_ao.png",
+        "albedo": "web/art-staging/materials/monsters/absorbCourt_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.3708,
+        "tonalRange": 0.3765,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.3164,
-        "orbitMin": 0.2279,
-        "orbitMax": 0.5443,
+        "orbitSpread": 0.2716,
+        "orbitMin": 0.3075,
+        "orbitMax": 0.5791,
         "orbitPeak": 90,
         "orbitTrough": 292.5,
         "orbitSeparation": 157.5,
-        "orbitSamples": 86354,
+        "orbitSamples": 88283,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1709,
+        "altSpread": 0.2091,
         "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.4118,
+          "coverage": 0.4211,
           "touchesBorder": false,
-          "bevelRadius": 38.6
+          "bevelRadius": 75.13
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.8351,
+          "opaqueAfter": 0.9726,
+          "meanBefore": 0.956,
+          "meanAfter": 0.9844,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
         "status": "advisory",
         "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/adamantColossus",
+      "name": "adamantColossus",
+      "set": "monsters",
+      "source": "web/public/art/monsters/adamantColossus.png",
+      "sourceSha1": "c81bc37da882e80c9da17d931eb8aab9aa11f9bf",
+      "sourceBytes": 997734,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/adamantColossus_normal.png",
+        "height": "web/art-staging/materials/monsters/adamantColossus_height.png",
+        "ao": "web/art-staging/materials/monsters/adamantColossus_ao.png",
+        "albedo": "web/art-staging/materials/monsters/adamantColossus_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.5877,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0984,
+        "orbitMin": 0.5348,
+        "orbitMax": 0.6332,
+        "orbitPeak": 202.5,
+        "orbitTrough": 0,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 82100,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1333,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.3913,
+          "touchesBorder": false,
+          "bevelRadius": 22
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.4382,
+          "opaqueAfter": 0.9375,
+          "meanBefore": 0.7289,
+          "meanAfter": 0.9687,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/adamantWall",
+      "name": "adamantWall",
+      "set": "monsters",
+      "source": "web/public/art/monsters/adamantWall.png",
+      "sourceSha1": "acb06f45b7cf73dcc4dadd20c3f4b31b59b98b59",
+      "sourceBytes": 832095,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/adamantWall_normal.png",
+        "height": "web/art-staging/materials/monsters/adamantWall_height.png",
+        "ao": "web/art-staging/materials/monsters/adamantWall_ao.png",
+        "albedo": "web/art-staging/materials/monsters/adamantWall_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.5938,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0686,
+        "orbitMin": 0.5819,
+        "orbitMax": 0.6505,
+        "orbitPeak": 180,
+        "orbitTrough": 0,
+        "orbitSeparation": 180,
+        "orbitSamples": 83505,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1576,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.3983,
+          "touchesBorder": false,
+          "bevelRadius": 24.7
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.5919,
+          "opaqueAfter": 0.939,
+          "meanBefore": 0.8023,
+          "meanAfter": 0.9711,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/archfiend",
+      "name": "archfiend",
+      "set": "monsters",
+      "source": "web/public/art/monsters/archfiend.png",
+      "sourceSha1": "2bf22257e90fd46d758ac2cf8058a97782b4bc82",
+      "sourceBytes": 956296,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/archfiend_normal.png",
+        "height": "web/art-staging/materials/monsters/archfiend_height.png",
+        "ao": "web/art-staging/materials/monsters/archfiend_ao.png",
+        "albedo": "web/art-staging/materials/monsters/archfiend_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.4333,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.2841,
+        "orbitMin": 0.3574,
+        "orbitMax": 0.6416,
+        "orbitPeak": 90,
+        "orbitTrough": 247.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 74042,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.0908,
+        "altSeparation": 112.5,
+        "silhouette": {
+          "coverage": 0.3532,
+          "touchesBorder": false,
+          "bevelRadius": 28
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.4492,
+          "opaqueAfter": 0.9363,
+          "meanBefore": 0.7583,
+          "meanAfter": 0.9671,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "monsters/ashcrestVulture",
+      "name": "ashcrestVulture",
+      "set": "monsters",
+      "source": "web/public/art/monsters/ashcrestVulture.png",
+      "sourceSha1": "86a5c7d690f66b2e47c73da8b454140e70b8d472",
+      "sourceBytes": 1000632,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/ashcrestVulture_normal.png",
+        "height": "web/art-staging/materials/monsters/ashcrestVulture_height.png",
+        "ao": "web/art-staging/materials/monsters/ashcrestVulture_ao.png",
+        "albedo": "web/art-staging/materials/monsters/ashcrestVulture_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.7661,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0517,
+        "orbitMin": 0.7131,
+        "orbitMax": 0.7648,
+        "orbitPeak": 292.5,
+        "orbitTrough": 45,
+        "orbitSeparation": 112.5,
+        "orbitSamples": 93021,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1242,
+        "altSeparation": 112.5,
+        "silhouette": {
+          "coverage": 0.4433,
+          "touchesBorder": false,
+          "bevelRadius": 49.25
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.5576,
+          "opaqueAfter": 0.979,
+          "meanBefore": 0.7842,
+          "meanAfter": 0.9904,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "monsters/ashenRoar",
+      "name": "ashenRoar",
+      "set": "monsters",
+      "source": "web/public/art/monsters/ashenRoar.png",
+      "sourceSha1": "448b0f44d74edb681e34423250b37f219f067f90",
+      "sourceBytes": 1357317,
+      "width": 1024,
+      "height": 1024,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/monsters/ashenRoar_normal.png",
+        "height": "web/art-staging/materials/monsters/ashenRoar_height.png",
+        "ao": "web/art-staging/materials/monsters/ashenRoar_ao.png",
+        "albedo": "web/art-staging/materials/monsters/ashenRoar_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.4089,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0807,
+        "orbitMin": 0.5552,
+        "orbitMax": 0.6359,
+        "orbitPeak": 112.5,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 180,
+        "orbitSamples": 129942,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1746,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.6196,
+          "touchesBorder": true,
+          "bevelRadius": 58.52
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.7072,
+          "opaqueAfter": 0.9713,
+          "meanBefore": 0.8797,
+          "meanAfter": 0.9849,
+          "borderCoverage": 0.074,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
       }
     },
     {
@@ -108,7 +456,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 60.108,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -119,28 +471,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/ashesToFeathers_normal.png",
         "height": "web/art-staging/materials/monsters/ashesToFeathers_height.png",
-        "ao": "web/art-staging/materials/monsters/ashesToFeathers_ao.png"
+        "ao": "web/art-staging/materials/monsters/ashesToFeathers_ao.png",
+        "albedo": "web/art-staging/materials/monsters/ashesToFeathers_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.4319,
+        "tonalRange": 0.4731,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": true,
-        "orbitSpread": 0.1044,
-        "orbitMin": 0.5781,
-        "orbitMax": 0.6824,
-        "orbitPeak": 225,
-        "orbitTrough": 337.5,
+        "orbitSpread": 0.0925,
+        "orbitMin": 0.7083,
+        "orbitMax": 0.8008,
+        "orbitPeak": 247.5,
+        "orbitTrough": 135,
         "orbitSeparation": 112.5,
-        "orbitSamples": 65298,
+        "orbitSamples": 73838,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1513,
+        "altSpread": 0.1286,
         "altSeparation": 157.5,
         "silhouette": {
-          "coverage": 0.3113,
+          "coverage": 0.352,
           "touchesBorder": false,
-          "bevelRadius": 60.11
+          "bevelRadius": 75.69
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.8091,
+          "opaqueAfter": 0.9698,
+          "meanBefore": 0.888,
+          "meanAfter": 0.9851,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -160,7 +522,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 188.088,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -171,28 +537,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/bubblim_normal.png",
         "height": "web/art-staging/materials/monsters/bubblim_height.png",
-        "ao": "web/art-staging/materials/monsters/bubblim_ao.png"
+        "ao": "web/art-staging/materials/monsters/bubblim_ao.png",
+        "albedo": "web/art-staging/materials/monsters/bubblim_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.4368,
+        "tonalRange": 0.4377,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": true,
-        "orbitSpread": 0.1081,
-        "orbitMin": 0.4998,
-        "orbitMax": 0.6079,
+        "orbitSpread": 0.1046,
+        "orbitMin": 0.5181,
+        "orbitMax": 0.6227,
         "orbitPeak": 22.5,
         "orbitTrough": 247.5,
         "orbitSeparation": 135,
-        "orbitSamples": 86528,
+        "orbitSamples": 86627,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.4253,
+        "altSpread": 0.4216,
         "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.4126,
+          "coverage": 0.4131,
           "touchesBorder": false,
-          "bevelRadius": 188.09
+          "bevelRadius": 188.47
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.9975,
+          "opaqueAfter": 0.9918,
+          "meanBefore": 0.9986,
+          "meanAfter": 0.9952,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -212,7 +588,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 40.311,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -223,28 +603,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/deathlessEdict_normal.png",
         "height": "web/art-staging/materials/monsters/deathlessEdict_height.png",
-        "ao": "web/art-staging/materials/monsters/deathlessEdict_ao.png"
+        "ao": "web/art-staging/materials/monsters/deathlessEdict_ao.png",
+        "albedo": "web/art-staging/materials/monsters/deathlessEdict_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.6437,
+        "tonalRange": 0.6752,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": true,
-        "orbitSpread": 0.0865,
-        "orbitMin": 0.5756,
-        "orbitMax": 0.662,
+        "orbitSpread": 0.0627,
+        "orbitMin": 0.6576,
+        "orbitMax": 0.7203,
         "orbitPeak": 247.5,
         "orbitTrough": 0,
         "orbitSeparation": 112.5,
-        "orbitSamples": 96899,
+        "orbitSamples": 108743,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.2104,
-        "altSeparation": 157.5,
+        "altSpread": 0.1739,
+        "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.4618,
+          "coverage": 0.5185,
           "touchesBorder": true,
-          "bevelRadius": 40.31
+          "bevelRadius": 60.37
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.7577,
+          "opaqueAfter": 0.9522,
+          "meanBefore": 0.8843,
+          "meanAfter": 0.9744,
+          "borderCoverage": 0.1483,
+          "reason": null
         }
       },
       "verdict": {
@@ -264,7 +654,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 17.263,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -275,28 +669,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/duskFiend_normal.png",
         "height": "web/art-staging/materials/monsters/duskFiend_height.png",
-        "ao": "web/art-staging/materials/monsters/duskFiend_ao.png"
+        "ao": "web/art-staging/materials/monsters/duskFiend_ao.png",
+        "albedo": "web/art-staging/materials/monsters/duskFiend_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.2437,
+        "tonalRange": 0.258,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.3409,
-        "orbitMin": 0.2683,
-        "orbitMax": 0.6092,
-        "orbitPeak": 135,
-        "orbitTrough": 315,
+        "orbitSpread": 0.5142,
+        "orbitMin": 0.165,
+        "orbitMax": 0.6792,
+        "orbitPeak": 112.5,
+        "orbitTrough": 292.5,
         "orbitSeparation": 180,
-        "orbitSamples": 41547,
+        "orbitSamples": 56798,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.2534,
-        "altSeparation": 157.5,
+        "altSpread": 0.3914,
+        "altSeparation": 180,
         "silhouette": {
-          "coverage": 0.1983,
+          "coverage": 0.2708,
           "touchesBorder": false,
-          "bevelRadius": 17.26
+          "bevelRadius": 54
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.3407,
+          "opaqueAfter": 0.9684,
+          "meanBefore": 0.7117,
+          "meanAfter": 0.9813,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -316,7 +720,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 37.336,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -327,28 +735,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/fangPup_normal.png",
         "height": "web/art-staging/materials/monsters/fangPup_height.png",
-        "ao": "web/art-staging/materials/monsters/fangPup_ao.png"
+        "ao": "web/art-staging/materials/monsters/fangPup_ao.png",
+        "albedo": "web/art-staging/materials/monsters/fangPup_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.2415,
+        "tonalRange": 0.2674,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.2583,
-        "orbitMin": 0.2598,
-        "orbitMax": 0.5181,
-        "orbitPeak": 157.5,
+        "orbitSpread": 0.2947,
+        "orbitMin": 0.3445,
+        "orbitMax": 0.6391,
+        "orbitPeak": 135,
         "orbitTrough": 337.5,
-        "orbitSeparation": 180,
-        "orbitSamples": 54914,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 62567,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.4072,
-        "altSeparation": 180,
+        "altSpread": 0.4506,
+        "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.262,
+          "coverage": 0.2983,
           "touchesBorder": false,
-          "bevelRadius": 37.34
+          "bevelRadius": 102
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.481,
+          "opaqueAfter": 0.9829,
+          "meanBefore": 0.8262,
+          "meanAfter": 0.9905,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -368,7 +786,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 27.166,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -379,33 +801,43 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/gloomShroom_normal.png",
         "height": "web/art-staging/materials/monsters/gloomShroom_height.png",
-        "ao": "web/art-staging/materials/monsters/gloomShroom_ao.png"
+        "ao": "web/art-staging/materials/monsters/gloomShroom_ao.png",
+        "albedo": "web/art-staging/materials/monsters/gloomShroom_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.4034,
+        "tonalRange": 0.424,
         "levelsApplied": true,
         "orbitRig": "directional",
-        "orbitPass": false,
-        "orbitSpread": 0.1081,
-        "orbitMin": 0.4257,
-        "orbitMax": 0.5338,
+        "orbitPass": true,
+        "orbitSpread": 0.1489,
+        "orbitMin": 0.5124,
+        "orbitMax": 0.6613,
         "orbitPeak": 157.5,
-        "orbitTrough": 337.5,
-        "orbitSeparation": 180,
-        "orbitSamples": 54159,
+        "orbitTrough": 292.5,
+        "orbitSeparation": 135,
+        "orbitSamples": 75290,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1264,
-        "altSeparation": 180,
+        "altSpread": 0.1618,
+        "altSeparation": 157.5,
         "silhouette": {
-          "coverage": 0.2582,
+          "coverage": 0.3589,
           "touchesBorder": false,
-          "bevelRadius": 27.17
+          "bevelRadius": 59.14
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.4018,
+          "opaqueAfter": 0.9729,
+          "meanBefore": 0.7029,
+          "meanAfter": 0.9852,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
-        "status": "advisory",
-        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+        "status": "pass",
+        "note": "no directional signature"
       }
     },
     {
@@ -420,7 +852,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 13,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -431,33 +867,43 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/hollowMarionette_normal.png",
         "height": "web/art-staging/materials/monsters/hollowMarionette_height.png",
-        "ao": "web/art-staging/materials/monsters/hollowMarionette_ao.png"
+        "ao": "web/art-staging/materials/monsters/hollowMarionette_ao.png",
+        "albedo": "web/art-staging/materials/monsters/hollowMarionette_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.5241,
+        "tonalRange": 0.5473,
         "levelsApplied": true,
         "orbitRig": "directional",
-        "orbitPass": true,
-        "orbitSpread": 0.2298,
-        "orbitMin": 0.3928,
-        "orbitMax": 0.6226,
-        "orbitPeak": 90,
+        "orbitPass": false,
+        "orbitSpread": 0.1761,
+        "orbitMin": 0.5425,
+        "orbitMax": 0.7186,
+        "orbitPeak": 112.5,
         "orbitTrough": 315,
-        "orbitSeparation": 135,
-        "orbitSamples": 34409,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 40910,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1516,
-        "altSeparation": 180,
+        "altSpread": 0.1383,
+        "altSeparation": 157.5,
         "silhouette": {
-          "coverage": 0.1638,
+          "coverage": 0.1952,
           "touchesBorder": true,
-          "bevelRadius": 13
+          "bevelRadius": 17.89
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.6428,
+          "opaqueAfter": 0.8934,
+          "meanBefore": 0.8137,
+          "meanAfter": 0.9471,
+          "borderCoverage": 0.0134,
+          "reason": null
         }
       },
       "verdict": {
-        "status": "pass",
-        "note": "no directional signature"
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
       }
     },
     {
@@ -472,7 +918,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 10.63,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -483,28 +933,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/livingArmor_normal.png",
         "height": "web/art-staging/materials/monsters/livingArmor_height.png",
-        "ao": "web/art-staging/materials/monsters/livingArmor_ao.png"
+        "ao": "web/art-staging/materials/monsters/livingArmor_ao.png",
+        "albedo": "web/art-staging/materials/monsters/livingArmor_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.4468,
+        "tonalRange": 0.4563,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": true,
         "orbitSpread": 0.0497,
-        "orbitMin": 0.4355,
-        "orbitMax": 0.4852,
-        "orbitPeak": 90,
-        "orbitTrough": 270,
-        "orbitSeparation": 180,
-        "orbitSamples": 39042,
+        "orbitMin": 0.4972,
+        "orbitMax": 0.5469,
+        "orbitPeak": 225,
+        "orbitTrough": 22.5,
+        "orbitSeparation": 157.5,
+        "orbitSamples": 49362,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1205,
-        "altSeparation": 135,
+        "altSpread": 0.1739,
+        "altSeparation": 157.5,
         "silhouette": {
-          "coverage": 0.1863,
+          "coverage": 0.2354,
           "touchesBorder": false,
-          "bevelRadius": 10.63
+          "bevelRadius": 19.24
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.4303,
+          "opaqueAfter": 0.9332,
+          "meanBefore": 0.7452,
+          "meanAfter": 0.967,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -524,7 +984,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 30.017,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -535,7 +999,8 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/obsidianWarden_normal.png",
         "height": "web/art-staging/materials/monsters/obsidianWarden_height.png",
-        "ao": "web/art-staging/materials/monsters/obsidianWarden_ao.png"
+        "ao": "web/art-staging/materials/monsters/obsidianWarden_ao.png",
+        "albedo": "web/art-staging/materials/monsters/obsidianWarden_albedo.png"
       },
       "measured": {
         "tonalRange": 0.4992,
@@ -557,6 +1022,15 @@
           "coverage": 0.3527,
           "touchesBorder": true,
           "bevelRadius": 30.02
+        },
+        "alpha": {
+          "sharpened": false,
+          "opaqueBefore": 0.1655,
+          "opaqueAfter": 0.1655,
+          "meanBefore": 0.4756,
+          "meanAfter": 0.4756,
+          "borderCoverage": 0.3622,
+          "reason": "the silhouette covers 36.2% of the canvas border, over the 30% limit — this art is not cut out, it has a background baked into it, and forcing it opaque would paste a rectangle on the board. Re-cut the source."
         }
       },
       "verdict": {
@@ -576,7 +1050,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 24.698,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -587,28 +1065,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/peckerel_normal.png",
         "height": "web/art-staging/materials/monsters/peckerel_height.png",
-        "ao": "web/art-staging/materials/monsters/peckerel_ao.png"
+        "ao": "web/art-staging/materials/monsters/peckerel_ao.png",
+        "albedo": "web/art-staging/materials/monsters/peckerel_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.3563,
+        "tonalRange": 0.3762,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.2865,
-        "orbitMin": 0.1969,
-        "orbitMax": 0.4834,
+        "orbitSpread": 0.5249,
+        "orbitMin": 0.1084,
+        "orbitMax": 0.6333,
         "orbitPeak": 90,
         "orbitTrough": 270,
         "orbitSeparation": 180,
-        "orbitSamples": 33695,
+        "orbitSamples": 37796,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1384,
-        "altSeparation": 112.5,
+        "altSpread": 0.1861,
+        "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.1608,
+          "coverage": 0.1802,
           "touchesBorder": false,
-          "bevelRadius": 24.7
+          "bevelRadius": 56.36
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.5799,
+          "opaqueAfter": 0.9699,
+          "meanBefore": 0.8512,
+          "meanAfter": 0.9826,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -628,7 +1116,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 25.71,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -639,28 +1131,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/roostVigil_normal.png",
         "height": "web/art-staging/materials/monsters/roostVigil_height.png",
-        "ao": "web/art-staging/materials/monsters/roostVigil_ao.png"
+        "ao": "web/art-staging/materials/monsters/roostVigil_ao.png",
+        "albedo": "web/art-staging/materials/monsters/roostVigil_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.5549,
+        "tonalRange": 0.5874,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.2191,
-        "orbitMin": 0.452,
-        "orbitMax": 0.6711,
+        "orbitSpread": 0.2239,
+        "orbitMin": 0.5202,
+        "orbitMax": 0.7442,
         "orbitPeak": 112.5,
         "orbitTrough": 270,
         "orbitSeparation": 157.5,
-        "orbitSamples": 93505,
+        "orbitSamples": 111646,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.1588,
-        "altSeparation": 180,
+        "altSpread": 0.1139,
+        "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.4456,
+          "coverage": 0.5322,
           "touchesBorder": true,
-          "bevelRadius": 25.71
+          "bevelRadius": 44.78
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.6772,
+          "opaqueAfter": 0.9748,
+          "meanBefore": 0.8398,
+          "meanAfter": 0.9876,
+          "borderCoverage": 0.2295,
+          "reason": null
         }
       },
       "verdict": {
@@ -680,7 +1182,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 55.866,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -691,28 +1197,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/skitterling_normal.png",
         "height": "web/art-staging/materials/monsters/skitterling_height.png",
-        "ao": "web/art-staging/materials/monsters/skitterling_ao.png"
+        "ao": "web/art-staging/materials/monsters/skitterling_ao.png",
+        "albedo": "web/art-staging/materials/monsters/skitterling_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.4596,
+        "tonalRange": 0.5381,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.1583,
-        "orbitMin": 0.3662,
-        "orbitMax": 0.5245,
+        "orbitSpread": 0.1433,
+        "orbitMin": 0.5667,
+        "orbitMax": 0.71,
         "orbitPeak": 135,
         "orbitTrough": 292.5,
         "orbitSeparation": 157.5,
-        "orbitSamples": 39228,
+        "orbitSamples": 41705,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.2289,
-        "altSeparation": 157.5,
+        "altSpread": 0.205,
+        "altSeparation": 112.5,
         "silhouette": {
-          "coverage": 0.1871,
+          "coverage": 0.1989,
           "touchesBorder": false,
-          "bevelRadius": 55.87
+          "bevelRadius": 84.21
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.8548,
+          "opaqueAfter": 0.9619,
+          "meanBefore": 0.9288,
+          "meanAfter": 0.9811,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -732,7 +1248,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 36.401,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -743,28 +1263,38 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/stormDrake_normal.png",
         "height": "web/art-staging/materials/monsters/stormDrake_height.png",
-        "ao": "web/art-staging/materials/monsters/stormDrake_ao.png"
+        "ao": "web/art-staging/materials/monsters/stormDrake_ao.png",
+        "albedo": "web/art-staging/materials/monsters/stormDrake_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.3753,
+        "tonalRange": 0.3824,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": false,
-        "orbitSpread": 0.2381,
-        "orbitMin": 0.3476,
-        "orbitMax": 0.5858,
-        "orbitPeak": 135,
-        "orbitTrough": 292.5,
+        "orbitSpread": 0.3847,
+        "orbitMin": 0.285,
+        "orbitMax": 0.6697,
+        "orbitPeak": 112.5,
+        "orbitTrough": 270,
         "orbitSeparation": 157.5,
-        "orbitSamples": 89900,
+        "orbitSamples": 91596,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.2816,
+        "altSpread": 0.2349,
         "altSeparation": 157.5,
         "silhouette": {
-          "coverage": 0.4284,
+          "coverage": 0.4367,
           "touchesBorder": false,
-          "bevelRadius": 36.4
+          "bevelRadius": 78.06
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.7251,
+          "opaqueAfter": 0.9723,
+          "meanBefore": 0.9305,
+          "meanAfter": 0.9841,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -784,7 +1314,11 @@
       "mode": "bevel",
       "params": {
         "alphaThreshold": 0.5,
-        "bevelRadius": 41.11,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
         "bevelPercentile": 0.85,
         "smooth": 2,
         "detail": 1,
@@ -795,28 +1329,236 @@
       "outputs": {
         "normal": "web/art-staging/materials/monsters/thunderheadDive_normal.png",
         "height": "web/art-staging/materials/monsters/thunderheadDive_height.png",
-        "ao": "web/art-staging/materials/monsters/thunderheadDive_ao.png"
+        "ao": "web/art-staging/materials/monsters/thunderheadDive_ao.png",
+        "albedo": "web/art-staging/materials/monsters/thunderheadDive_albedo.png"
       },
       "measured": {
-        "tonalRange": 0.3531,
+        "tonalRange": 0.3792,
         "levelsApplied": true,
         "orbitRig": "directional",
         "orbitPass": true,
-        "orbitSpread": 0.3246,
-        "orbitMin": 0.3317,
-        "orbitMax": 0.6563,
+        "orbitSpread": 0.4489,
+        "orbitMin": 0.2861,
+        "orbitMax": 0.735,
         "orbitPeak": 90,
         "orbitTrough": 337.5,
         "orbitSeparation": 112.5,
-        "orbitSamples": 46620,
+        "orbitSamples": 49208,
         "controlSpread": 0,
         "altRig": "point",
-        "altSpread": 0.2455,
+        "altSpread": 0.3139,
         "altSeparation": 135,
         "silhouette": {
-          "coverage": 0.2224,
+          "coverage": 0.2347,
           "touchesBorder": false,
-          "bevelRadius": 41.11
+          "bevelRadius": 65.76
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.8526,
+          "opaqueAfter": 0.9676,
+          "meanBefore": 0.942,
+          "meanAfter": 0.9814,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "sprites/merchant",
+      "name": "merchant",
+      "set": "sprites",
+      "source": "web/public/art/sprites/merchant.png",
+      "sourceSha1": "0d7027b5bc5f9b56636a64859186993921873066",
+      "sourceBytes": 39140,
+      "width": 256,
+      "height": 256,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/sprites/merchant_normal.png",
+        "height": "web/art-staging/materials/sprites/merchant_height.png",
+        "ao": "web/art-staging/materials/sprites/merchant_ao.png",
+        "albedo": "web/art-staging/materials/sprites/merchant_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.7397,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.2567,
+        "orbitMin": 0.1793,
+        "orbitMax": 0.436,
+        "orbitPeak": 90,
+        "orbitTrough": 180,
+        "orbitSeparation": 90,
+        "orbitSamples": 2733,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.5101,
+        "altSeparation": 157.5,
+        "silhouette": {
+          "coverage": 0.2086,
+          "touchesBorder": false,
+          "bevelRadius": 26.93
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.7631,
+          "opaqueAfter": 0.9217,
+          "meanBefore": 0.9314,
+          "meanAfter": 0.9545,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "pass",
+        "note": "no directional signature"
+      }
+    },
+    {
+      "id": "sprites/player",
+      "name": "player",
+      "set": "sprites",
+      "source": "web/public/art/sprites/player.png",
+      "sourceSha1": "801a37891414cc29cd16a13adb50f3e81c89eefe",
+      "sourceBytes": 39605,
+      "width": 256,
+      "height": 256,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/sprites/player_normal.png",
+        "height": "web/art-staging/materials/sprites/player_height.png",
+        "ao": "web/art-staging/materials/sprites/player_ao.png",
+        "albedo": "web/art-staging/materials/sprites/player_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.4457,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": false,
+        "orbitSpread": 0.1969,
+        "orbitMin": 0.4196,
+        "orbitMax": 0.6165,
+        "orbitPeak": 0,
+        "orbitTrough": 180,
+        "orbitSeparation": 180,
+        "orbitSamples": 3238,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.4118,
+        "altSeparation": 180,
+        "silhouette": {
+          "coverage": 0.2469,
+          "touchesBorder": false,
+          "bevelRadius": 28.6
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.4114,
+          "opaqueAfter": 0.9518,
+          "meanBefore": 0.7196,
+          "meanAfter": 0.9732,
+          "borderCoverage": 0,
+          "reason": null
+        }
+      },
+      "verdict": {
+        "status": "advisory",
+        "note": "The 0.10 threshold is calibrated on stochastic tile texture and does not transfer to a bevel. A bevel IS one large smooth volume, so it responds to light direction by design, and correlating that against an off-centre creature on a transparent field swings hard however clean the art is. The flat-normal control is 0.000, so the swing is the material and not the rig; and the height field never reads a pixel of tone, so it cannot be inverted the way luminance->Sobel can. Recorded, not blocking. What IS blocking on this path is drift: see tools/art/check.mjs."
+      }
+    },
+    {
+      "id": "sprites/tamer",
+      "name": "tamer",
+      "set": "sprites",
+      "source": "web/public/art/sprites/tamer.png",
+      "sourceSha1": "8c582fec9c5ca83bcf77ad6fc24471ecdc33a52f",
+      "sourceBytes": 42756,
+      "width": 256,
+      "height": 256,
+      "mode": "bevel",
+      "params": {
+        "alphaThreshold": 0.5,
+        "sharpen": 1,
+        "sharpenThreshold": 0.06,
+        "sharpenBand": 1.5,
+        "sharpenBorderLimit": 0.3,
+        "bevelRadius": "auto",
+        "bevelPercentile": 0.85,
+        "smooth": 2,
+        "detail": 1,
+        "form": 0,
+        "formRadius": 9,
+        "invert": 0
+      },
+      "outputs": {
+        "normal": "web/art-staging/materials/sprites/tamer_normal.png",
+        "height": "web/art-staging/materials/sprites/tamer_height.png",
+        "ao": "web/art-staging/materials/sprites/tamer_ao.png",
+        "albedo": "web/art-staging/materials/sprites/tamer_albedo.png"
+      },
+      "measured": {
+        "tonalRange": 0.2735,
+        "levelsApplied": true,
+        "orbitRig": "directional",
+        "orbitPass": true,
+        "orbitSpread": 0.0978,
+        "orbitMin": 0.348,
+        "orbitMax": 0.4457,
+        "orbitPeak": 90,
+        "orbitTrough": 315,
+        "orbitSeparation": 135,
+        "orbitSamples": 2416,
+        "controlSpread": 0,
+        "altRig": "point",
+        "altSpread": 0.1277,
+        "altSeparation": 112.5,
+        "silhouette": {
+          "coverage": 0.1847,
+          "touchesBorder": false,
+          "bevelRadius": 5.66
+        },
+        "alpha": {
+          "sharpened": true,
+          "opaqueBefore": 0.2316,
+          "opaqueAfter": 0.7856,
+          "meanBefore": 0.5814,
+          "meanAfter": 0.8875,
+          "borderCoverage": 0,
+          "reason": null
         }
       },
       "verdict": {
@@ -862,7 +1604,8 @@
         "altRig": "directional",
         "altSpread": 0.062,
         "altSeparation": 90,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "fail",
@@ -907,7 +1650,8 @@
         "altRig": "directional",
         "altSpread": 0.0204,
         "altSeparation": 112.5,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -952,7 +1696,8 @@
         "altRig": "directional",
         "altSpread": 0.0026,
         "altSeparation": 90,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -997,7 +1742,8 @@
         "altRig": "directional",
         "altSpread": 0.0347,
         "altSeparation": 90,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1042,7 +1788,8 @@
         "altRig": "directional",
         "altSpread": 0.0853,
         "altSeparation": 112.5,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1087,7 +1834,8 @@
         "altRig": "directional",
         "altSpread": 0.0572,
         "altSeparation": 112.5,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1132,7 +1880,8 @@
         "altRig": "directional",
         "altSpread": 0.0164,
         "altSeparation": 135,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1177,7 +1926,8 @@
         "altRig": "directional",
         "altSpread": 0.0603,
         "altSeparation": 135,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1222,7 +1972,8 @@
         "altRig": "directional",
         "altSpread": 0.0075,
         "altSeparation": 135,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
@@ -1267,7 +2018,8 @@
         "altRig": "directional",
         "altSpread": 0.0245,
         "altSeparation": 180,
-        "silhouette": null
+        "silhouette": null,
+        "alpha": null
       },
       "verdict": {
         "status": "pass",
