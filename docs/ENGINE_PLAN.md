@@ -1811,3 +1811,35 @@ that moves.
   elevation? Probably yes for the active tray, and it is nearly free.
 - How much vertical space it may claim before the board is squeezed — this
   interacts with §17's readability numbers and should be measured, not guessed.
+
+### 18.1 Emitters: what the first look shows (2026-07-26)
+
+Recorded from a full-resolution render at 25 lights (0.5 ms, bins 15x17 peak
+9/16). The mechanism works — the ceiling is gone and the board is legible in a
+way it was not. Three things are wrong, in order of how much they cost:
+
+**1. Sconce flames float.** They are drawn as bare flames hovering in a row
+above the wall tops, with no bracket, no cup, no wall plate. They read as
+disconnected candles rather than as lights MOUNTED on something, which
+undercuts the whole "physical object" claim the board otherwise now makes.
+
+This is an asset gap, not a lighting bug, and it is squarely §7's split:
+a sconce bracket is hard-surface furniture that must look machine-made across
+every instance — Blender's job, alongside the 17 shapes already baked. The
+flame stays procedural; the thing it is mounted in should not be.
+
+**2. The board is too bright overall, and it is the sconces doing it.** The
+lit floor reads pale and washed rather than dark-with-pools. The agent already
+found and partly fixed this ("a dozen sconces are not faint even though one
+is" — density 0.35 to 0.12, brightness 1.6/2.8 to 1.25/2.4) and it is still
+too much at the harness defaults. §12 is explicit that the hero's lantern is
+the ONLY significant light; anything that collectively lifts the ambient floor
+has stopped being a whisper. The dial exists; the default is wrong.
+
+**3. Wisps read as fog patches, not points.** On the right of the frame they
+appear as large diffuse green washes rather than as tiny drifting motes. Paul
+asked for "very tiny" twice. The halo needs to be much smaller relative to the
+core, and probably brighter at the core to compensate — a small bright point
+reads as a light, a large dim blob reads as mist.
+
+None of these are architectural. All three are tuning plus one asset.
