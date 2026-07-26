@@ -249,6 +249,12 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
       hand: you.hand,
       energy: you.energy,
       maxEnergy: you.maxEnergy,
+      // A DUEL IS THE FIGHT WHERE BOTH SIDES SPEND. `viewFor` publishes the
+      // foe's energy — it is public information, unlike their hand — so the
+      // board can burn a second candle rail on the right and the symmetry
+      // means something: this opponent plays by your rules.
+      enemyEnergy: foe.energy,
+      enemyMaxEnergy: foe.maxEnergy,
       drawPile: you.drawPile,
       discardPile: you.discardPile,
       exhaustPile: you.exhaustPile,

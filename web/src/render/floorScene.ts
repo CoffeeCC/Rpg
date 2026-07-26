@@ -435,7 +435,22 @@ export function buildFloorScene(snap: FloorSnapshot, o: FloorSceneOptions): Scen
   // takes it with the measurement in front of them. The honest fix is not a
   // smaller value either: it is §14's per-tile height field, which would let
   // the outer wall actually stop the ray the way the harness's board did.
-  const roomLamp = o.roomLamp ?? 0.32;
+  // 0.32 -> 0.12 on Paul's call, with the measurement in front of him: at 0.32
+  // this lamp was worth +51% of the frame's mean luminance against the whole
+  // emitter set's +4.5%, and §12 says the hero's lantern is the ONLY
+  // significant light. Not zero, though — this is the light of the ROOM THE
+  // BOARD IS IN, not a light in the fiction, and at zero the board stops
+  // resting on a table and starts floating in a void.
+  //
+  // IT SHOULD EVENTUALLY MOVE. Paul: *"the room lighting might even change from
+  // time to time tbh"*. A real room's light does — someone shifts a lamp, a
+  // fire settles, daylight goes. Deliberately NOT implemented as a wobble on
+  // this constant: a slow drift with no cause reads as a bug, and the honest
+  // version is a room whose light has a reason (time of day at the inn, a fire
+  // in the hearth) driven from game state rather than from a sine. The real
+  // prerequisite is still §14's height field, so the board's own walls block
+  // this lamp instead of it washing the play area from outside.
+  const roomLamp = o.roomLamp ?? 0.12;
   if (roomLamp > 0) {
     lights.push({
       position: { x: -5, y: snap.height + 8, z: 15 },

@@ -32,6 +32,7 @@ import {
   MAT_BACKDROP,
   MAT_BLANK,
   MAT_CANDLE,
+  MAT_SOCKET,
   MAX_ARENA_ZOOM,
   MIN_ARENA_ZOOM,
   PARTY_RANK,
@@ -54,6 +55,7 @@ function allMaterials(extra: string[] = []): Map<string, Material> {
     MAT_ARENA,
     MAT_BACKDROP,
     MAT_CANDLE,
+    MAT_SOCKET,
     'shadow',
     'blockshadow',
     'base',
@@ -249,6 +251,44 @@ describe('the candle rail is §8 item 9, as geometry', () => {
       expect(s.position.x).toBeGreaterThan(-ext.border);
     }
     expect(CANDLE_FRAME_X).toBeLessThan(0);
+  });
+
+  it('cuts sockets on BOTH bands but seats candles only where there is vigor', () => {
+    // Paul's rule, and the point of it: the furniture is symmetric, the state
+    // is not. Against a monster the right rail is empty brass, which says "this
+    // one does not spend what you spend" rather than looking unfinished.
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials(),
+      figures: [] as FigureBox[],
+      vigor: { lit: 2, total: 3 },
+    });
+    const sockets = scene.sprites.filter((s) => s.textureId === MAT_SOCKET);
+    const wax = scene.sprites.filter((s) => s.textureId === MAT_CANDLE);
+    // Three sockets a side, six in total...
+    expect(sockets.length).toBe(6);
+    expect(sockets.filter((s) => s.position.x < 0).length).toBe(3);
+    expect(sockets.filter((s) => s.position.x > ext.width).length).toBe(3);
+    // ...and every candle on the LEFT, because a monster has no vigor.
+    expect(wax.length).toBe(3);
+    for (const s of wax) expect(s.position.x).toBeLessThan(0);
+  });
+
+  it('lights the opponent rail too, but only in a fight that has one', () => {
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    const base = { camera: cam, time: 0, materials: allMaterials(), figures: [] as FigureBox[] };
+    const solo = buildBattleScene({ ...base, vigor: { lit: 3, total: 3 } });
+    const duel = buildBattleScene({ ...base, vigor: { lit: 3, total: 3 }, enemyVigor: { lit: 2, total: 3 } });
+    // Two more burning candles on the board means two more real lights.
+    expect(duel.lights.length - solo.lights.length).toBe(2);
+    const foeWax = duel.sprites.filter((s) => s.textureId === MAT_CANDLE && s.position.x > ext.width);
+    expect(foeWax.length).toBe(3);
+    // A spent candle is still cut and still standing — only the flame is gone.
+    expect(foeWax.filter((s) => s.tint).length).toBe(1);
   });
 
   it('does not move when the HUD moves — board furniture is authored, not measured', () => {

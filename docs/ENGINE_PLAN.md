@@ -1972,6 +1972,15 @@ inset drops back.
 
 Wood with visible grain, brass with a soft bevel, straps across the seams.
 
+**The brass has to catch the light.** Paul: *"the brass accents should be fairly
+reflective of the light after they are modeled."* This needs no shader work —
+`Material.roughness` already exists ("0 matte, 1 mirror") and drives the
+specular lobe. It is a per-material setting when the parts land: brass low,
+timber high. Worth stating because it is the payoff for modelling the fittings
+at all — a flat brass colour under a moving lantern is just a yellow shape,
+while a low-roughness one has a highlight that travels as the light does, and
+that travelling highlight is most of what makes metal read as metal.
+
 ### Wear, later — but model for it now
 
 Paul, immediately after: *"we can play with it in the future and add some wear

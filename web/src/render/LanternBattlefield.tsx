@@ -90,6 +90,9 @@ export interface LanternBattlefieldProps {
   /** §8 item 9's explicit uniform: how much of the rail is still burning. */
   energy: number;
   maxEnergy: number;
+  /** The opponent's, in a duel. Undefined against a monster — see `candleFrameRightX`. */
+  enemyEnergy?: number;
+  enemyMaxEnergy?: number;
   /** The gate's ground texture, or null off-gate (a duel is chalked in town). */
   arenaUrl: string | null;
   /** The painting that stands behind the fight. Data now, not a `ReactNode`. */
@@ -102,6 +105,8 @@ export function LanternBattlefield({
   figures,
   energy,
   maxEnergy,
+  enemyEnergy,
+  enemyMaxEnergy,
   arenaUrl,
   backdropUrl,
   debug = false,
@@ -116,6 +121,13 @@ export function LanternBattlefield({
   figuresRef.current = figures;
   const vigorRef = useRef({ lit: energy, total: maxEnergy });
   vigorRef.current = { lit: energy, total: maxEnergy };
+  // `undefined` is meaningful here and is NOT the same as zero: no vigor at all
+  // leaves the right rail's sockets empty, while zero burns none of a rail that
+  // is really there. A duel that has spent its last point must still show the
+  // wax it spent.
+  const foeVigorRef = useRef<{ lit: number; total: number } | undefined>(undefined);
+  foeVigorRef.current =
+    enemyMaxEnergy === undefined ? undefined : { lit: enemyEnergy ?? 0, total: enemyMaxEnergy };
   const libRef = useRef<BattleMaterialLibrary | null>(null);
   const camRef = useRef<Camera>(makeCamera({ tilt: DEFAULT_TILT }));
 
@@ -231,6 +243,7 @@ export function LanternBattlefield({
         materials: lib.materials,
         figures: boxes,
         vigor: vigorRef.current,
+        enemyVigor: foeVigorRef.current,
       });
       return renderer.render(scene, LOOK);
     }

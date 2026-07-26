@@ -75,6 +75,17 @@ import { emitterLight, flicker, glowLightPosition } from '../lantern/scene/emitt
 export const MAT_ARENA = 'arena';
 export const MAT_BACKDROP = 'backdrop';
 export const MAT_CANDLE = 'candle';
+/**
+ * The brass cup a candle stands in. §19.1: "a candle resting on bare timber is
+ * a candle someone left there" — the socket is what makes it placed rather than
+ * dropped, the same argument §15 makes for the plinth.
+ *
+ * Drawn whether or not a candle is in it, which is the whole point: an EMPTY
+ * socket is how the opponent's rail says "this one does not spend what you
+ * spend". Baked by `tools/art/blender/bake.py`; until it exists `has()` is
+ * false and the rail simply has no cups, which is the previous look.
+ */
+export const MAT_SOCKET = 'socket';
 export const MAT_BLANK = 'bf-blank';
 
 export function monsterTextureId(speciesId: string): string {
@@ -334,6 +345,32 @@ export interface CandleRail {
 export const CANDLE_FRAME_X = -ARENA_BORDER / 2;
 
 /**
+ * The OPPONENT'S rail, mirrored onto the right frame band.
+ *
+ * Paul: *"maybe the enemy Vigor (if it has that, maybe it should) could have
+ * candles on the right side of the screen aswell. next to the chronicle combat
+ * log"*. The parenthesis is the real question, and the engine answers it: only
+ * a DUEL gives the opponent a resource. `duel.ts` builds a full `battle` per
+ * side and `viewFor` publishes `foe.energy` / `foe.maxEnergy` — energy is not
+ * redacted, only hand contents and draw order are. A monster has `intents` and
+ * per-move cooldowns and nothing that is spent, so there is no pool to show.
+ *
+ * SO THE FURNITURE IS SYMMETRIC AND THE STATE IS NOT. Sockets are carpentry and
+ * are cut on both sides always; candles are data and are only seated where a
+ * side actually has vigor. Against a monster the right rail is a row of empty
+ * brass cups, which reads as a statement rather than as a missing feature — the
+ * thing you are fighting does not play by your rules. Against another tamer
+ * both rails burn, and that symmetry MEANS something the moment you see it.
+ *
+ * The alternative — giving monsters vigor so the rails match — is a balance
+ * project, not a render one: something has to spend it, which makes intent
+ * selection resource-constrained and moves every fight-pacing number.
+ */
+export function candleFrameRightX(width: number): number {
+  return width + ARENA_BORDER / 2;
+}
+
+/**
  * Where the candles stand, bottom-to-top.
  *
  * Index 0 is the NEAREST candle, matching `.vigor-candles`' `column-reverse`:
@@ -373,6 +410,11 @@ export interface BattleSceneOptions {
   figures: readonly FigureBox[];
   /** The explicit uniform that replaces `lighting.css`'s `:has()` count. */
   vigor: { lit: number; total: number };
+  /**
+   * The opponent's vigor, when they have any. Duels do; monsters do not — see
+   * `candleFrameRightX`. Omitted, the right rail is cut but stands empty.
+   */
+  enemyVigor?: { lit: number; total: number };
   /**
    * Board x for the candle rail. Omitted — and it should be — the rail sits on
    * the left frame band. See `CANDLE_FRAME_X` for why this is no longer taken
@@ -547,58 +589,101 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
   }
 
   // --- the candles (§8 item 9) -------------------------------------------
-  const rail: CandleRail = {
-    x: o.candleX ?? CANDLE_FRAME_X,
-    total: o.vigor.total,
-    lit: o.vigor.lit,
-  };
-  const spots = candlePositions(rail);
-  for (let i = 0; i < spots.length; i++) {
-    const spot = spots[i];
-    const burning = i < rail.lit;
-    sprites.push(
-      contactShadowSprite(spot, 'shadow', { radius: CANDLE_WIDTH * 1.5, strength: 0.5, height: 0 }),
-    );
-    if (has(MAT_CANDLE)) {
+  //
+  // TWO RAILS, and only one of them is guaranteed to hold anything. The sockets
+  // are cut on both frame bands whatever happens, because they are joinery; the
+  // candles are seated only where a side has vigor to spend. See
+  // `candleFrameRightX` for why that asymmetry is the honest answer rather than
+  // a gap to be filled.
+  //
+  // `seed` is offset per rail so the two do not flicker in lockstep — mirrored
+  // flames pulsing together reads as one animation stretched across the board
+  // rather than as eight separate candles.
+  const pushRail = (railX: number, vigor: { lit: number; total: number } | null, sockets: number, seed: number) => {
+    const socketSpots = candlePositions({ x: railX, total: sockets, lit: 0 });
+    for (const spot of socketSpots) {
+      if (!has(MAT_SOCKET)) break;
       sprites.push({
         position: { x: spot.x, y: spot.y, z: 0 },
-        size: { x: CANDLE_WIDTH, y: CANDLE_HEIGHT },
-        pivot: { x: 0.5, y: 1 },
-        upright: true,
+        size: { x: CANDLE_WIDTH * 1.7, y: CANDLE_WIDTH * 1.7 },
+        pivot: { x: 0.5, y: 0.5 },
         uv: FULL_UV,
-        textureId: MAT_CANDLE,
-        tint: burning ? undefined : [0.55, 0.53, 0.5, 1],
+        textureId: MAT_SOCKET,
+        layer: LAYER_BOARD,
       });
     }
-    if (!burning) continue;
-    const centre: Vec3 = { x: spot.x, y: spot.y, z: CANDLE_HEIGHT + 0.06 };
-    const size = 0.19;
-    if (has('flame')) {
-      const wob = flicker(i * 2.7, o.time, 0.1);
-      sprites.push({
-        position: { x: centre.x, y: centre.y - 0.02, z: centre.z },
-        size: { x: size * wob, y: size * (2 - wob) },
-        pivot: { x: 0.5, y: 1 },
-        billboard: true,
-        uv: FULL_UV,
-        textureId: 'flame',
-      });
+    if (!vigor) return;
+    const rail: CandleRail = { x: railX, total: vigor.total, lit: vigor.lit };
+    const spots = candlePositions(rail);
+    for (let i = 0; i < spots.length; i++) {
+      const spot = spots[i];
+      const burning = i < rail.lit;
+      sprites.push(
+        contactShadowSprite(spot, 'shadow', { radius: CANDLE_WIDTH * 1.5, strength: 0.5, height: 0 }),
+      );
+      if (has(MAT_CANDLE)) {
+        sprites.push({
+          position: { x: spot.x, y: spot.y, z: 0 },
+          size: { x: CANDLE_WIDTH, y: CANDLE_HEIGHT },
+          pivot: { x: 0.5, y: 1 },
+          upright: true,
+          uv: FULL_UV,
+          textureId: MAT_CANDLE,
+          tint: burning ? undefined : [0.55, 0.53, 0.5, 1],
+        });
+      }
+      if (!burning) continue;
+      const centre: Vec3 = { x: spot.x, y: spot.y, z: CANDLE_HEIGHT + 0.06 };
+      const size = 0.19;
+      if (has('flame')) {
+        const wob = flicker(i * 2.7 + seed, o.time, 0.1);
+        sprites.push({
+          position: { x: centre.x, y: centre.y - 0.02, z: centre.z },
+          size: { x: size * wob, y: size * (2 - wob) },
+          pivot: { x: 0.5, y: 1 },
+          billboard: true,
+          uv: FULL_UV,
+          textureId: 'flame',
+        });
+      }
+      lights.push(
+        emitterLight(glowLightPosition(centre, size), {
+          colour: [1, 0.58, 0.24],
+          // A CANDLE LIGHTS ABOUT A HAND'S BREADTH, and the first pass did not.
+          //
+          // Paul: *"idk what these rays of light coming from the candles are.
+          // it looks bad"* — and at 4.7x magnification they resolve as the
+          // candles' own pools. The apex of every wedge sits exactly on a
+          // flame. Nothing exotic: at `reach` 3.6 tiles each pool was three
+          // times wider than the 1.2-tile frame band the candle stands on, so
+          // it sprayed across the band and out over the field, and the 55°
+          // tilt stretched the far half of each ellipse into a cone pointing
+          // at the viewer. Big soft pools on a narrow dark strip read as
+          // projected beams, not as candlelight.
+          //
+          // So the reach comes in to roughly the width of the band. It still
+          // reaches the play area — Paul asked for that specifically — but as
+          // a warm edge on the nearest tiles rather than as a searchlight.
+          intensity: 1.05,
+          reach: 2.0,
+          // A wider source softens the core, which is what stops a small
+          // bright light from having a hard rim where the falloff bottoms out.
+          radius: 0.14,
+          // AND IT HAS TO DANCE. 0.18 on a light this small was imperceptible;
+          // a candle's whole character is that it is never still.
+          flicker: 0.34,
+          time: o.time,
+          seed: i * 1.9 + 0.4 + seed,
+        }),
+      );
     }
-    lights.push(
-      emitterLight(glowLightPosition(centre, size), {
-        colour: [1, 0.58, 0.24],
-        // Brighter and shorter than a dungeon sconce's 1.25 over 2.4 tiles.
-        // These are not scenery at the end of a corridor — they are the vigor
-        // readout, and losing one has to be worth noticing.
-        intensity: 1.9,
-        reach: 3.6,
-        radius: 0.09,
-        flicker: 0.18,
-        time: o.time,
-        seed: i * 1.9 + 0.4,
-      }),
-    );
-  }
+  };
+
+  // The rail is as long as the PLAYER's max vigor on both sides, so the board
+  // is cut symmetrically even when only one side fills it.
+  const railLength = Math.max(o.vigor.total, o.enemyVigor?.total ?? 0);
+  pushRail(o.candleX ?? CANDLE_FRAME_X, o.vigor, railLength, 0);
+  pushRail(candleFrameRightX(extent.width), o.enemyVigor ?? null, railLength, 11.3);
 
   // --- the light ---------------------------------------------------------
   // THE LANTERN THE PARTY CARRIED IN. Hung in the gap BETWEEN the two ranks,

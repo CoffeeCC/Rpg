@@ -112,6 +112,17 @@ export interface BattleView {
   hand: CardInstance[];
   energy: number;
   maxEnergy: number;
+  /**
+   * The OPPONENT'S vigor, in the fights that have one.
+   *
+   * Only a duel does: `duel.ts` builds a full battle per side and `viewFor`
+   * publishes `foe.energy` — energy is not redacted, only hand contents and
+   * draw order are. A monster has intents and cooldowns and nothing it spends,
+   * so this stays undefined and the board's right-hand rail keeps its sockets
+   * but seats no candles. See `battleScene.candleFrameRightX`.
+   */
+  enemyEnergy?: number;
+  enemyMaxEnergy?: number;
   drawPile: CardInstance[];
   discardPile: CardInstance[];
   exhaustPile: CardInstance[];
@@ -1116,6 +1127,8 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             figures={lanternFigures}
             energy={view.energy}
             maxEnergy={view.maxEnergy}
+            enemyEnergy={view.enemyEnergy}
+            enemyMaxEnergy={view.enemyMaxEnergy}
             arenaUrl={(view.backdrop?.gateId && TILE_TEXTURES[view.backdrop.gateId]?.ground) || null}
             backdropUrl={view.backdrop?.painted ?? null}
             debug={lanternDebug}
