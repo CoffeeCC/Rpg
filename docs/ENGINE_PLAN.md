@@ -1472,3 +1472,69 @@ naming:
 showcase, and they answer the space problem on their own. Layers become the
 dramatic set-piece rather than the load-bearing solution, which is a much safer
 place for the most expensive item on the roadmap to sit.
+
+---
+
+## 17. The board is too small to design on (2026-07-26)
+
+> Paul: *"There just isnt much that we can do with a board this small. i cant
+> plan layouts or enemy positions. its too small. we have to solve that
+> somehow."*
+
+**Measured before responding, and the measurement is the point.** The authored
+floors in `engine/data/gates.ts` are 17–23 wide by 13–15 tall, 221–299 tiles.
+The 22x14 test board was not an unrepresentative demo — it is exactly the
+shipping floor size.
+
+So this is not a rendering complaint. **The floors themselves are too small for
+the game Paul wants to design, and §13's whole-board camera would have locked
+that in permanently.** Catching it now is worth more than the decision it
+overturns.
+
+### Amendment to §13
+
+§13 said *the camera always shows the whole board*. It now says:
+
+> **The camera CAN always show the whole board.**
+
+Two framings, one lerp between two `(centre, zoom)` states — which the camera
+already takes, so this is nearly free:
+
+- **OVERVIEW** — the whole board fits the frame. Planning: reading layout and
+  enemy positions, not faces.
+- **PLAY** — zoomed to the action, pieces fully readable, board extends past
+  the frame.
+
+This is not a compromise between two camera models. **It is what a person
+actually does at a table**: lean back to survey and plan, lean in to move a
+piece. The board-as-object read survives because the whole board is seen
+regularly and deliberately, rather than never.
+
+### What it buys, at 1280x800
+
+If floors roughly double to 40x26:
+
+| | tile | hero |
+|---|---|---|
+| Overview | 32 px | ~45 px |
+| Play (2x) | 64 px | ~90 px |
+
+Both readable for their purpose. 50x32 still works — 25px overview tiles are
+enough to read shape and placement, which is all planning needs. So **floors
+can grow roughly 2–2.5x in area** without losing the object.
+
+### What this does to §14 and §16
+
+It demotes them, healthily. Vertical layers and buildings were carrying the
+weight of "how does this game have enough space", which made the two most
+expensive items on the roadmap load-bearing. A board that can be 2.5x larger
+answers the space problem on its own; layers and buildings become multipliers
+and set-pieces rather than necessities.
+
+### The honest fallback
+
+If overview mode turns out not to give Paul enough to plan with, **the board
+metaphor loses and the camera should simply follow the hero.** That is a real
+possible outcome and it should be decided by him looking at the stress lab's
+camera toggle, not by argument. Nothing in the renderer depends on which way it
+goes — the camera takes a centre and a zoom either way.
