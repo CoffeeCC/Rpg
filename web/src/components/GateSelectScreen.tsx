@@ -1,12 +1,24 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES, GATE_ORDER } from '../engine/data/gates';
 import { PAINTED_BACKDROPS } from '../art/painted';
 import { NpcHost } from './NpcHost';
 import { Icon } from './Icon';
+import { useNavScope } from '../nav';
 
 export function GateSelectScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  // Locked gates are real `disabled` buttons, so the nav layer skips them and
+  // the cursor opens on the first gate the player can actually walk into.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, {
+    id: 'gateSelect',
+    onCancel: () => {
+      dispatch({ type: 'GOTO', screen: 'town' });
+      return true;
+    },
+  });
   return (
-    <div className="panel">
+    <div className="panel" ref={root}>
       <h1 className="title">The Gates</h1>
       <NpcHost npcId="sess" state={state} />
       <p className="subtitle">Each gate holds a Warden. Claim all four orbs to open the way below.</p>

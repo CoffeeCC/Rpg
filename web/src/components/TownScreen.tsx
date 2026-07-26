@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { GameAction, GameState, Screen } from '../engine/game';
 import { availableQuests, restCost } from '../engine/game';
 import { Icon } from './Icon';
@@ -6,6 +6,7 @@ import { PAINTED_TOWN } from '../art/painted';
 import { PAINTED_NPCS } from '../art/paintedCharacters';
 import { NpcPortrait } from '../art/npcArt';
 import { pickBark } from './NpcHost';
+import { useNavScope } from '../nav';
 import '../services.css';
 
 // v10: the town is people, not buttons. World services hang off the person
@@ -20,6 +21,12 @@ interface CastEntry {
 }
 
 export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
+  // The hub. B is deliberately unbound: town IS the back target, and a stray
+  // press here must not walk anyone anywhere. The scope id gives focus memory,
+  // so coming back from the stable puts the cursor on the stable again.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, { id: 'town' });
+
   // v18.11: the town painting is a large JPEG that used to decode into a void
   // of raw panel-black. The backdrop div carries a dusk gradient underneath,
   // and the painting cross-fades in once it has actually loaded.
@@ -87,7 +94,7 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
   ];
 
   return (
-    <div className="panel town-panel">
+    <div className="panel town-panel" ref={root}>
       <div className="stage-backdrop">
         <img
           className={`painted-scene${sceneReady ? ' scene-ready' : ''}`}
@@ -125,13 +132,26 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
           {cast.map((c) => {
             const painted = PAINTED_NPCS[c.npcId];
             return (
+              // The card is a clickable box that CONTAINS real <button>s, which
+              // is a nested-interactive violation the pad cannot survive: the
+              // geometry rejects an enclosing rect as a direction, so a cursor
+              // that landed on the card could never step onto the services
+              // inside it. It is now out of the focus ring entirely
+              // (tabIndex -1) — nothing is lost, because activating the card
+              // fires exactly what its first service button fires. Mouse
+              // behaviour is untouched.
+              //
+              // The `e.target` guard fixes a latent bug the audit found: Enter
+              // on a nested service button used to bubble here and dispatch a
+              // second GOTO.
               <div
                 className="town-cast-card"
                 key={c.npcId}
                 role="button"
-                tabIndex={0}
+                tabIndex={-1}
                 onClick={() => dispatch({ type: 'GOTO', screen: c.services[0].screen })}
                 onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') dispatch({ type: 'GOTO', screen: c.services[0].screen });
                 }}
               >
@@ -170,7 +190,13 @@ export function TownScreen({ state, dispatch }: { state: GameState; dispatch: (a
         </div>
 
         <div className="town-dock">
-          <button className="btn primary town-dock-gates" onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}>
+          {/* Where the cursor starts on a first visit: the primary action. */}
+          <button
+            className="btn primary town-dock-gates"
+            data-nav-initial=""
+            data-nav-key="town-gates"
+            onClick={() => dispatch({ type: 'GOTO', screen: 'gateSelect' })}
+          >
             <Icon name="gates" emoji="🚪" size={34} />
             <span className="town-dock-gates-label">The Gates</span>
             <span className="town-dock-gates-sub">Venture into the dusk</span>

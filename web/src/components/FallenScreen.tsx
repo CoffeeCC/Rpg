@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
+import { useNavScope } from '../nav';
 import { loadTellings, nextTelling } from '../platform/tellings';
 import { PAGE_TURN_LINES, ordinal as tellingOrdinal } from '../engine/data/tellingsLore';
 import { pageTurnPassage } from '../engine/data/retellingLore';
@@ -38,8 +40,12 @@ export function FallenScreen({ state, dispatch }: { state: GameState; dispatch: 
     .replaceAll('{name}', heroName);
   const passage = pageTurnPassage(meta.telling, { name: heroName, place });
 
+  // One button, and it is irreversible. B does nothing on purpose.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, { id: 'fallen' });
+
   return (
-    <div className="panel center-text fallen-panel cine-screen fallen-cine">
+    <div className="panel center-text fallen-panel cine-screen fallen-cine" ref={root}>
       <div className="cine-glow" aria-hidden="true" />
       <div className="cine-block">
         <h1 className="title fallen-title cine-title">The Telling Ends</h1>

@@ -6,6 +6,7 @@ import { ordinal } from '../engine/data/tellingsLore';
 import { bindingById, depthByLevel } from '../engine/data/bindings';
 import { loadTellings } from '../platform/tellings';
 import { ChroniclerPassage } from './BookPanel';
+import { useNavScope, useRefocusOn } from '../nav';
 import { isMuted } from '../platform/sfx';
 
 /** Chapters with recorded narration (served from /public/audio). */
@@ -80,6 +81,19 @@ export function StoryOverlay({ state, dispatch }: { state: GameState; dispatch: 
     };
   }, [chapterId, opened]);
 
+  // The book is modal in every sense: nothing behind it may take input while
+  // it is up. One overlay root for both faces of it (frontispiece, then the
+  // crawl) so the registered scope root survives the swap between them.
+  //
+  // B is deliberately unbound. There is exactly one control on each face and A
+  // presses it; a "cancel" that skipped the chapter would be a cancel that
+  // silently advanced the story, which is not what B means anywhere else.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useNavScope(overlayRef, { id: 'story', layer: 10, trap: true, enabled: !!chapter });
+  // Opening the book replaces the only button on the overlay. Without this the
+  // cursor would be stranded on <body> the moment the crawl begins.
+  useRefocusOn([opened]);
+
   if (!chapter) return null;
 
   if (wantsFrontispiece && !opened) {
@@ -87,7 +101,7 @@ export function StoryOverlay({ state, dispatch }: { state: GameState; dispatch: 
     const binding = bindingById(state.binding);
     const depth = depthByLevel(state.depth);
     return (
-      <div className="overlay">
+      <div className="overlay" ref={overlayRef}>
         <div className="panel story-crawl-panel frontispiece">
           <h1 className="title">📖 The Chronicler's Book</h1>
           <ChroniclerPassage paragraphs={frontispieceFor(meta.telling, { telling: ordinal(meta.telling), name: heroName })} />
@@ -114,7 +128,7 @@ export function StoryOverlay({ state, dispatch }: { state: GameState; dispatch: 
   }
 
   return (
-    <div className="overlay">
+    <div className="overlay" ref={overlayRef}>
       <div className="panel story-crawl-panel">
         <h1 className="title">📖 {chapter.title}</h1>
         <div className="story-crawl-window" ref={windowRef}>

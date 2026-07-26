@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
+import { useNavScope } from '../nav';
 import { play as sfx } from '../platform/sfx';
 
 /**
@@ -11,6 +13,19 @@ import { play as sfx } from '../platform/sfx';
  */
 export function LeavingOverlay({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const leaving = state.pendingLeaving;
+  // Trapping overlay over the floor. B dismisses it — unlike a legend, reading
+  // someone else's leaving is optional and closing it is the whole interaction.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useNavScope(overlayRef, {
+    id: 'leaving',
+    layer: 10,
+    trap: true,
+    enabled: !!leaving,
+    onCancel: () => {
+      dispatch({ type: 'LEAVING_SEEN' });
+      return true;
+    },
+  });
   if (!leaving) return null;
 
   // Your own dead get the warmer frame. It is the only one of the three the
@@ -19,7 +34,7 @@ export function LeavingOverlay({ state, dispatch }: { state: GameState; dispatch
   const own = leaving.kind === 'telling';
 
   return (
-    <div className="overlay leaving-overlay">
+    <div className="overlay leaving-overlay" ref={overlayRef}>
       <div className={`panel leaving-panel ${own ? 'own' : ''}`}>
         <p className="leaving-kicker">{own ? 'A HAND YOU KNOW' : 'SOMEONE WAS HERE'}</p>
         <h1 className="title leaving-name">{leaving.name}</h1>

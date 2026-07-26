@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   AXIS_DOMINANCE,
@@ -446,6 +449,190 @@ describe('scroll-into-view math', () => {
     const need = scrollNeededFor(rect(500, 400, 60, 30), viewport, 10);
     expect(need.dx).toBeGreaterThan(0);
     expect(need.dy).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// Per-screen conversion coverage.
+//
+// These are SOURCE-level assertions, and that is a deliberate choice worth
+// defending. This project's vitest runs in the plain `node` environment with
+// no DOM and no react-dom/test-utils — rendering a screen to assert "the
+// cursor lands on the Gates button" is not available without adding jsdom and
+// a testing library to a dependency list somebody has kept deliberately short.
+//
+// What IS worth pinning without a DOM is the contract every converted screen
+// must satisfy, because the failure mode is silence: a screen that forgets to
+// register a scope is not broken on a mouse, does not throw, and does not show
+// up in any other test. It is simply dead on a Deck. So:
+//
+//   * every screen component registers a scope, with an id (id = focus memory)
+//   * screens whose exit is a Back button bind cancel; screens where a stray B
+//     would destroy something (a save, a rare card, a run) deliberately do not
+//   * the modals trap
+//   * nobody auto-focuses a text input (that pops the Steam OSK and traps a
+//     controller in a field it cannot type into)
+//   * and the list below accounts for EVERY screen in components/, so a new
+//     screen cannot be added without someone deciding what its B button does
+// ===========================================================================
+
+const COMPONENT_DIR = fileURLToPath(new URL('../../components/', import.meta.url));
+
+/**
+ * Source with comments removed. These files explain their nav decisions in
+ * prose — "No `onCancel`: the player must choose" — and a test that grepped
+ * raw source would read the explanation as the thing it denies.
+ */
+function componentSource(file: string): string {
+  return readFileSync(join(COMPONENT_DIR, file), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+interface NavScreenSpec {
+  file: string;
+  /** Scope ids this file registers. */
+  ids: string[];
+  /** Does B / Escape do something here? */
+  cancels: boolean;
+  /** Does this file register at least one trapping modal scope? */
+  traps?: boolean;
+}
+
+/**
+ * Converted, with the decision each one made about B.
+ *
+ * `cancels: false` is always a deliberate refusal, never an omission — see the
+ * comment at each call site. Reward, event, victory and fallen are all screens
+ * where the only thing B could reach is irreversible.
+ */
+const CONVERTED: NavScreenSpec[] = [
+  // Wave 1 — the reference implementations.
+  { file: 'BattleScreen.tsx', ids: ['battle', 'battle.mercy'], cancels: true, traps: true },
+  { file: 'FloorScreen.tsx', ids: ['floor', 'floor.merchant'], cancels: true, traps: true },
+  { file: 'QuestBoardScreen.tsx', ids: ['questBoard'], cancels: true },
+
+  // Wave 2 — the path every single run walks, plus the overlays that can
+  // appear on top of any of it.
+  { file: 'TownScreen.tsx', ids: ['town'], cancels: false },
+  { file: 'GateSelectScreen.tsx', ids: ['gateSelect'], cancels: true },
+  { file: 'CardRewardScreen.tsx', ids: ['cardReward'], cancels: false },
+  { file: 'EventScreen.tsx', ids: ['event'], cancels: false },
+  { file: 'VictoryScreen.tsx', ids: ['victory'], cancels: false },
+  { file: 'FallenScreen.tsx', ids: ['fallen'], cancels: false },
+  { file: 'StoryOverlay.tsx', ids: ['story'], cancels: false, traps: true },
+  { file: 'LegendOverlay.tsx', ids: ['legend'], cancels: false, traps: true },
+  { file: 'LeavingOverlay.tsx', ids: ['leaving'], cancels: true, traps: true },
+  { file: 'CardDetailOverlay.tsx', ids: ['cardDetail'], cancels: true, traps: true },
+];
+
+/** Still mouse-only. This list must reach zero before the Steam build. */
+const NOT_YET_CONVERTED: string[] = [
+  'BreedingScreen.tsx',
+  'CardCodexScreen.tsx',
+  'CharacterSheetScreen.tsx',
+  'ChronicleScreen.tsx',
+  'CreateScreen.tsx',
+  'DeckScreen.tsx',
+  'GearScreen.tsx',
+  'MonsterSheetScreen.tsx',
+  'MultiplayerScreen.tsx',
+  'SaveLoadScreen.tsx',
+  'ShopScreens.tsx',
+  'SmithScreen.tsx',
+  'StableScreen.tsx',
+  'TavernScreen.tsx',
+];
+
+describe('screen conversion coverage', () => {
+  const screenFiles = readdirSync(COMPONENT_DIR).filter((f) => /(Screen|Overlay)\.tsx$/.test(f));
+
+  it('accounts for every screen and overlay in components/', () => {
+    const claimed = new Set([...CONVERTED.map((s) => s.file), ...NOT_YET_CONVERTED]);
+    const unclaimed = screenFiles.filter((f) => !claimed.has(f));
+    // A new screen must not be able to ship without somebody deciding what its
+    // B button does. Add it to CONVERTED, or admit it to NOT_YET_CONVERTED.
+    expect(unclaimed).toEqual([]);
+  });
+
+  it('does not list a converted screen as unconverted', () => {
+    for (const spec of CONVERTED) expect(NOT_YET_CONVERTED).not.toContain(spec.file);
+  });
+
+  for (const spec of CONVERTED) {
+    describe(spec.file, () => {
+      const source = componentSource(spec.file);
+
+      it('registers a nav scope from the shared layer', () => {
+        expect(source).toMatch(/from '\.\.\/nav'/);
+        expect(source).toMatch(/useNavScope\(/);
+      });
+
+      it('names every scope it registers, so focus memory works', () => {
+        for (const id of spec.ids) expect(source).toContain(`id: '${id}'`);
+        // Every useNavScope call carries an id — count them and compare.
+        const calls = source.match(/useNavScope\(/g)?.length ?? 0;
+        expect(calls).toBe(spec.ids.length);
+      });
+
+      it(spec.cancels ? 'binds B / Escape' : 'deliberately leaves B / Escape unbound', () => {
+        expect(/onCancel/.test(source)).toBe(spec.cancels);
+      });
+
+      if (spec.traps) {
+        it('traps focus in its modal', () => {
+          expect(source).toMatch(/trap: true/);
+          expect(source).toMatch(/layer: 10/);
+        });
+      }
+
+      it('never auto-focuses a text field', () => {
+        // `data-nav-initial` on an <input> pops the Steam on-screen keyboard
+        // and strands a controller in a field it cannot type into.
+        const initialOnInput = /<input[^>]*data-nav-initial/s.test(source);
+        expect(initialOnInput).toBe(false);
+      });
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+describe('screen layouts, as geometry', () => {
+  it('walks the town dock left to right and back up into the cast', () => {
+    // Cast grid (3 across, 2 down) above a dock row. Down out of the bottom
+    // cast card must reach the dock, and Right must not skip a dock button.
+    const cast = [rect(0, 0, 280, 150), rect(300, 0, 280, 150), rect(600, 0, 280, 150), rect(0, 170, 280, 150)];
+    const dock = [rect(0, 400, 200, 90), rect(220, 400, 200, 90), rect(440, 400, 200, 90)];
+    const all = [...cast, ...dock];
+    expect(pickInDirection(cast[3], all, 'down')).toBe(4); // first dock button
+    expect(pickInDirection(dock[0], all, 'right')).toBe(5);
+    expect(pickInDirection(dock[1], all, 'right')).toBe(6);
+    expect(pickInDirection(dock[0], all, 'up')).toBe(3); // back into the cast
+  });
+
+  it('walks the gate list past a locked gate', () => {
+    // Locked gates are `disabled` and never enter the candidate list at all —
+    // the cursor steps over them rather than landing on a dead entry.
+    const enabled = [rect(0, 0, 600, 120), rect(0, 260, 600, 120), rect(0, 390, 600, 120)];
+    expect(pickInDirection(enabled[0], enabled, 'down')).toBe(1);
+    expect(pickInDirection(enabled[2], enabled, 'up')).toBe(1);
+  });
+
+  it('walks the three reward cards and drops to Take nothing', () => {
+    const cards = [rect(20, 40, 300, 420), rect(340, 40, 300, 420), rect(660, 40, 300, 420)];
+    const takeNothing = rect(420, 500, 140, 40);
+    const all = [...cards, takeNothing];
+    expect(pickInDirection(cards[0], all, 'right')).toBe(1);
+    expect(pickInDirection(cards[2], all, 'left')).toBe(1);
+    // Take nothing sits under the middle card but must be reachable from any.
+    for (let i = 0; i < 3; i++) expect(pickInDirection(cards[i], all, 'down'), `card ${i}`).toBe(3);
+  });
+
+  it('walks a column of event choices without wrapping by surprise', () => {
+    const choices = [rect(0, 0, 500, 70), rect(0, 90, 500, 70), rect(0, 180, 500, 70)];
+    expect(pickInDirection(choices[0], choices, 'down')).toBe(1);
+    // Off the bottom with wrap off: stay put rather than jumping to the top.
+    expect(pickInDirection(choices[2], choices, 'down', { wrap: false })).toBeNull();
   });
 });
 

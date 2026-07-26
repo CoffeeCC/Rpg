@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { GATES } from '../engine/data/gates';
 import { MonsterImage } from '../art/MonsterImage';
+import { useNavScope } from '../nav';
 import { play as sfx } from '../platform/sfx';
 
 /**
@@ -10,13 +12,19 @@ import { play as sfx } from '../platform/sfx';
 export function LegendOverlay({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const legend = state.pendingLegend;
   const world = state.world;
+  // Trapping, one layer above the screen: while a legend is on stage the D-pad
+  // must not be walking the hero around behind it. No `onCancel` — this is an
+  // announcement to be acknowledged, and both faces of it have exactly one
+  // button, which A presses.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useNavScope(overlayRef, { id: 'legend', layer: 10, trap: true, enabled: !!legend && !!world });
   if (!legend || !world) return null;
 
   if (legend.kind === 'beast') {
     const beast = world.beasts.find((b) => b.id === legend.beastId);
     if (!beast) return null;
     return (
-      <div className="overlay legend-overlay">
+      <div className="overlay legend-overlay" ref={overlayRef}>
         <div className="panel center-text">
           <p className="legend-kicker">A LEGEND WAKES</p>
           <div className="legend-art">
@@ -45,7 +53,7 @@ export function LegendOverlay({ state, dispatch }: { state: GameState; dispatch:
   const artifact = world.artifacts.find((a) => a.id === legend.artifactId);
   if (!artifact) return null;
   return (
-    <div className="overlay legend-overlay">
+    <div className="overlay legend-overlay" ref={overlayRef}>
       <div className="panel center-text">
         <p className="legend-kicker relic-kicker">A RELIC RETURNS TO THE LIGHT</p>
         <div className="relic-glyph">✦</div>

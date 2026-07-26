@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useRef } from 'react';
 import type { Character } from '../engine/entities/Character';
 import type { MonsterInstance } from '../engine/entities/MonsterInstance';
 import type { CardDef } from '../engine/types';
 import { describeEffect } from '../engine/systems/cardBattle';
 import { CardView } from './CardView';
 import { KeywordText } from './KeywordText';
+import { useNavScope } from '../nav';
 import { play as sfx } from '../platform/sfx';
 
 const TARGET_LABEL: Record<CardDef['target'], string> = {
@@ -30,16 +31,26 @@ export function CardDetailOverlay({
   upgraded: boolean;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // This overlay's own `window` keydown listener for Escape is gone: the nav
+  // scope below handles B and Escape on the same code path, and keeping both
+  // meant Escape closed it twice. Click-outside-to-close is unchanged.
+  //
+  // Note the trap. It matters more here than anywhere: the card grid behind
+  // this thing is 40–200 buttons, and without a trap the cursor could walk
+  // straight out of the open card and keep browsing underneath it.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  useNavScope(overlayRef, {
+    id: 'cardDetail',
+    layer: 10,
+    trap: true,
+    onCancel: () => {
+      onClose();
+      return true;
+    },
+  });
 
   return (
-    <div className="overlay card-inspect-overlay" onClick={onClose}>
+    <div className="overlay card-inspect-overlay" ref={overlayRef} onClick={onClose}>
       <div className="panel card-inspect-panel" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"

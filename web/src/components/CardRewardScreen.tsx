@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
 import { getCard } from '../engine/data/cards';
 import { CardView } from './CardView';
+import { useNavScope } from '../nav';
 import { play as sfx } from '../platform/sfx';
 import '../sheets.css';
 
@@ -10,9 +12,15 @@ import '../sheets.css';
 
 export function CardRewardScreen({ state, dispatch }: { state: GameState; dispatch: (a: GameAction) => void }) {
   const player = state.player;
+  // Hooks before the early return: this screen unmounts the moment a boon is
+  // taken, and a conditional hook would be a different component each render.
+  const root = useRef<HTMLDivElement>(null);
+  // No `onCancel`. B is deliberately dead here — one stray press must never
+  // discard a legendary. "Take nothing" is a control the player has to choose.
+  useNavScope(root, { id: 'cardReward' });
   if (!player || !state.pendingReward) return null;
   return (
-    <div className="panel center-text reward-screen">
+    <div className="panel center-text reward-screen" ref={root}>
       <h1 className="title">Choose Thy Boon</h1>
       <p className="subtitle">One card may join your deck — until you leave the gate, or fall.</p>
       <div className="reward-row">

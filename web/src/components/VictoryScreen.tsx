@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import type { GameAction, GameState } from '../engine/game';
+import { useNavScope } from '../nav';
 import { loadTellings } from '../platform/tellings';
 import { ordinal } from '../engine/data/tellingsLore';
 import { VICTORY_READING, fillSlots } from '../engine/data/retellingLore';
@@ -24,8 +26,13 @@ export function VictoryScreen({ state, dispatch }: { state: GameState; dispatch:
   const heroName = player?.name ?? 'The hero';
   const reading = VICTORY_READING.map((p) => fillSlots(p, { name: heroName, telling: ordinal(closed) }));
 
+  // A terminal screen. No `onCancel`: "Begin the next telling" is destructive
+  // and must never be what a stray B press reaches for.
+  const root = useRef<HTMLDivElement>(null);
+  useNavScope(root, { id: 'victory' });
+
   return (
-    <div className="panel center-text cine-screen victory-cine">
+    <div className="panel center-text cine-screen victory-cine" ref={root}>
       <div className="cine-glow" aria-hidden="true" />
       <div className="cine-block">
         <h1 className="title cine-title">🌅 Dawn over Everdusk</h1>
