@@ -39,6 +39,25 @@ export interface Material {
   normal?: WebGLTexture | null;
   /** What glows on its own. M6. Ember cracks, shrine glyphs, a boss's eyes. */
   emissive?: WebGLTexture | null;
+  /**
+   * How much of this material's ALBEDO glows on its own, before any light.
+   *
+   * The scalar stand-in for the `emissive` texture above, and the reason it
+   * arrived early is ENGINE_PLAN §12's "very tiny" instruction taken
+   * literally. A wisp has to look BRIGHT and light almost NOTHING — a pinprick
+   * of green that says how dark the corridor is without making the corridor
+   * legible. Those are two different numbers, and while a sprite is only ever
+   * visible by the light falling on it they are forced to be one: turn the
+   * wisp down until it lights nothing and it stops being visible; turn it up
+   * until it reads and it is a second lantern.
+   *
+   * So the emitter's brightness lives here and its reach lives on the `Light`,
+   * and they are free to disagree — which is what they physically do. Undefined
+   * or 0 is an ordinary surface, which is every material that existed before.
+   *
+   * M6 replaces the scalar with the map; the shader term is the same one.
+   */
+  emissiveStrength?: number;
   /** How much of the normal map to apply, 0..2. Per-material, because derived
    *  normals need taming per asset and hand-authored ones do not. */
   normalStrength?: number;

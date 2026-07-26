@@ -35,8 +35,16 @@
 //               and a dishonest shadow.
 // =========================================================================
 
-/** Max lights per draw. Beyond this the uniform block stops being free. */
-export const MAX_LIGHTS = 8;
+// NOTE: there is no MAX_LIGHTS any more, and its deletion is the point of
+// this milestone. It was 8 — eight lights ON SCREEN, total, because the
+// shader carried eight uniform array slots and `renderer.ts` sliced the culled
+// list down to fit. ENGINE_PLAN §12 wants one lantern and many faint emitters,
+// which exhausts that in a single corridor, and the ninth light simply did not
+// appear. Lights now arrive as a TEXTURE, indexed per fragment out of a coarse
+// spatial bin grid — see `scene/lightBins.ts`, which owns the whole idea and
+// all of the testable half of it. The only ceiling left is per BIN, it is a
+// runtime value rather than a compile-time one, and going over it is reported
+// in the HUD instead of being silent.
 
 /**
  * Shadowing by marching the occupancy grid.
@@ -185,15 +193,19 @@ float softShadow(vec3 surface, vec2 lightPos, float radius) {
  * A G-buffer would be the textbook answer and it is the wrong one here: the
  * board is a few hundred quads with heavy overdraw of *transparent* pixels
  * (every character sprite is mostly alpha), and a deferred pass would have to
- * resolve that transparency anyway. Forward with a small light count is
- * simpler, blends correctly, and at MAX_LIGHTS=8 costs less than the extra
- * fullscreen bandwidth a G-buffer would add. Revisit if the light count ever
- * needs to be large — which, per LIGHTING_PLAN §4 Phase 5, is exactly what the
- * cascade solver is for, and it is O(1) in lights.
+ * resolve that transparency anyway. Forward blends correctly and stays simple.
+ *
+ * CLUSTERED FORWARD, since M4. The light count is no longer bounded by the
+ * shader: lights live in an RGBA32F texture and each fragment reads only the
+ * indices its BIN holds. That is what makes forward keep scaling here — a
+ * fragment's cost tracks the lights that actually reach it, not the lights on
+ * screen. LIGHTING_PLAN §4 Phase 5's cascade solver is still the O(1) answer,
+ * and it is now a bounce feature rather than a light-count rescue.
  */
 export const LIT_SPRITE_FRAG = `#version 300 es
 precision highp float;
 precision highp sampler2D;
+precision highp usampler2D;
 
 in vec2 vUV;
 in vec4 vTint;
@@ -205,10 +217,24 @@ uniform sampler2D uAlbedo;
 uniform sampler2D uNormal;
 uniform int uHasNormal;
 
-uniform int uLightCount;
-uniform vec3 uLightPos[${MAX_LIGHTS}];      // xy board tiles, z height above board
-uniform vec3 uLightColour[${MAX_LIGHTS}];
-uniform vec4 uLightParams[${MAX_LIGHTS}];   // intensity, reach, radius, casts shadow
+/**
+ * THE LIGHT LIST, as a texture. BIN_CAPACITY is a compile-time define.
+ *
+ * uLightData is LIGHT_TEXELS wide and one ROW PER LIGHT:
+ *   texel 0   position.xyz, intensity
+ *   texel 1   colour.rgb,   casts shadow
+ *   texel 2   reach, radius
+ *
+ * uLightBins is the coarse spatial grid: BIN_CAPACITY consecutive texels per
+ * bin along x, one bin row per y, each texel a light index and 65535 meaning
+ * "no more". A uniform ARRAY is what forced a compile-time maximum; texelFetch
+ * takes a runtime index, so the count becomes data. See scene/lightBins.ts.
+ */
+uniform sampler2D uLightData;
+uniform highp usampler2D uLightBins;
+/** Bin grid origin in tiles (xy) and 1/binSize (z). w unused. */
+uniform vec4 uBinGrid;
+uniform ivec2 uBinCounts;
 
 uniform float uAmbient;
 uniform vec3 uNight;
@@ -231,6 +257,18 @@ uniform float uTilt;
  * and a uniform costs no vertex bandwidth at all.
  */
 uniform float uInlay;
+/**
+ * EMISSIVE — how much of this material's albedo glows without being lit.
+ *
+ * Added after the light multiply rather than inside it, which is what makes a
+ * faint emitter possible at all: the sprite's brightness and the light it
+ * casts stop being the same number. A wisp is albedo x 2.5 on screen and a
+ * light of intensity 0.5 in the world, and it has to be both.
+ *
+ * Scaled by alpha through the ordinary blend, so a soft halo adds softly. See
+ * Material.emissiveStrength; M6 makes it a map.
+ */
+uniform float uEmissive;
 /** Seam half-width, in tiles. */
 uniform float uSeamWidth;
 /** How dark the seam paints, 0..1 as a multiplier at the very edge. */
@@ -245,7 +283,8 @@ uniform float uSeamBevel;
  * contributing nothing" and "the light is contributing correctly but
  * something downstream eats it" are the same picture.
  *
- * 0 off, 1 board position, 2 N dot L, 3 attenuation, 4 shadow, 5 world normal.
+ * 0 off, 1 board position, 2 N dot L, 3 attenuation, 4 shadow, 5 world normal,
+ * 6 how many lights this fragment's bin holds.
  */
 uniform int uDebug;
 
@@ -337,13 +376,51 @@ void main() {
   if (uDebug == 1) { outColor = vec4(fract(vWorld * 0.1), 0.0, 1.0); return; }
   if (uDebug == 5) { outColor = vec4(worldN * 0.5 + 0.5, 1.0); return; }
 
+  // WHICH BIN AM I IN. Clamped rather than bounds-checked, because a fragment
+  // CAN sit outside the binned region: culling keeps a sprite whose box
+  // overlaps the view, so its far corner pokes past. The bin grid is padded
+  // (see LightBinOptions.pad) so the clamp catches only that fringe, where the
+  // edge bin is the right answer anyway.
+  ivec2 bin = clamp(
+    ivec2(floor((vWorld - uBinGrid.xy) * uBinGrid.z)),
+    ivec2(0),
+    uBinCounts - ivec2(1)
+  );
+  int binBase = bin.x * BIN_CAPACITY;
+
+  // BIN OCCUPANCY, false-coloured. The one debug view this milestone adds, and
+  // it earns its place: every other symptom of binning going wrong ("that
+  // mushroom is not lighting anything") looks exactly like an art problem.
+  // Blue 1 light, green a handful, red at capacity.
+  if (uDebug == 6) {
+    int n = 0;
+    for (int s = 0; s < BIN_CAPACITY; s++) {
+      if (texelFetch(uLightBins, ivec2(binBase + s, bin.y), 0).r == 65535u) break;
+      n++;
+    }
+    float f = float(n) / float(BIN_CAPACITY);
+    outColor = vec4(f, 1.0 - abs(f * 2.0 - 1.0), max(0.0, 1.0 - f * 4.0) * float(n > 0), 1.0);
+    return;
+  }
+
   vec3 lit = vec3(0.0);
-  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
-    if (i >= uLightCount) break;
-    vec3 lp = uLightPos[i];
-    float intensity = uLightParams[i].x;
-    float reach = uLightParams[i].y;
-    float radius = uLightParams[i].z;
+  for (int s = 0; s < BIN_CAPACITY; s++) {
+    // Sentinel-terminated, so this costs (lights in this bin) + 1 fetches
+    // rather than a flat BIN_CAPACITY. That is what makes a big capacity free
+    // on the empty two thirds of the board.
+    uint slot = texelFetch(uLightBins, ivec2(binBase + s, bin.y), 0).r;
+    if (slot == 65535u) break;
+    int i = int(slot);
+
+    vec4 d0 = texelFetch(uLightData, ivec2(0, i), 0);
+    vec4 d1 = texelFetch(uLightData, ivec2(1, i), 0);
+    vec4 d2 = texelFetch(uLightData, ivec2(2, i), 0);
+    vec3 lp = d0.xyz;
+    float intensity = d0.w;
+    vec3 lightColour = d1.rgb;
+    float castsShadow = d1.a;
+    float reach = d2.x;
+    float radius = d2.y;
 
     // Where this fragment actually is. vHeight interpolates up a standing
     // quad and is constant across a lying one, so the top of a wall block's
@@ -371,13 +448,16 @@ void main() {
     // has no business casting a hard shadow), and the ROOM the board is
     // sitting in, which is outside the fiction and must not be occluded by
     // the fiction's walls.
-    float shadow = uLightParams[i].w > 0.5 ? softShadow(surface, lp.xy, radius) : 1.0;
+    float shadow = castsShadow > 0.5 ? softShadow(surface, lp.xy, radius) : 1.0;
 
+    // These return on the FIRST light in the bin. Binning preserves the
+    // caller's order within a bin, so that is still the lantern wherever the
+    // lantern reaches — which is what these views were read against before.
     if (uDebug == 2) { outColor = vec4(vec3(ndl), 1.0); return; }
     if (uDebug == 3) { outColor = vec4(vec3(atten), 1.0); return; }
     if (uDebug == 4) { outColor = vec4(vec3(shadow), 1.0); return; }
 
-    vec3 contribution = uLightColour[i] * intensity * atten * ndl * shadow;
+    vec3 contribution = lightColour * intensity * atten * ndl * shadow;
 
     // Blinn-Phong, gated on diffuse: a highlight floating on a surface the
     // light cannot reach is the tell of a specular term added without one.
@@ -386,7 +466,7 @@ void main() {
     vec3 V = vec3(0.0, sin(uTilt), cos(uTilt));
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(worldN, H), 0.0), uGloss) * uSpecular;
-    contribution += uLightColour[i] * spec * atten * shadow * step(0.001, ndl);
+    contribution += lightColour * spec * atten * shadow * step(0.001, ndl);
 
     lit += contribution;
   }
@@ -405,7 +485,7 @@ void main() {
   // Otherwise the two dials fight, and turning the ambient down makes the
   // scene bluer rather than darker.
   vec3 nightTint = uNight / max(max(uNight.r, max(uNight.g, uNight.b)), 1e-4);
-  vec3 colour = albedo.rgb * (uAmbient * nightTint + lit);
+  vec3 colour = albedo.rgb * (uAmbient * nightTint + lit + uEmissive);
   outColor = vec4(colour, albedo.a);
 }`;
 

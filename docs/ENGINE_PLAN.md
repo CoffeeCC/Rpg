@@ -1742,7 +1742,7 @@ to be unpicked.
 
 ---
 
-## 18. The player console (2026-07-26)
+## 19. The player console (2026-07-26)
 
 > Paul: *"I do want the Menus and buttons that were in the old version to be
 > physically a part of the Board Border, like attached to the sides of it.

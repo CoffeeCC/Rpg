@@ -54,10 +54,11 @@
   <label><span class="row">Tilt<b id="vTilt">55°</b></span>
     <input type="range" id="tilt" min="10" max="85" step="1" value="55" /></label>
   <label><span class="row">Zoom<b id="vZoom">48</b></span>
-    <input type="range" id="zoom" min="16" max="160" step="1" value="48" /></label>
+    <input type="range" id="zoom" min="16" max="160" step="0.5" value="48" /></label>
   <p class="note">48 is the framing from ENGINE_PLAN §13: the WHOLE 22x14 board
     on screen with its rim and some table around it. Tiles land near 48px and a
-    piece stands about 67px, which is the Deck legibility floor.</p>
+    piece stands about 67px, which is the Deck legibility floor.
+    <b>Scroll the board to zoom.</b></p>
 
   <h2>Gate</h2>
   <div class="seg" id="gate">
@@ -125,6 +126,31 @@
     line — but push it past ~0.5 and it tips a floor tile so far from the
     lantern that the seam goes black, and the grid reads as rings in the pool.
 
+  <h2>Emitters</h2>
+  <label><span class="row">Mushrooms<b id="vShroom">0.45</b></span>
+    <input type="range" id="shroom" min="0" max="1" step="0.01" value="0.45" /></label>
+  <label><span class="row">Wisps<b id="vWisp">6</b></span>
+    <input type="range" id="wisp" min="0" max="24" step="1" value="6" /></label>
+  <label><span class="row">Sconces<b id="vSconce">0.12</b></span>
+    <input type="range" id="sconce" min="0" max="1" step="0.01" value="0.12" /></label>
+  <label><span class="row">Emitter glow<b id="vGlow">1.00</b></span>
+    <input type="range" id="glow" min="0" max="3" step="0.05" value="1" /></label>
+  <p class="note">Very tiny, deliberately (ENGINE_PLAN §12.2). A mushroom
+    reaches 1.5 tiles at a twentieth of the lantern's intensity — it does not
+    light the floor so much as sit in the dark being green. Wisps are on a
+    TETHER, not a fence: they wander, some of them out past the rim, and throw
+    their glow across the table wood.</p>
+
+  <h2>Light budget</h2>
+  <div class="seg" id="budget">
+    <button data-v="0" aria-pressed="true">All</button>
+    <button data-v="8">First 8 (pre-M4)</button>
+  </div>
+  <p class="note">"First 8" is exactly what the renderer did before per-tile
+    binning: cull to the viewport, take the first eight lights, lose the rest
+    with nothing said. Flip it with the emitters up and watch them vanish —
+    that is the bug this milestone deleted.</p>
+
   <h2>Debug</h2>
   <div class="seg" id="dbg" style="grid-auto-flow:row; grid-template-columns:repeat(3,1fr); grid-auto-rows:auto;">
     <button data-v="0" aria-pressed="true">Off</button>
@@ -133,7 +159,11 @@
     <button data-v="3">Atten</button>
     <button data-v="4">Shadow</button>
     <button data-v="5">Normal</button>
+    <button data-v="6">Bins</button>
   </div>
+  <p class="note">Bins false-colours how many lights each fragment's bin holds:
+    blue one, green a handful, red at capacity. It is the only view in which
+    "that mushroom is not lighting anything" looks like a bug rather than art.</p>
 
   <h2>Piece relief</h2>
   <label><span class="row">Depth<b id="vRelief">1.00</b></span>
@@ -174,6 +204,11 @@ try {
   const { boardSlabSprites, boardFramePixels, boardFrameNormalPixels, boardRimPixels,
           boardRimNormalPixels, woodField, fieldToAlbedo, fieldToNormals, slabBounds }
     = await import('/src/lantern/scene/board.ts' + V);
+  // THE FAINT EMITTERS (ENGINE_PLAN §12.4). No art files: a flame, a mushroom
+  // and a wisp are shapes made of arithmetic, same as the board furniture.
+  const { flamePixels, mushroomPixels, wispPixels, sconceEmitter, mushroomEmitter,
+          wispEmitter, mushroomSpots, wispPaths, hashCoord }
+    = await import('/src/lantern/scene/emitters.ts' + V);
 
   const canvas = $('gl');
   const { device, status, reason } = createDevice(canvas);
@@ -264,6 +299,37 @@ try {
   // falls away on the other, so the slab reads as machined the moment
   // anything moves.
   // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // EMITTER ART, also by arithmetic.
+  //
+  // `emissiveStrength` is what makes "very tiny" possible at all. A sprite
+  // that is only ever visible by the light falling on it forces its
+  // brightness and its reach to be one number, so a wisp faint enough to
+  // light nothing is also faint enough to see nothing. Emissive splits them:
+  // the core paints at ~2.5 in HDR and blooms, while the LIGHT it casts is
+  // intensity 0.7 over 1.9 tiles.
+  //
+  // NOT sRGB, because these are glow masks whose RGB is a colour ramp the
+  // emissive term multiplies rather than a photographed surface — and mipmaps
+  // ON, because a 0.3-tile sprite is about 14 screen px and the core would
+  // otherwise alias into a scintillating dot as it drifts. That is the
+  // firefly case `bloom.ts` keeps the Karis average for; this is the cheaper
+  // half of the same fix.
+  for (const [id, pixels, glow] of [
+    ['flame', flamePixels(96), 2.4],
+    ['mushroom', mushroomPixels(96), 1.7],
+    ['wisp', wispPixels(96), 2.6],
+  ]) {
+    furniture.set(id, {
+      id,
+      albedo: createRGBATexture(gl, 96, pixels, { srgb: true, mipmap: true }),
+      emissiveStrength: glow,
+      // The authored value, so the Emitter glow slider scales from it rather
+      // than compounding on whatever it set last frame.
+      baseGlow: glow,
+    });
+  }
+
   const SLAB = { width: W, height: H, border: 1.35, thickness: 0.5 };
   const bounds = slabBounds(SLAB);
   const frameOpts = {
@@ -379,6 +445,25 @@ try {
   const layout = buildLayout();
   const grid = makeOccluderGrid(W, H);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) setSolid(grid, x, y, layout[y][x]);
+
+  /**
+   * Wall tiles with an OPEN tile in front of them, which is where a sconce can
+   * go — `wallBlockSprites` only draws a front face when there is somewhere to
+   * see it from, and a flame bolted to a face nobody draws is a light floating
+   * inside a block.
+   */
+  const SCONCE_TILES = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!layout[y][x]) continue;
+      if (layout[y + 1]?.[x] !== false) continue;
+      SCONCE_TILES.push({ x, y, h: hashCoord(x, y, 17) });
+    }
+  }
+  // Deterministic from the board, so a floor looks the same every session.
+  // Twenty-four is far more than the slider's default; slicing a stable list
+  // is what keeps wisp #3 the same wisp when the count changes.
+  const WISP_PATHS = wispPaths(grid, { count: 24, radius: 2.6 });
 
   /**
    * Build the Scene. Rebuilt every frame from state, never mutated in place —
@@ -509,6 +594,46 @@ try {
     piece(W / 2 - 3.5, H / 2 + 3.2, 'merchant', { x: 1.1, y: 1.7 });
     piece(W / 2 + 2.5, H / 2 - 1.4, 'tamer', { x: 1.1, y: 1.7 });
 
+    // ---------------------------------------------------------------------
+    // THE SCENERY (ENGINE_PLAN §12.4). Paul: "small glowing mushrooms in
+    // corners, some very tiny fireflies/wisps that glow".
+    //
+    // These are the reason the light cap had to go. Thirty of them on a board
+    // is thirty lights, and the renderer used to draw eight — so before this
+    // milestone the sliders below would have topped out silently and the rest
+    // of the board would simply have stayed dark.
+    // ---------------------------------------------------------------------
+    const emitterLights = [];
+    const glow = Number($('glow').value);
+    for (const id of ['flame', 'mushroom', 'wisp']) {
+      const mat = materials.get(id);
+      // Live, so the slider does not need a reload. The renderer reads this
+      // per batch, per frame.
+      if (mat) mat.emissiveStrength = mat.baseGlow * glow;
+    }
+
+    const shroomDensity = Number($('shroom').value);
+    for (const spot of mushroomSpots(grid, { density: shroomDensity })) {
+      const e = mushroomEmitter(spot, { time: t, seed: spot.x * 3.1 + spot.y });
+      sprites.push(...e.sprites);
+      emitterLights.push(e.light);
+    }
+
+    const sconceDensity = Number($('sconce').value);
+    for (const s of SCONCE_TILES) {
+      if (s.h > sconceDensity) continue;
+      const e = sconceEmitter(s, { time: t, seed: s.x * 1.7 + s.y * 2.3 });
+      sprites.push(...e.sprites);
+      emitterLights.push(e.light);
+    }
+
+    const wispCount = Number($('wisp').value);
+    for (let i = 0; i < wispCount && i < WISP_PATHS.length; i++) {
+      const e = wispEmitter(WISP_PATHS[i], t);
+      sprites.push(...e.sprites);
+      emitterLights.push(e.light);
+    }
+
     return makeScene(camera, {
       sprites,
       materials,
@@ -561,6 +686,9 @@ try {
           // how far it goes.
           reach: 95,
         },
+        // Order matters exactly once: light 0 is the lantern, and the debug
+        // views that return on the first light in a bin still show it.
+        ...emitterLights,
       ],
     });
   }
@@ -581,6 +709,8 @@ try {
       seamWidth: Number($('sw').value),
       seamDarken: Number($('sd').value),
       seamBevel: Number($('sb').value),
+      // 0 means no cap. 8 reproduces the pre-M4 ceiling exactly.
+      lightBudget: current.budget,
     });
     $('stats').textContent = formatHud(stats);
   }
@@ -592,6 +722,12 @@ try {
   // calls are two different frames and nothing can be compared. `boardOnce(t)`
   // pins the time, which is what makes "render this exact scene twice with one
   // uniform changed and diff the pixels" possible at all.
+  //
+  // EVERY RenderOption THE PAGE SETS MUST BE FORWARDED HERE. `normalStrength`
+  // was once missing from this list, and the result was a pixel diff that
+  // reported ZERO change for the variable under test — indistinguishable from
+  // a dead feature, and much worse than having no harness at all. If you add
+  // an option to `frame()`, add it here in the same edit.
   window.boardOnce = (t, opts = {}) => renderer.render(buildScene(t), {
     exposure: Math.pow(2, Number($('exp').value)),
     bloomStrength: Number($('bloom').value),
@@ -603,12 +739,21 @@ try {
     seamDarken: Number($('sd').value),
     seamBevel: Number($('sb').value),
     normalStrength: pieceRelief(),
+    lightBudget: current.budget,
     ...opts,
   });
   window.boardScene = (t) => buildScene(t);
   window.boardGL = gl;
 
-  const current = { tonemap: 'agx', lit: true, debug: 0 };
+  const current = { tonemap: 'agx', lit: true, debug: 0, budget: 0 };
+
+  for (const b of $('budget').querySelectorAll('button')) {
+    b.onclick = () => {
+      current.budget = Number(b.dataset.v);
+      for (const o of $('budget').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      frame();
+    };
+  }
 
   for (const b of $('dbg').querySelectorAll('button')) {
     b.onclick = () => {
@@ -649,12 +794,50 @@ try {
                                 ['sw','vSw',(v)=>Number(v).toFixed(3)],['sd','vSd',(v)=>Number(v).toFixed(2)],
                                 ['sb','vSb',(v)=>Number(v).toFixed(2)],
                                 ['base','vBase',(v)=>Number(v).toFixed(2)],['thick','vThick',(v)=>Number(v).toFixed(2)],
-                                ['shad','vShad',(v)=>Number(v).toFixed(2)],['lift','vLift',(v)=>Number(v).toFixed(2)]]) {
+                                ['shad','vShad',(v)=>Number(v).toFixed(2)],['lift','vLift',(v)=>Number(v).toFixed(2)],
+                                ['shroom','vShroom',(v)=>Number(v).toFixed(2)],['wisp','vWisp',(v)=>String(v)],
+                                ['sconce','vSconce',(v)=>Number(v).toFixed(2)],['glow','vGlow',(v)=>Number(v).toFixed(2)]]) {
     const el = $(id);
     const sync = () => { $(out).textContent = fmt(el.value); frame(); };
     el.addEventListener('input', sync);
     el.addEventListener('change', sync);
   }
+
+  // ---------------------------------------------------------------------
+  // SCROLL TO ZOOM.
+  //
+  // Paul: "my first inclination is to scroll to zoom and i cannot please add
+  // that lol". There was no wheel handler at all, so the reflex failed
+  // SILENTLY, which is the worst version of missing — the page just sat there.
+  //
+  // MULTIPLICATIVE, not additive. Perceived zoom is logarithmic: a fixed
+  // increment crawls when you are zoomed in and lurches when you are zoomed
+  // out, because the same number of pixels per tile means something different
+  // at 16 than at 160. A constant RATIO feels identical at every scale.
+  //
+  // The slider stays the source of truth and gets the value written back, so
+  // the two controls can never disagree — a wheel that silently desynchronises
+  // from its own readout is a bad hour later.
+  //
+  // CENTRE-ANCHORED, not cursor-anchored, and that is a deliberate stop.
+  // Keeping the board point under the pointer fixed requires moving the
+  // camera CENTRE, and the centre is exactly the state ENGINE_PLAN §17.1's
+  // clamped pan is about to own. Adding a second, unclamped writer of it here
+  // would have to be unpicked. Cursor-anchored zoom is one line on top of pan
+  // once pan exists: unproject the cursor before and after, and add the
+  // difference to the centre.
+  $('stage').addEventListener(
+    'wheel',
+    (e) => {
+      // Non-passive, or the page scrolls instead of the board zooming.
+      e.preventDefault();
+      const el = $('zoom');
+      const next = Number(el.value) * (e.deltaY > 0 ? 0.92 : 1.087);
+      el.value = String(Math.min(Number(el.max), Math.max(Number(el.min), next)));
+      el.dispatchEvent(new Event('input'));
+    },
+    { passive: false },
+  );
 
   await loadGate(gate);
   const resize = () => {

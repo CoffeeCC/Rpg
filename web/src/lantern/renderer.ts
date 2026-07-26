@@ -29,13 +29,21 @@ import type { Device } from './gl/device';
 import { ProgramCache, type Program } from './gl/program';
 import { bindTarget, createTarget, drawFullscreen, type Target } from './gl/target';
 import { SpriteBatcher, SPRITE_FRAG, SPRITE_VERT } from './gl/spriteBatcher';
-import { LIT_SPRITE_FRAG, LIT_SPRITE_VERT, MAX_LIGHTS } from './passes/lighting';
+import { LIT_SPRITE_FRAG, LIT_SPRITE_VERT } from './passes/lighting';
+import {
+  binLights,
+  packLights,
+  DEFAULT_BIN_CAPACITY,
+  LIGHT_TEXELS,
+  MAX_SCENE_LIGHTS,
+  type LightBins,
+} from './scene/lightBins';
 import { withDefines } from './gl/program';
 import { createIdentityLut, lutGlsl } from './gl/lut';
 import { AGX_GLSL } from './passes/tonemap';
 import { mipChain, BLOOM_DOWNSAMPLE_GLSL, BLOOM_UPSAMPLE_GLSL } from './passes/bloom';
 import { batchGroups, buildVertexData, sortForPainting } from './scene/sprite';
-import { cullLights, cullSprites, type Scene } from './scene/scene';
+import { cullLights, cullSprites, type Light, type Scene } from './scene/scene';
 import { visibleBounds } from './scene/camera';
 import { FrameTimer, GpuTimer, type HudStats } from './debug/hud';
 
@@ -77,8 +85,28 @@ export interface RenderOptions {
   seamWidth?: number;
   seamDarken?: number;
   seamBevel?: number;
-  /** False-colour overlay: 0 off, 1 board pos, 2 N.L, 3 attenuation, 4 shadow, 5 normal. */
+  /** False-colour overlay: 0 off, 1 board pos, 2 N.L, 3 attenuation, 4 shadow, 5 normal, 6 bin occupancy. */
   debug?: number;
+  /**
+   * Bin edge length in tiles for the light grid. See `scene/lightBins.ts`.
+   *
+   * Exposed rather than fixed because it is the one number in the binning that
+   * is a genuine trade rather than a derived fact, and it is worth being able
+   * to sweep it against a real scene instead of arguing about it.
+   */
+  binSize?: number;
+  /**
+   * HARD CAP ON LIGHTS PER FRAME. 0 means no cap, which is the default.
+   *
+   * This is the pre-binning ceiling, kept as a dial on purpose: setting it to
+   * 8 reproduces exactly what the renderer did before M4 — cull to the
+   * viewport, take the first eight, lose the rest silently — which is what
+   * makes the fix MEASURABLE rather than merely asserted. Render the same
+   * frame at 8 and at 0, diff the pixels, and the lights that were missing are
+   * the difference. It is also the honest place for a future quality tier to
+   * put a real budget if one is ever needed.
+   */
+  lightBudget?: number;
 }
 
 const DEFAULTS: Required<RenderOptions> = {
@@ -110,6 +138,8 @@ const DEFAULTS: Required<RenderOptions> = {
   seamDarken: 0.72,
   seamBevel: 0.32,
   debug: 0,
+  binSize: 2,
+  lightBudget: 0,
 };
 
 /**
@@ -195,6 +225,12 @@ export class Renderer {
   private occupancyKey = '';
   /** A 1x1 flat normal, so the lit shader has something valid to sample. */
   private flatNormal: WebGLTexture | null = null;
+  /** RGBA32F, LIGHT_TEXELS wide, one row per light. Re-uploaded every frame. */
+  private lightData: WebGLTexture | null = null;
+  private lightDataRows = 0;
+  /** R16UI bin grid, `binsX * capacity` by `binsY`. Re-uploaded every frame. */
+  private lightBins: WebGLTexture | null = null;
+  private lightBinsKey = '';
 
   constructor(device: Device) {
     this.device = device;
@@ -222,6 +258,10 @@ export class Renderer {
     this.occupancy = null;
     this.occupancyKey = '';
     this.flatNormal = null;
+    this.lightData = null;
+    this.lightDataRows = 0;
+    this.lightBins = null;
+    this.lightBinsKey = '';
     this.width = 0;
     this.height = 0;
   }
@@ -280,7 +320,14 @@ export class Renderer {
     gl.clearColor(scene.night[0], scene.night[1], scene.night[2], 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    const lights = cullLights(scene.lights, bounds).slice(0, MAX_LIGHTS);
+    // Cull, then BIN. The slice that used to sit here — `.slice(0, 8)` — was
+    // the whole ceiling: eight lights on screen, total, and the ninth silently
+    // absent. `lightBudget` reinstates it deliberately and only when asked,
+    // which is what makes the before/after measurable (see RenderOptions).
+    const culled = cullLights(scene.lights, bounds);
+    const lights =
+      opts.lightBudget > 0 ? culled.slice(0, opts.lightBudget) : culled.slice(0, MAX_SCENE_LIGHTS);
+    const bins = binLights(lights, bounds, { binSize: opts.binSize, capacity: DEFAULT_BIN_CAPACITY });
     const useLighting = opts.lit && lights.length > 0 && scene.occluders !== null;
 
     let drawCalls = 0;
@@ -296,6 +343,11 @@ export class Renderer {
             withDefines(LIT_SPRITE_FRAG, {
               SHADOW_STEPS: q.name === 'floor' ? 12 : 24,
               SHADOW_SAMPLES: q.name === 'ceiling' ? 5 : 3,
+              // MUST equal the capacity `binLights` was called with. A shader
+              // compiled for a different number walks off the end of a bin
+              // into the next one's lights, which is the quietest possible way
+              // for this feature to be wrong — so both read one constant.
+              BIN_CAPACITY: DEFAULT_BIN_CAPACITY,
             }),
             LIT_SPRITE_VERT,
           )
@@ -311,13 +363,19 @@ export class Renderer {
         gl.uniform1i(prog.u('uOccupancy'), 2);
         gl.uniform2f(prog.u('uGridSize'), grid.width, grid.height);
 
-        gl.uniform1i(prog.u('uLightCount'), lights.length);
-        for (let i = 0; i < lights.length; i++) {
-          const l = lights[i];
-          gl.uniform3f(prog.u(`uLightPos[${i}]`), l.position.x, l.position.y, l.position.z);
-          gl.uniform3f(prog.u(`uLightColour[${i}]`), l.colour[0], l.colour[1], l.colour[2]);
-          gl.uniform4f(prog.u(`uLightParams[${i}]`), l.intensity, l.reach, l.radius, l.castsShadow === false ? 0 : 1);
-        }
+        // The lights, as two textures instead of a uniform array. The array
+        // was the ceiling — GLSL sizes one at compile time — so this is the
+        // load-bearing line of the whole milestone.
+        this.uploadLights(lights, bins);
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, this.lightData);
+        gl.uniform1i(prog.u('uLightData'), 3);
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, this.lightBins);
+        gl.uniform1i(prog.u('uLightBins'), 4);
+        gl.uniform4f(prog.u('uBinGrid'), bins.originX, bins.originY, 1 / bins.binSize, 0);
+        gl.uniform2i(prog.u('uBinCounts'), bins.binsX, bins.binsY);
+
         gl.uniform1f(prog.u('uAmbient'), scene.ambient);
         gl.uniform3f(prog.u('uNight'), scene.night[0], scene.night[1], scene.night[2]);
         gl.uniform1f(prog.u('uNormalStrength'), opts.normalStrength);
@@ -360,7 +418,7 @@ export class Renderer {
     drawFullscreen(gl);
 
     this.gpuTimer.end?.();
-    return this.stats(drawCalls, lights.length, sorted.length, start, useLighting);
+    return this.stats(drawCalls, lights.length, sorted.length, start, useLighting, bins);
   }
 
   private bloom(sceneRT: Target, opts: Required<RenderOptions>): void {
@@ -443,6 +501,71 @@ export class Renderer {
     return this.occupancy;
   }
 
+  /**
+   * Upload this frame's lights and their bin grid.
+   *
+   * Unlike the occupancy grid, these genuinely DO change every frame — the
+   * lantern moves with the hero, a wisp drifts, a torch flickers, and the bin
+   * grid is anchored to a camera that drifts. So there is no checksum here on
+   * purpose: the data is a few kilobytes (30 lights is 1.4 KB; a 20x14 bin
+   * grid at capacity 16 is 9 KB) and a hash of it would cost more than the
+   * upload it hoped to skip. What IS avoided is reallocation — `texImage2D`
+   * only when the dimensions change, `texSubImage2D` otherwise.
+   *
+   * RGBA32F is sampled with NEAREST and never filtered, which is what keeps it
+   * inside core WebGL2: float textures are filterable only with
+   * OES_texture_float_linear, and `texelFetch` does not filter at all.
+   */
+  private uploadLights(lights: readonly Light[], bins: LightBins): void {
+    const gl = this.device.gl;
+
+    const rows = Math.max(1, lights.length);
+    if (!this.lightData) {
+      this.lightData = gl.createTexture();
+      this.lightDataRows = 0;
+    }
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.lightData);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    const data = packLights(lights);
+    if (rows !== this.lightDataRows) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, LIGHT_TEXELS, rows, 0, gl.RGBA, gl.FLOAT, data);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.lightDataRows = rows;
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LIGHT_TEXELS, rows, gl.RGBA, gl.FLOAT, data);
+    }
+
+    const binW = bins.binsX * bins.capacity;
+    const binH = bins.binsY;
+    if (!this.lightBins) {
+      this.lightBins = gl.createTexture();
+      this.lightBinsKey = '';
+    }
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.lightBins);
+    // R16UI is an INTEGER format, so it must be sampled through a usampler2D
+    // and its filter must be NEAREST — an integer texture with a LINEAR filter
+    // is incomplete and samples as zero, which here would read as "every
+    // fragment shades against light 0 and nothing else".
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+    const key = `${binW}x${binH}`;
+    if (key !== this.lightBinsKey) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, binW, binH, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT, bins.slots);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      this.lightBinsKey = key;
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, binW, binH, gl.RED_INTEGER, gl.UNSIGNED_SHORT, bins.slots);
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+  }
+
   /** A single flat-normal texel, so the lit shader never samples a null. */
   private ensureFlatNormal(): WebGLTexture {
     const gl = this.device.gl;
@@ -491,6 +614,7 @@ export class Renderer {
       gl.uniform1i(prog.u('uHasNormal'), mat?.normal ? 1 : 0);
       gl.uniform1f(prog.u('uNormalStrength'), mat?.normalStrength ?? opts.normalStrength);
       gl.uniform1f(prog.u('uInlay'), mat?.inlay ?? 0);
+      gl.uniform1f(prog.u('uEmissive'), mat?.emissiveStrength ?? 0);
     });
   }
 
@@ -505,7 +629,14 @@ export class Renderer {
     }
   }
 
-  private stats(drawCalls: number, lightCount: number, _sprites: number, start: number, lit = false): HudStats {
+  private stats(
+    drawCalls: number,
+    lightCount: number,
+    _sprites: number,
+    start: number,
+    lit = false,
+    bins?: LightBins,
+  ): HudStats {
     const frameMs = performance.now() - start;
     this.cpuTimer.push(frameMs);
     return {
@@ -517,6 +648,12 @@ export class Renderer {
       lightCount,
       gpuMs: this.gpuTimer.available ? this.gpuTimer.ms : null,
       lit,
+      // Reported, always, because the ceiling this milestone removed was
+      // invisible and a bin overflow would be the same bug one level down.
+      binPeak: bins?.maxPerBin,
+      binCapacity: bins?.capacity,
+      binDropped: bins?.dropped,
+      bins: bins ? `${bins.binsX}x${bins.binsY}` : undefined,
     };
   }
 
@@ -532,8 +669,12 @@ export class Renderer {
     if (this.lut) gl.deleteTexture(this.lut);
     if (this.occupancy) gl.deleteTexture(this.occupancy);
     if (this.flatNormal) gl.deleteTexture(this.flatNormal);
+    if (this.lightData) gl.deleteTexture(this.lightData);
+    if (this.lightBins) gl.deleteTexture(this.lightBins);
     this.lut = null;
     this.occupancy = null;
     this.flatNormal = null;
+    this.lightData = null;
+    this.lightBins = null;
   }
 }

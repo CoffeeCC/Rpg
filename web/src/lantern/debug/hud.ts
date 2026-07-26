@@ -132,17 +132,40 @@ export interface HudStats {
    * chasing the first when it is the second is an hour gone.
    */
   lit?: boolean;
+  /**
+   * LIGHT BINNING, reported because its predecessor's failure was silent.
+   *
+   * The renderer used to take the first eight lights on screen and drop the
+   * rest with nothing said. Per-tile binning removed that ceiling but moved a
+   * smaller one to each bin, so the numbers that say whether a bin is close to
+   * full — and whether anything was actually dropped — belong on the HUD from
+   * the first day the feature exists rather than being added the first time
+   * somebody loses a light.
+   */
+  binPeak?: number;
+  binCapacity?: number;
+  binDropped?: number;
+  /** Grid dimensions, as "WxH". */
+  bins?: string;
 }
 
 /** Plain text, matching the block `lantern-forge.html`'s `#stats` panel already renders. */
 export function formatHud(s: HudStats): string {
   const gpu = s.gpuMs == null ? 'n/a' : `${s.gpuMs.toFixed(2)} ms`;
+  // "!" rather than a number for drops, because a dropped light is not a
+  // measurement, it is a scene the renderer could not honour.
+  const bin =
+    s.binPeak == null
+      ? ''
+      : `bins       ${s.bins ?? '?'} peak ${s.binPeak}/${s.binCapacity ?? '?'}` +
+        `${s.binDropped ? `  DROPPED ${s.binDropped}` : ''}\n`;
   return (
     `tier       ${s.tier}\n` +
     `frame      ${s.frameMs.toFixed(2)} ms\n` +
     `p50 / p99  ${s.p50.toFixed(2)} / ${s.p99.toFixed(2)} ms\n` +
     `draws      ${s.drawCalls}\n` +
     `lights     ${s.lightCount}\n` +
+    bin +
     `path       ${s.lit ? 'lit' : 'albedo only'}\n` +
     `gpu        ${gpu}`
   );
