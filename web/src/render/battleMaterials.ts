@@ -41,6 +41,10 @@ import {
   woodField,
 } from '../lantern/scene/board';
 import { flamePixels } from '../lantern/scene/emitters';
+// The map's bake conventions, reused deliberately: a combatant IS one of the
+// bevel assets `render/materials.ts` already resolves, so the fight and the
+// floor must agree on which cut of a sprite is the real one.
+import { BAKED_ROOT, PIECE_RELIEF, bakedRef } from './materials';
 import {
   MAT_ARENA,
   MAT_BACKDROP,
@@ -78,6 +82,12 @@ export interface BattleMaterialLibrary {
    * authored to tile (the candle rail strip's registered height axis).
    */
   requestFurniture(id: string, name: string, extra?: Partial<Material> & { repeat?: boolean }): void;
+  /**
+   * A combatant's painted art: the REPAIRED cut plus its carved relief.
+   * Prefers `<name>_albedo.png` over the original URL — see `requestFigureArt`
+   * for why the fight was drawing ghosts while the floor was not.
+   */
+  requestFigure(id: string, url: string): void;
   /** Drop a texture so a new fight can put a different image behind the same id. */
   forget(id: string): void;
   dispose(): void;
@@ -308,6 +318,64 @@ export function createBattleMaterialLibrary(
    * rather than waiting on both fetches, and the normal fills in whenever it
    * finishes, in whichever order the two requests land.
    */
+  /**
+   * A COMBATANT: the repaired cut, then the carved relief.
+   *
+   * Two fetches like `requestFurniture`, but the albedo has a FALLBACK CHAIN
+   * rather than a fixed name — `<name>_albedo.png` first, the original URL
+   * second. See `requestFigureArt` for why that order is the whole point.
+   *
+   * `disposed` is checked before falling back, not only inside the load: React
+   * StrictMode builds a library, throws it away and builds another, and without
+   * this the dead one answers its own baked load with "null, because I am
+   * disposed" and then fetches the original as though the bake were missing.
+   * Harmless, but it puts a phantom request for every ghostly original in the
+   * network log — which is precisely the evidence someone would use to conclude
+   * this feature does not work. `materials.ts` paid for that lesson already.
+   */
+  function requestFigure(id: string, url: string): void {
+    if (disposed || materials.has(id) || pending.has(id)) return;
+    pending.add(id);
+    const baked = bakedRef(url);
+    const draft: { albedo: WebGLTexture | null; normal: WebGLTexture | null } = {
+      albedo: null,
+      normal: null,
+    };
+    const publish = () => {
+      if (disposed || !draft.albedo) return;
+      materials.set(id, {
+        id,
+        albedo: draft.albedo,
+        normal: draft.normal ?? undefined,
+        ...(baked ? { normalStrength: PIECE_RELIEF } : {}),
+      });
+    };
+    const takeAlbedo = (tex: WebGLTexture | null) => {
+      pending.delete(id);
+      if (!tex) return;
+      draft.albedo = own(id, tex);
+      publish();
+    };
+    if (baked && baked.bevel) {
+      loadTexture(`${BAKED_ROOT}/${baked.set}/${baked.name}_albedo.png`, true, false, (tex) => {
+        if (tex) return takeAlbedo(tex);
+        if (disposed) return;
+        loadTexture(url, true, false, takeAlbedo);
+      });
+    } else {
+      loadTexture(url, true, false, takeAlbedo);
+    }
+    if (baked) {
+      // NEVER sRGB — an sRGB decode turns 0.5 ("no tilt") into 0.21 and every
+      // surface lights as though tilted hard.
+      loadTexture(`${BAKED_ROOT}/${baked.set}/${baked.name}_normal.png`, false, false, (tex) => {
+        if (!tex) return;
+        draft.normal = own(id, tex);
+        publish();
+      });
+    }
+  }
+
   function requestFurniture(
     id: string,
     name: string,
@@ -357,6 +425,7 @@ export function createBattleMaterialLibrary(
     materials,
     request,
     requestFurniture,
+    requestFigure,
     forget,
     dispose() {
       if (disposed) return;
@@ -378,12 +447,37 @@ export function requestBackdrop(lib: BattleMaterialLibrary, url: string | null):
   if (url) lib.request(MAT_BACKDROP, url);
 }
 
-/** Painted figures for whoever is on the field. */
+/**
+ * Painted figures for whoever is on the field.
+ *
+ * THIS USED TO PASS THE RAW URL, and that is why Paul kept seeing ghosts.
+ *
+ * `render/materials.ts` fixed the map by preferring `<name>_albedo.png` — the
+ * source art wearing a REPAIRED matte. The originals were cut with a
+ * luminance key, so dark cloth keyed out as low alpha and the alpha channel is
+ * legibly a drawing of the character rather than a silhouette; mean
+ * fully-opaque across the set is 59.6% before the repair and 91.6% after, and
+ * `hero` alone goes 41.14% -> 95.26%. A figure at two thirds alpha is two
+ * thirds of a figure and one third of the board behind it.
+ *
+ * The battle path never got that preference, so the fight kept drawing the
+ * ghostly originals while the floor drew the repaired ones — the same pieces,
+ * two different answers, which is exactly the shape of bug that survives
+ * because each screen looks self-consistent.
+ *
+ * It also collects `_normal.png`, so a combatant lights as the carved relief
+ * §15 asks for rather than as a flat card, at `PIECE_RELIEF` — full strength,
+ * because a billboard never sees the grazing angle that forced tiles down to
+ * `TILE_RELIEF`.
+ *
+ * Falls back to the original URL when there is no bake, so an unbaked species
+ * still appears rather than vanishing.
+ */
 export function requestFigureArt(
   lib: BattleMaterialLibrary,
   art: readonly { textureId: string; url: string }[],
 ): void {
-  for (const a of art) lib.request(a.textureId, a.url);
+  for (const a of art) lib.requestFigure(a.textureId, a.url);
 }
 
 /**

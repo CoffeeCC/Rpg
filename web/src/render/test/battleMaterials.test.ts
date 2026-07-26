@@ -128,3 +128,53 @@ describe('battleMaterials.ts actually requests the published furniture', () => {
     expect(battleMaterialsSource).toMatch(/srgb \? gl\.SRGB8_ALPHA8 : gl\.RGBA8/);
   });
 });
+
+describe('the fight draws the same cut of a sprite the floor does', () => {
+  // Paul, repeatedly: the pieces look transparent. The floor was fixed by
+  // preferring `<name>_albedo.png` — the source art wearing a REPAIRED matte,
+  // because the originals were cut with a luminance key and their alpha is
+  // legibly a drawing of the character rather than a silhouette. Mean
+  // fully-opaque across the set is 59.6% before and 91.6% after; `hero` alone
+  // goes 41.14% -> 95.26%. The battle path never got that preference, so the
+  // same piece was a ghost in a fight and solid on the floor — a bug that
+  // survives precisely because each screen looks self-consistent on its own.
+  const materialsSource = readFileSync(join(ROOT, 'web', 'src', 'render', 'materials.ts'), 'utf8');
+
+  it('routes figures through requestFigure, NOT the raw-url request()', () => {
+    // This is the line that was wrong: `for (const a of art) lib.request(a.textureId, a.url)`.
+    expect(battleMaterialsSource).toMatch(/for \(const a of art\) lib\.requestFigure\(a\.textureId, a\.url\)/);
+    expect(battleMaterialsSource).not.toMatch(/for \(const a of art\) lib\.request\(a\.textureId, a\.url\)/);
+  });
+
+  it('asks for the repaired cut BEFORE falling back to the original', () => {
+    const fig = battleMaterialsSource.slice(battleMaterialsSource.indexOf('function requestFigure('));
+    const baked = fig.indexOf('_albedo.png');
+    const fallback = fig.indexOf('loadTexture(url, true, false, takeAlbedo)');
+    expect(baked).toBeGreaterThan(-1);
+    expect(fallback).toBeGreaterThan(-1);
+    // Order is the whole feature: the original must be the SECOND choice.
+    expect(baked).toBeLessThan(fallback);
+  });
+
+  it('uses the same bake resolver the floor does, rather than a second guess', () => {
+    // Two independent implementations of "where is this sprite's bake" is how
+    // the two screens disagreed in the first place.
+    expect(battleMaterialsSource).toMatch(/import \{[^}]*bakedRef[^}]*\} from '\.\/materials'/s);
+    expect(materialsSource).toMatch(/export function bakedRef/);
+  });
+
+  it('loads the figure normal as RGBA8, never sRGB', () => {
+    // An sRGB decode turns 0.5 ("no tilt") into 0.21 and every surface lights
+    // as though tilted hard. Paid for once already on the map path.
+    const fig = battleMaterialsSource.slice(battleMaterialsSource.indexOf('function requestFigure('));
+    expect(fig).toMatch(/_normal\.png`, false,/);
+    expect(fig).not.toMatch(/_normal\.png`, true,/);
+  });
+
+  it('gives a combatant full relief, not the tile-tamed strength', () => {
+    // PIECE_RELIEF, not TILE_RELIEF: a billboard never sees the grazing angle
+    // that forced derived tile normals down to 0.35.
+    const fig = battleMaterialsSource.slice(battleMaterialsSource.indexOf('function requestFigure('));
+    expect(fig).toMatch(/normalStrength: PIECE_RELIEF/);
+  });
+});
