@@ -272,6 +272,55 @@ uniform float uGloss;
 uniform float uTilt;
 
 /**
+ * THE MATERIAL MAP - what this surface is made of, per pixel.
+ *
+ * R roughness, G specular strength, B iridescence, A occlusion. See
+ * Material.material for why these four ride in one texture. uHasMaterial is 0
+ * when a material has no map, and every term below then collapses to exactly
+ * the behaviour that shipped before this uniform existed - which is what makes
+ * this safe to add to a renderer with fifty materials already in it.
+ */
+uniform sampler2D uMaterial;
+uniform float uHasMaterial;
+
+/**
+ * Blinn-Phong exponents for the two ends of the roughness range.
+ *
+ * MATTE is deliberately close to the old default: unpainted timber, stone and
+ * card stock all sit near it, so the map changes nothing for the surfaces that
+ * do not care. MIRROR is high enough that brass gets a small, hard, MOVING
+ * highlight rather than a broad sheen - which is the entire read on metal at
+ * this scale. A big soft highlight says "pale paint"; a tight one that travels
+ * as the lantern moves says "polished".
+ */
+const float GLOSS_MATTE = 6.0;
+const float GLOSS_MIRROR = 220.0;
+
+/**
+ * IRIDESCENCE - the holo.
+ *
+ * Real foil is a diffraction grating: the hue you see depends on the angle
+ * between the light, the surface and your eye, so the rainbow SWEEPS as either
+ * moves. That is why a still render of holo always looks like glitter and only
+ * resolves into bands when something moves.
+ *
+ * The angle term is dot(N, H) - the same half-vector the specular lobe uses,
+ * which matters because N here is the NORMAL-MAPPED normal. bake.py cuts a
+ * micro-diffraction grating into the foil at a measured 4.0px pitch, so
+ * neighbouring pixels sit on opposite flanks of a groove and land on different
+ * bands. The grating is what turns one flat sheen into moving colour; without
+ * it this term would tint the whole foil a single shifting hue.
+ *
+ * BANDS controls how many spectral cycles the sweep runs through. Too few and
+ * it reads as a colour cast; too many and it aliases into the sparkle the
+ * grating pitch was chosen to avoid.
+ */
+const float IRID_BANDS = 7.0;
+vec3 iridescence(float ndh) {
+  return 0.5 + 0.5 * cos(6.2831853 * (ndh * IRID_BANDS + vec3(0.0, 0.3333, 0.6667)));
+}
+
+/**
  * INLAY — how much this material reads as individual tiles rather than as one
  * continuous rock texture. 0 off.
  *
@@ -431,6 +480,14 @@ void main() {
     return;
   }
 
+  // ONE FETCH, FOUR PROPERTIES. The fallback is the pre-map behaviour exactly:
+  // the scalar gloss, full specular, no iridescence, no occlusion.
+  vec4 matx = uHasMaterial > 0.5 ? texture(uMaterial, vUv) : vec4(0.0, 1.0, 0.0, 1.0);
+  float glossExp = uHasMaterial > 0.5 ? mix(GLOSS_MIRROR, GLOSS_MATTE, matx.r) : uGloss;
+  float specK = uSpecular * matx.g;
+  float irid = matx.b;
+  float occl = matx.a;
+
   vec3 lit = vec3(0.0);
   for (int s = 0; s < BIN_CAPACITY; s++) {
     // Sentinel-terminated, so this costs (lights in this bin) + 1 fetches
@@ -512,8 +569,22 @@ void main() {
     // as the normal basis above, and it had the same sign error.
     vec3 V = vec3(0.0, sin(uTilt), cos(uTilt));
     vec3 H = normalize(L + V);
-    float spec = pow(max(dot(worldN, H), 0.0), uGloss) * uSpecular;
+    float ndh = max(dot(worldN, H), 0.0);
+    float spec = pow(ndh, glossExp) * specK;
     contribution += lightColour * spec * atten * shadow * step(0.001, ndl);
+
+    // THE HOLO, and it rides the specular rather than sitting beside it.
+    //
+    // Foil is only iridescent where it is CATCHING the light — a holo card
+    // held away from a lamp is just grey card. Multiplying by the same spec
+    // the metal uses gets that for free, and means the rainbow appears, sweeps
+    // and vanishes exactly as the highlight does instead of glowing constantly
+    // like an emissive. Gated on ndl for the same reason the specular is: a
+    // rainbow on a face the light cannot reach is the tell of an effect added
+    // without one.
+    if (irid > 0.0) {
+      contribution += lightColour * iridescence(ndh) * spec * irid * atten * shadow * step(0.001, ndl);
+    }
 
     lit += contribution;
   }
@@ -532,7 +603,20 @@ void main() {
   // Otherwise the two dials fight, and turning the ambient down makes the
   // scene bluer rather than darker.
   vec3 nightTint = uNight / max(max(uNight.r, max(uNight.g, uNight.b)), 1e-4);
-  vec3 colour = albedo.rgb * (uAmbient * nightTint + lit + uEmissive);
+  // AO MULTIPLIES THE AMBIENT AND NOTHING ELSE.
+  //
+  // Ambient occlusion answers "how much of the sky can this point see", so it
+  // belongs on the term that stands in for the sky. Applying it to lit as
+  // well is the classic mistake and it double-darkens: a direct light already
+  // knows it cannot reach into a groove, because softShadow traced the ray
+  // and ndl turned the surface away. Multiplying that result by AO again
+  // makes every crevice black the moment a lantern approaches, which reads as
+  // dirt rather than as depth.
+  //
+  // bake.py has emitted this pass for every shape since M0 and nothing ever
+  // sampled it. This one line is what makes every mitre, bolt head and routed
+  // channel on the board's furniture sit DOWN in its timber.
+  vec3 colour = albedo.rgb * (uAmbient * nightTint * occl + lit + uEmissive);
   outColor = vec4(colour, albedo.a);
 }`;
 

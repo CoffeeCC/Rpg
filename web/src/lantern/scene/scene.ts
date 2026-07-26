@@ -64,6 +64,39 @@ export interface Material {
   /** 0 matte, 1 mirror. Drives the specular lobe at M2. */
   roughness?: number;
   /**
+   * WHAT THIS SURFACE IS MADE OF, PER PIXEL. One RGBA map, four properties:
+   *
+   *   R  roughness   0 mirror-bright, 1 matte. Sets the specular exponent.
+   *   G  specular    how much lobe there is at all. 0 kills it outright.
+   *   B  iridescence holo/foil amount. Drives the view-angle hue sweep.
+   *   A  occlusion   ambient occlusion. Multiplies the ambient term only.
+   *
+   * WHY ONE TEXTURE AND NOT FOUR FIELDS. Everything Paul has asked for in the
+   * last hour turns out to be the same missing capability, and none of it is
+   * expressible as a per-material scalar:
+   *
+   *   "wherever there is wood joints meeting ... to be brass fittings, so we
+   *    can play with reflective metal and the lighting"
+   *   "Needs to have some shiny aspects like the borders and the backs"
+   *   "would it be possible to add Real holographic artwork"
+   *   "maybe even just on specific parts of the art so excentuate them"
+   *
+   * Brass beside oak, gilt beside card stock, foil on SOME of a card and not
+   * the rest — each needs the shader to know what it is looking at where it is
+   * looking, not once per draw. `roughness` above is a scalar and was never
+   * read by anything; it stays as the fallback when there is no map.
+   *
+   * THE ALPHA CHANNEL PAYS FOR THE WHOLE THING ON ITS OWN. `bake.py` has been
+   * emitting an AO pass for every shape since M0 and the lit shader never
+   * sampled it — contact darkening in every groove, bolt head and mitre,
+   * generated and thrown away. Folding it in here costs no new bake and no
+   * extra fetch.
+   *
+   * Null or absent is the surface every material had before this existed: the
+   * scalar uniforms, no iridescence, no occlusion.
+   */
+  material?: WebGLTexture | null;
+  /**
    * How strongly this surface reads as SEPARATE TILES, 0..1.
    *
    * A board's floor is inlaid or printed pieces with edges between them; a

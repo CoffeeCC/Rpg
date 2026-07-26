@@ -627,6 +627,16 @@ export class Renderer {
       gl.uniform1f(prog.u('uNormalStrength'), mat?.normalStrength ?? opts.normalStrength);
       gl.uniform1f(prog.u('uInlay'), mat?.inlay ?? 0);
       gl.uniform1f(prog.u('uEmissive'), mat?.emissiveStrength ?? 0);
+      // THE MATERIAL MAP: roughness, specular, iridescence, occlusion. Bound
+      // per material beside the normal because it is the same kind of fact —
+      // "what is this surface", not "what is this frame". Unit 5, and it falls
+      // back to `flat` purely so the sampler always has something bound; the
+      // `uHasMaterial` flag is what actually decides whether it is read, and
+      // the shader collapses to its pre-map behaviour when it is 0.
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, mat?.material ?? flat);
+      gl.uniform1i(prog.u('uMaterial'), 5);
+      gl.uniform1f(prog.u('uHasMaterial'), mat?.material ? 1 : 0);
     });
   }
 
