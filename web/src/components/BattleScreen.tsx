@@ -593,6 +593,18 @@ export function BattleStage({ view }: { view: BattleView | null }) {
 
   const aiming = selectedIdx !== null && needsTarget && !locked;
 
+  /**
+   * Aiming, specifically by pad or keyboard — the case that needs telling.
+   *
+   * A mouse player aims by pointing at the thing, so the answer to "who is
+   * this hitting" is literally under their hand. A pad player has no such
+   * anchor: the cursor is parked on the card, and the only thing that moves
+   * when they press a direction is a highlight on the far side of the screen.
+   * That case gets the reticle and the prompt; the mouse case gets neither,
+   * because for them it would be furniture.
+   */
+  const aimMode = aiming && inputMode !== 'pointer' && livingEnemies.length > 0;
+
   useNavScope(stageRef, {
     id: 'battle',
     // A duel adapter can render before its view arrives; register only once
@@ -1022,6 +1034,27 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                 }}
                 onMouseLeave={() => setHoveredEnemyUid((cur) => (cur === enemy.uid ? null : cur))}
               >
+                {/* THE RETICLE. Paul, on the Deck: "when I'm choosing cards
+                    with the d-pad I can't actually select who to use that card
+                    on." The targeting DOES work — left/right cycles the aimed
+                    foe, verified end to end — but nothing said so loudly
+                    enough to notice. The cursor deliberately stays on the card
+                    (aim is a mode, not a place), so pressing a direction moved
+                    something the player could not see moving.
+
+                    The old tell was a gold drop-shadow, and I made it worse
+                    earlier today: lightresponse.css now gives EVERY fighter a
+                    warm rim, so "glowing warmly" stopped distinguishing
+                    anything. Brackets instead — hard geometry, no glow, and
+                    nothing else on this screen is shaped like them. */}
+                {isTarget && aimMode && (
+                  <span className="aim-reticle" aria-hidden="true">
+                    <i className="aim-c tl" />
+                    <i className="aim-c tr" />
+                    <i className="aim-c bl" />
+                    <i className="aim-c br" />
+                  </span>
+                )}
                 {enemy.isAlive() && (
                   <div className="intent" title={iv.title}>
                     <span className="intent-icon">{iv.icon}</span>
@@ -1228,9 +1261,24 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         </div>
       </div>
 
-      {/* Always rendered with fixed height so entering aim mode never reflows the stage. */}
-      <p className={`target-hint ${needsTarget && !locked ? 'on' : ''}`} aria-hidden={!(needsTarget && !locked)}>
-        Choose a target — click a foe, or ◀ ▶ / D-pad, then Enter or Ⓐ
+      {/* Always rendered with fixed height so entering aim mode never reflows the stage.
+
+          Paul: "when I'm choosing cards with the d-pad I can't actually select
+          who to use that card on." This line already said how — and it was
+          sitting UNDER the hand fan, which overlaps it at every viewport wide
+          enough to fan the cards out. An instruction the player cannot read is
+          not an instruction. It lifts above the hand now (see battle.css §aim)
+          and names the foe it is talking about, so "who am I hitting" has an
+          answer in words as well as in a highlight. */}
+      <p className={`target-hint ${needsTarget && !locked ? 'on' : ''} ${aimMode ? 'aiming' : ''}`} aria-hidden={!(needsTarget && !locked)}>
+        {aimMode ? (
+          <>
+            Target: <b>{livingEnemies[targetIdx]?.displayName() ?? '—'}</b> — <span className="th-keys">◀ ▶</span> choose ·{' '}
+            <span className="th-keys">Ⓐ</span> throw · <span className="th-keys">Ⓑ</span> cancel
+          </>
+        ) : (
+          <>Choose a target — click a foe, or ◀ ▶ / D-pad, then Enter or Ⓐ</>
+        )}
       </p>
 
       {pileView && (

@@ -2904,3 +2904,107 @@
     --bf-reserve: 30px;
   }
 }
+
+/* =========================================================================
+   AIMING, SAID OUT LOUD — §aim
+
+   Paul, playing on the Deck: "when I'm choosing cards with the d-pad I can't
+   actually select who to use that card on."
+
+   Measured first: it works. Selecting a card puts the screen in aim mode and
+   left/right cycles the aimed foe (verified end to end — the target moved from
+   Cinder Scorpion to Ragefed Bubblim on one press, card still held). What was
+   missing was any way to KNOW that, and there were two reasons.
+
+   One: aim is a mode, not a place. The cursor deliberately stays on the card
+   rather than hopping up onto a monster, so pressing a direction moves a
+   highlight on the far side of the screen and nothing where the player is
+   looking. Correct design, no feedback.
+
+   Two, and this one is mine: the highlight was a gold drop-shadow, and
+   lightresponse.css §2b now gives EVERY fighter a warm rim. "Glowing warmly"
+   stopped being a distinction the moment the lighting started doing it to
+   everybody. Today's fix for one thing quietly broke the read of another.
+
+   Hence brackets rather than glow — hard geometry, no blur, and nothing else
+   on this screen is shaped like them, so they cannot be confused with light.
+   ========================================================================= */
+
+.aim-reticle {
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  z-index: 8;
+  animation: aimPop 140ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+
+/* Corner brackets. Drawn with borders on a transparent box so they stay
+   crisp at any scale and cost nothing to animate. */
+.aim-reticle .aim-c {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--gold-bright, #e0c878);
+}
+.aim-reticle .tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+.aim-reticle .tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+.aim-reticle .bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+.aim-reticle .br { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+/* It SNAPS onto the new target. The pop is the whole point: the eye is on the
+   card, and a change that arrives instantly at the edge of vision is far
+   easier to catch than one that fades in. */
+@keyframes aimPop {
+  from { opacity: 0; transform: scale(1.22); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* THE HINT THAT WAS ALREADY THERE, MADE READABLE.
+
+   `.target-hint` has said "Choose a target — click a foe, or the D-pad, then
+   Enter or A" since v11. It sits between the battlefield and the hand, and the
+   hand fan overlaps it at any width wide enough to spread the cards — so the
+   instruction was underneath the cards, which is the same as not existing.
+   That, not a missing feature, is most of what Paul ran into.
+
+   Lifted above the fan and given a backing so it reads against whatever card
+   art is behind it. Only while actually aiming: the rest of the time it is a
+   dim italic line that should stay out of the way. */
+/* 0,3,0, and that is load-bearing. v5.css carries
+   `.battle-stage > *:not(.stage-backdrop) { position: relative; z-index: 1 }`
+   at specificity 0,2,0 and it loads AFTER this file — so a plain
+   `.target-hint.aiming` (also 0,2,0) TIES and loses on order, which is exactly
+   why the first attempt at this still painted underneath the cards. The same
+   trap §ec2 at the top of this file was written to repair; same escape. */
+.panel.battle-stage > .target-hint.aiming {
+  position: relative;
+  z-index: 30;
+  color: #e8dfc8;
+  font-style: normal;
+  font-size: 0.82rem;
+  letter-spacing: 0.03em;
+  width: fit-content;
+  margin: 2px auto;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(10, 8, 14, 0.92);
+  border: 1px solid rgba(224, 200, 120, 0.45);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+}
+
+.panel.battle-stage > .target-hint.aiming b {
+  color: var(--gold-bright, #e0c878);
+  font-weight: 600;
+}
+
+.target-hint .th-keys {
+  color: #d8cfb8;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The reticle STAYS — it is information, not decoration. Only the snap goes. */
+  .aim-reticle {
+    animation: none;
+  }
+}
