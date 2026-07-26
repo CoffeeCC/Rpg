@@ -7,15 +7,17 @@
   =============
   The M1 render chain, end to end, on a synthetic scene:
 
-      HDR scene (RGBA16F)  ->  bloom mip chain  ->  AgX  ->  display
+      HDR scene (RGBA16F)  ->  sprite batch  ->  bloom mip chain
+        ->  AgX  ->  3D LUT  ->  display
 
   Everything here imports the REAL modules under src/lantern — the same
-  tonemap constants, the same bloom shaders, the same targets the game will
-  use. It is not a mock; if this looks right, that code is right.
+  tonemap constants, the same bloom shaders, the same sprite batcher and LUT
+  slot the game will use. It is not a mock; if this looks right, that code
+  is right.
 
   It exists to make the decisions in docs/ENGINE_PLAN.md §9.6 LOOKABLE rather
-  than merely documented. Every one of them has a toggle, and every toggle
-  shows the artifact it was chosen to avoid:
+  than merely documented, and now (§2's sprite batcher, §9.6's LUT slot, §9.2's
+  debug HUD) to make the rest of the M1 chain lookable too:
 
     Tonemap: AgX / ACES / none   watch the flame's hue as Exposure rises.
                                  ACES walks warm orange to yellow and then to
@@ -25,6 +27,17 @@
     Knee: soft / hard            hard, a visible ring appears where the
                                  threshold cuts, and it crawls as you drag
                                  Exposure.
+    Sprites                     a small board of two textures (tile, hero),
+                                 interleaved in depth on purpose — this is
+                                 the case `scene/sprite.ts` batches as three
+                                 runs, not two, because two would draw the
+                                 wrong sprite on top.
+    Grade                       one 3D LUT, `uLutMix` fades it in — proves
+                                 the slot ENGINE_PLAN §9.6 asks for without
+                                 shipping an actual grade yet.
+    HUD                         CPU p50/p99 (debug/hud.ts's FrameTimer),
+                                 draw calls, and GPU ms when
+                                 EXT_disjoint_timer_query_webgl2 exists.
 
   Dev-server only: it imports .ts directly, which Vite compiles on the fly.
 -->
@@ -93,6 +106,22 @@
   <p class="note">Turn Karis off with sparks up: the specks bloom into hard dots
     instead of dissolving into haze.</p>
 
+  <h2>Board (sprite batcher)</h2>
+  <div class="seg" id="sprites">
+    <button data-v="1" aria-pressed="true">On</button>
+    <button data-v="0">off</button>
+  </div>
+  <p class="note">A tile/hero/tile/hero board, painter-sorted then batched.
+    `scene/sprite.ts` refuses to merge across a depth boundary, so this draws
+    as several batches rather than two — see the draw-call count below.</p>
+
+  <h2>Grade (3D LUT)</h2>
+  <label><span class="row">uLutMix<b id="vLut">0.00</b></span>
+    <input type="range" id="lut" min="0" max="1" step="0.01" value="0" /></label>
+  <p class="note">The slot ENGINE_PLAN §9.6 asks for, landed before there is a
+    real grade to load. At 0 it is a spare texture fetch; drag it up to see
+    the baked demo grade (a cool/lift split-tone) fade in, post-tonemap.</p>
+
   <h2>Tier</h2>
   <div class="seg" id="tier">
     <button data-v="floor">Floor</button>
@@ -118,6 +147,11 @@ try {
   const { AGX_GLSL } = await import('/src/lantern/passes/tonemap.ts');
   const { BLOOM_DOWNSAMPLE_GLSL, BLOOM_UPSAMPLE_GLSL, mipChain } = await import('/src/lantern/passes/bloom.ts');
   const { TIERS } = await import('/src/lantern/quality.ts');
+  const { makeCamera } = await import('/src/lantern/scene/camera.ts');
+  const { sortForPainting, batchGroups, buildVertexData } = await import('/src/lantern/scene/sprite.ts');
+  const { SpriteBatcher, SPRITE_VERT, SPRITE_FRAG } = await import('/src/lantern/gl/spriteBatcher.ts');
+  const { LUT_SIZE, identityLutData, createLutTexture3D, lutGlsl } = await import('/src/lantern/gl/lut.ts');
+  const { FrameTimer, GpuTimer, formatHud } = await import('/src/lantern/debug/hud.ts');
 
   const canvas = $('gl');
   const { device, status, reason } = createDevice(canvas);
@@ -199,6 +233,7 @@ uniform sampler2D uScene, uBloom;
 uniform float uBloomAmount, uExposure;
 uniform int uTonemap;
 ${AGX_GLSL}
+${lutGlsl(LUT_SIZE)}
 vec3 aces(vec3 x){
   const float a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
@@ -212,12 +247,119 @@ void main() {
   // display-referred, which is why only these two get the pow().
   else if (uTonemap == 1) mapped = pow(aces(col), vec3(1.0/2.2));
   else mapped = pow(clamp(col, 0.0, 1.0), vec3(1.0/2.2));
-  outColor = vec4(mapped, 1.0);
+  // LUT slot: post-tonemap, per ENGINE_PLAN §9.6 (a LUT on HDR values is
+  // undefined). At uLutMix=0 this is a spare fetch that changes nothing.
+  outColor = vec4(applyLut(mapped), 1.0);
 }`;
 
   // ---------------------------------------------------------------------
+  // SPRITE ATLAS — two tiny procedural textures, generated once. There is no
+  // real art wired up yet (the M1 brief is plumbing, not assets), so this
+  // proves the batcher with shapes: a tile square and a diamond "hero".
+  // ---------------------------------------------------------------------
+  function makeTexture(draw, size = 64) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    draw(ctx, size);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return tex;
+  }
+
+  const tileTex = makeTexture((ctx, s) => {
+    ctx.fillStyle = '#241c14';
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = '#5a4630';
+    ctx.lineWidth = s * 0.06;
+    ctx.strokeRect(s * 0.08, s * 0.08, s * 0.84, s * 0.84);
+  });
+  const heroTex = makeTexture((ctx, s) => {
+    ctx.clearRect(0, 0, s, s);
+    ctx.fillStyle = '#e0a458';
+    ctx.beginPath();
+    ctx.moveTo(s / 2, s * 0.06);
+    ctx.lineTo(s * 0.94, s / 2);
+    ctx.lineTo(s / 2, s * 0.94);
+    ctx.lineTo(s * 0.06, s / 2);
+    ctx.closePath();
+    ctx.fill();
+  });
+  const textures = new Map([
+    ['tile', tileTex],
+    ['hero', heroTex],
+  ]);
+
+  // A small board: a row of tiles with heroes interleaved on purpose, so
+  // painter order forces MORE than two batches — the point of this demo.
+  function buildSprites() {
+    const sprites = [];
+    for (let x = 0; x < 8; x++) {
+      for (let y = 0; y < 4; y++) {
+        sprites.push({
+          position: { x, y, z: 0 },
+          size: { x: 0.92, y: 0.92 },
+          pivot: { x: 0.5, y: 1 },
+          uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+          textureId: 'tile',
+        });
+      }
+    }
+    // Heroes standing mid-board, at depths that land BETWEEN tile rows —
+    // this is what forces the interleaved batch sequence.
+    for (const [x, y] of [
+      [2, 1],
+      [5, 2],
+      [3, 3],
+    ]) {
+      sprites.push({
+        position: { x: x + 0.5, y: y + 0.5, z: 0.3 },
+        size: { x: 0.6, y: 0.9 },
+        pivot: { x: 0.5, y: 1 },
+        uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+        textureId: 'hero',
+      });
+    }
+    return sprites;
+  }
+  const spriteBatcher = new SpriteBatcher(gl);
+  const board = buildSprites();
+
+  // ---------------------------------------------------------------------
+  // GRADE — a demo LUT, so the slider has something to show. NOT the shipped
+  // grade (there isn't one yet); a small cool-shadow/warm-highlight split
+  // tone, built by remapping the identity LUT's own data.
+  // ---------------------------------------------------------------------
+  function buildDemoGradeData(size) {
+    const data = identityLutData(size);
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      // Lift shadows toward cool, push highlights toward warm — a cheap,
+      // visible split-tone that is obviously NOT identity when uLutMix > 0.
+      const rg = r + (1 - l) * -0.03 + l * 0.05;
+      const gg = g + (1 - l) * 0.0 + l * 0.02;
+      const bg = b + (1 - l) * 0.06 - l * 0.04;
+      data[i] = Math.max(0, Math.min(255, Math.round(rg * 255)));
+      data[i + 1] = Math.max(0, Math.min(255, Math.round(gg * 255)));
+      data[i + 2] = Math.max(0, Math.min(255, Math.round(bg * 255)));
+    }
+    return data;
+  }
+  const lutTexture = createLutTexture3D(gl, buildDemoGradeData(LUT_SIZE), LUT_SIZE);
+
+  // ---------------------------------------------------------------------
   let sceneRT = null, mips = [], W = 0, H = 0;
-  const state = { tonemap: 0, karis: 1, knee: 1, tier: 'mid', exposure: 0, flame: 6, bloom: 0.55, thr: 1, sparks: 40 };
+  const state = {
+    tonemap: 0, karis: 1, knee: 1, tier: 'mid', exposure: 0, flame: 6, bloom: 0.55, thr: 1, sparks: 40,
+    sprites: 1, lutMix: 0,
+  };
 
   function allocate() {
     const q = TIERS[state.tier];
@@ -231,6 +373,8 @@ void main() {
 
   const t0 = performance.now();
   let lastMs = 0;
+  const frameTimer = new FrameTimer(120);
+  const gpuTimer = new GpuTimer(gl);
 
   function frame() {
     // The control wiring below calls sync() to seed its labels, and sync()
@@ -238,6 +382,7 @@ void main() {
     if (!sceneRT) return;
     const start = performance.now();
     const t = (start - t0) / 1000;
+    gpuTimer.begin();
 
     // 1. Scene -> HDR
     const scene = cache.get('scene', SCENE);
@@ -248,6 +393,26 @@ void main() {
     gl.uniform1f(scene.u('uFlame'), state.flame);
     gl.uniform1f(scene.u('uSparks'), state.sparks);
     drawFullscreen(gl);
+
+    // 1b. The board — sprites drawn on top of the background, in the same
+    // HDR target, so they feed bloom and tonemap exactly like the game will.
+    let spriteDrawCalls = 0;
+    if (state.sprites) {
+      const camW = Math.min(W, H * 1.6);
+      const cam = makeCamera({ centre: { x: 3.5, y: 2 }, zoom: camW / 10, viewport: { x: W, y: H }, tilt: 0.95 });
+      const sorted = sortForPainting(board);
+      const batches = batchGroups(sorted);
+      const verts = buildVertexData(sorted, cam);
+      spriteBatcher.upload(verts);
+      const spriteProg = cache.get('sprite', SPRITE_FRAG, SPRITE_VERT);
+      gl.useProgram(spriteProg.handle);
+      gl.uniform2f(spriteProg.u('uViewport'), W, H);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      spriteDrawCalls = spriteBatcher.draw(spriteProg, batches, textures);
+      gl.disable(gl.BLEND);
+      window.forgeLastBatchCount = batches.length;
+    }
 
     // 2. Bloom down. Karis and the knee apply on the FIRST step only.
     let src = sceneRT;
@@ -278,7 +443,7 @@ void main() {
     }
     gl.disable(gl.BLEND);
 
-    // 4. Composite + tonemap to the canvas.
+    // 4. Composite + tonemap + LUT to the canvas.
     const comp = cache.get('composite', COMPOSITE);
     gl.useProgram(comp.handle);
     bindTarget(gl, null, W, H);
@@ -286,17 +451,33 @@ void main() {
     gl.uniform1f(comp.u('uBloomAmount'), mips.length ? state.bloom : 0);
     gl.uniform1f(comp.u('uExposure'), Math.pow(2, state.exposure));
     gl.uniform1i(comp.u('uTonemap'), state.tonemap);
+    gl.activeTexture(gl.TEXTURE0 + 2);
+    gl.bindTexture(gl.TEXTURE_3D, lutTexture);
+    gl.uniform1i(comp.u('uLut'), 2);
+    gl.uniform1f(comp.u('uLutMix'), state.lutMix);
     drawFullscreen(gl);
 
+    gpuTimer.end();
+    gpuTimer.poll();
     lastMs = performance.now() - start;
+    frameTimer.push(lastMs);
+
     const q = TIERS[state.tier];
+    const hud = formatHud({
+      tier: q.name,
+      frameMs: lastMs,
+      p50: frameTimer.p50,
+      p99: frameTimer.p99,
+      drawCalls: spriteDrawCalls + mips.length * 2 + 2,
+      lightCount: 1,
+      gpuMs: gpuTimer.available ? gpuTimer.ms : null,
+    });
     $('stats').textContent =
       `${W}x${H}  RGBA16F\n` +
-      `tier      ${q.name}\n` +
-      `bloom     ${mips.length} mips\n` +
-      `cpu       ${lastMs.toFixed(2)} ms\n` +
-      `programs  ${cache.size}\n` +
-      `gpu       ${(device.caps.renderer ?? '?').slice(0, 30)}`;
+      `${hud}\n` +
+      `batches    ${window.forgeLastBatchCount ?? 0}\n` +
+      `programs   ${cache.size}\n` +
+      `gpu        ${(device.caps.renderer ?? '?').slice(0, 30)}`;
   }
 
   // Render synchronously on any change, AND on rAF when the pane is visible.
@@ -316,10 +497,11 @@ void main() {
       };
     }
   }
-  seg('tm', 'tonemap'); seg('karis', 'karis'); seg('knee', 'knee'); seg('tier', 'tier', String);
+  seg('tm', 'tonemap'); seg('karis', 'karis'); seg('knee', 'knee'); seg('tier', 'tier', String); seg('sprites', 'sprites');
 
   for (const [id, key, out, dp] of [['exp','exposure','vExp',1],['int','flame','vInt',1],
-                                    ['bloom','bloom','vBloom',2],['thr','thr','vThr',2],['spk','sparks','vSpk',0]]) {
+                                    ['bloom','bloom','vBloom',2],['thr','thr','vThr',2],['spk','sparks','vSpk',0],
+                                    ['lut','lutMix','vLut',2]]) {
     const el = $(id);
     const sync = () => { state[key] = parseFloat(el.value); $(out).textContent = state[key].toFixed(dp); frame(); };
     el.addEventListener('input', sync);
