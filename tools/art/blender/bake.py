@@ -132,6 +132,56 @@
 #    and is worse: it lets a groove narrower than twice the bevel width
 #    chamfer itself into a V.
 #
+# 7. THERE IS NO SUCH THING AS AN INVISIBLE OCCLUDER. The tempting trick for a
+#    wall-mounted fitting is to park an unrendered wall behind it purely so the
+#    AO pass has something to darken against — `build_face` already does the
+#    same thing with a floor slab, and a bracket wants a wall the way a face
+#    wants a floor. It does not work. Cycles traces the AO node's rays with the
+#    ray type of the path that reached the shading point, so on a surface the
+#    camera can see directly they ARE camera rays, and `visible_camera = False`
+#    takes the occluder out of them too.
+#
+#    Measured: plan view of a box floating over a floor slab, AO over the box.
+#
+#        no floor at all                     mean 254.8   min 250
+#        floor, visible                      mean 228.9   min 131
+#        floor, visible_camera = False       mean 254.8   min 250   <- identical
+#
+#    So occlusion comes from geometry that is either IN the picture and belongs
+#    there — which is why `sconce_bracket` carries its own backplate instead of
+#    borrowing a wall — or parked OUTSIDE the frame, which is what `build_face`
+#    can do and an upright fitting cannot, because a wall behind a bracket is
+#    squarely in shot.
+#
+# 8. `lipped()` DIES IN PROPORTION TO HOW MANY CUTS SHARE THE FACE, and it dies
+#    quietly. Gotcha 6 says a bevel after a boolean loses the SILHOUETTE's
+#    chamfer; this is the other half, found on the console. The lip that is
+#    supposed to chamfer the cut edges themselves gets clamped away too, and
+#    the more booleans slice one face the less of it is left:
+#
+#      shape           booleans on the face   peak |dev| in the normal map
+#      button_recess           1              104   <- the lip is fine
+#      button_plate            4                5   <- the border is gone
+#      tray                    6                1   <- EVERY feature is gone
+#
+#    The tray's whole normal map came back flat: maxDev 1 out of 128 across the
+#    entire texture, while its AO showed the pocket, the routed border and the
+#    thumb notch perfectly. Exactly gotcha 6's failure mode, one level down.
+#
+#    THE MEAN-BASED CHECKS CANNOT SEE THIS. A symmetric feature averages to
+#    127.5 whether it is present or absent, so `sheet.mjs` reported the tray as
+#    a clean, perfectly neutral shape. What catches it is counting pixels that
+#    deviate from flat rather than averaging them, and then scanning a line
+#    across where a feature is supposed to be.
+#
+#    THE FIX IS TO CUT THE CHAMFER RATHER THAN TO BEVEL IT. A modifier can be
+#    clamped; geometry cannot. `route_ring` therefore cuts a 45-degree V, and a
+#    pocket gets its mouth chamfer from a V-ring centred on the pocket's own
+#    perimeter. Bevelling the CUTTER instead does not work and is worth saying
+#    out loud: a pocket cutter has to stand proud of the surface so the cut
+#    goes through it, so the cutter's own chamfered top edge ends up in the air
+#    above the part, nowhere near the mouth it was meant to soften.
+#
 # =========================================================================
 # THE BOARD'S AXES, IN BLENDER
 # =========================================================================
@@ -154,6 +204,7 @@ import os
 import sys
 
 import bpy  # type: ignore  # provided by Blender's bundled interpreter
+import mathutils  # type: ignore  # ditto
 
 # The camera angle the game actually uses. Keep in sync with
 # `web/src/lantern/scene/camera.ts` DEFAULT_TILT (55 degrees from straight
@@ -187,6 +238,15 @@ STONE = (0.50, 0.47, 0.46)
 STONE_COOL = (0.44, 0.44, 0.47)
 PEWTER = (0.42, 0.34, 0.30)
 IRON = (0.24, 0.23, 0.24)
+# §19 asks for the console to be "the same brass and timber" as the board, so
+# brass is a palette entry rather than a per-shape colour: it is the material of
+# every plate and bezel on the console AND of a sconce's cup, which is what ties
+# the two families together.
+BRASS = (0.52, 0.39, 0.16)
+# Burnt fuel — a brazier's coal bed, a torch's pitched head. Dark enough that
+# the engine's emissive flame reads as the light source and this reads as the
+# thing it is burning.
+CHARCOAL = (0.09, 0.075, 0.07)
 
 
 def clear_scene():
@@ -543,9 +603,143 @@ def box(sx, sy, sz, loc=(0.0, 0.0, 0.0), rot=(0.0, 0.0, 0.0)):
     return obj
 
 
-def cylinder(radius, depth, loc, verts=64):
-    bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, vertices=verts, location=loc)
+def cylinder(radius, depth, loc, verts=64, rot=(0.0, 0.0, 0.0)):
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius=radius, depth=depth, vertices=verts, location=loc, rotation=rot
+    )
     return bpy.context.object
+
+
+def frustum(bottom, top, depth, loc, verts=64, rot=(0.0, 0.0, 0.0)):
+    """
+    A round cone section — the bowl of a brazier, the cup of a sconce.
+
+    The same argument as `build_trap_hole`'s shaft, applied to a container
+    rather than a hole: a straight-walled cup is exactly edge-on in a plan view
+    and comes out as a rim around nothing. A cup that OPENS UPWARD shows the
+    inside of its far wall, which is what makes it read as something you could
+    drop a flame into.
+    """
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=verts, radius1=bottom, radius2=top, depth=depth, location=loc, rotation=rot
+    )
+    return bpy.context.object
+
+
+def ring(major, minor, loc, rot=(0.0, 0.0, 0.0), major_segments=64, minor_segments=16):
+    """
+    Round bar bent into a circle: a cup's rim, a torch collar, a brazier's tie.
+
+    SMOOTH-SHADED, unlike everything else here, and that is not an
+    inconsistency. The rest of the family is flat stock whose facets ARE the
+    chamfers; a torus has no sharp edge anywhere, so flat shading would put
+    16 invented creases into a normal map on a part 0.02 tiles thick — the
+    exact "plausible and lights wrongly" failure the header keeps warning
+    about, at a scale small enough to skim past.
+    """
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=major,
+        minor_radius=minor,
+        major_segments=major_segments,
+        minor_segments=minor_segments,
+        location=loc,
+        rotation=rot,
+    )
+    obj = bpy.context.object
+    bpy.ops.object.shade_smooth()
+    return obj
+
+
+def aim(p0, p1):
+    """
+    Centre, length and euler for a part running from `p0` to `p1`.
+
+    Hand-computing the rotation for every strut is how a bracket ends up with
+    an arm that misses its own cup by a hundredth of a tile — and the error is
+    invisible in the albedo and obvious in the AO. `to_track_quat` derives it
+    from the two endpoints, so moving a cup moves the arm that holds it.
+
+    THE UP AXIS IS CHOSEN, NOT FIXED. `to_track_quat("Z", "Y")` is degenerate
+    when the run is along Y, and almost every part on a wall bracket runs
+    straight out of the wall along -Y. Degenerate does not raise; it returns an
+    arbitrary roll, so a strut with a rectangular section comes out rotated
+    about its own axis by whatever the maths happened to produce — a 0.048 x
+    0.026 strap silently baked 0.026 x 0.048. Picking whichever of X and Y the
+    run is LEAST aligned with makes the roll deterministic.
+    """
+    a = mathutils.Vector(p0)
+    b = mathutils.Vector(p1)
+    d = b - a
+    mid = (a + b) / 2.0
+    n = d.normalized()
+    up = "X" if abs(n.x) < abs(n.y) else "Y"
+    e = d.to_track_quat("Z", up).to_euler()
+    return (mid.x, mid.y, mid.z), d.length, (e.x, e.y, e.z)
+
+
+def lerp(p0, p1, t):
+    return tuple(a + (b - a) * t for a, b in zip(p0, p1))
+
+
+def strut(p0, p1, sx, sy=None):
+    """Square-section bar from p0 to p1. Local Z is the run, so `sx`/`sy` are its section."""
+    mid, length, rot = aim(p0, p1)
+    return box(sx, sx if sy is None else sy, length, mid, rot)
+
+
+def rod(p0, p1, radius, verts=32):
+    """Round-section bar from p0 to p1 — a torch shaft, a candle stem."""
+    mid, length, rot = aim(p0, p1)
+    return cylinder(radius, length, mid, verts=verts, rot=rot)
+
+
+def route_ring(target, rw, rd, gw, centre, plane="xy", name="Ring"):
+    """
+    A routed groove running round a rectangle, cut as a V. See gotcha 8.
+
+    Four strips that STOP at the corners, unlike `build_frame`'s bead. The bead
+    is four strips that run right past each other and out to the slab edge,
+    which on a frame reads as a mitred border and is what that shape wants. On
+    a button plate the same construction reads as a hash with eight stubs
+    running to the edge. So these are cut to length: each strip is the ring's
+    own side plus one groove width, which closes the corners exactly.
+
+    A V, NOT A RECTANGULAR SLOT, and that is the part worth reading. A slot's
+    walls are VERTICAL, and a vertical wall in a plan view is exactly edge-on —
+    zero pixels — so a slotted groove exists in the normal map only through
+    whatever chamfer `lipped()` manages to survive putting on its mouth, which
+    once several cuts share a face is nothing at all. A 45-degree V has two
+    sloped walls by construction, involves no modifier, and therefore cannot be
+    clamped away.
+
+    The cutter is a square section rotated 45 degrees about its own run, so the
+    groove comes out `gw` wide at the surface and `gw / 2` deep. `rw` x `rd` is
+    the groove's CENTRELINE rectangle; `centre` sits ON the surface being cut.
+    """
+    cx, cy, cz = centre
+    s = gw / math.sqrt(2.0)
+    q = math.radians(45.0)
+    sides = (
+        (True, 0.0, rd / 2.0),
+        (True, 0.0, -rd / 2.0),
+        (False, rw / 2.0, 0.0),
+        (False, -rw / 2.0, 0.0),
+    )
+    for i, (across, u, v) in enumerate(sides):
+        if plane == "xy":  # a groove in a face the camera looks DOWN at
+            cutter = (
+                box(rw + gw, s, s, (cx + u, cy + v, cz), (q, 0.0, 0.0))
+                if across
+                else box(s, rd + gw, s, (cx + u, cy + v, cz), (0.0, q, 0.0))
+            )
+        else:  # "xz" — a groove in a face that looks back at the player
+            cutter = (
+                box(rw + gw, s, s, (cx + u, cy, cz + v), (q, 0.0, 0.0))
+                if across
+                else box(s, s, rd + gw, (cx + u, cy, cz + v), (0.0, 0.0, q))
+            )
+        cut(target, cutter, f"{name}{i}")
+    return target
 
 
 def square_frustum(top, bottom, depth, loc):
@@ -814,6 +1008,450 @@ def build_trap_hole(mouth=0.86, throat=0.58, depth=0.55, chamfer=0.02):
     return [floor]
 
 
+# -------------------------------------------------------------------------
+# WHAT THE FLAME IS MOUNTED IN (§18.1)
+# -------------------------------------------------------------------------
+#
+# §18.1, after looking at a real frame: *"Sconce flames float. They are drawn
+# as bare flames hovering in a row above the wall tops, with no bracket, no
+# cup, no wall plate. They read as disconnected candles rather than as lights
+# MOUNTED on something."*
+#
+# The flame stays procedural — it flickers, it is a light, `scene/emitters.ts`
+# owns it. What was missing is the fitting, and a fitting is hard-surface,
+# machine-made and identical on every wall in the dungeon, which is §7's case
+# for Blender stated exactly.
+#
+# THE ANCHOR IS THE CONTRACT. A bracket is useless to the engine unless it
+# knows where the flame goes, and "somewhere near the top" is how you get a
+# flame growing out of an arm. Every wall fitting here puts its MOUTH — the cup
+# rim, the top of the torch shaft — at exactly 0.90 of the frame height above
+# the frame's base, so:
+#
+#     flameBase = bracketQuadBottom + 0.90 * bracketQuadHeight
+#
+# and the remaining 0.10 is the headroom that keeps the rim's own chamfer and
+# its antialiasing inside the texture.
+#
+# These are UPRIGHT shapes: they are drawn on a vertical face, so they bake in
+# ELEVATION and swizzle through `NORMAL_SWIZZLE[VIEW_UPRIGHT]`. Getting that
+# wrong on a fitting is the worst case for it — a bracket is nothing but
+# angled facets catching a light that is right next to it.
+#
+# AND ELEVATION MEANS HOW FAR A FITTING STANDS OFF THE WALL IS INVISIBLE. The
+# camera looks straight at the face, so an arm reaching toward the viewer is
+# foreshortened to nothing and a shaft leaning out reads as vertical. This was
+# worth finding by looking: the first version of both brackets was designed
+# around depth — a load-bearing arm plus a brace making a visible triangle, a
+# torch leaning away from the stone it would scorch — and NONE of that survives
+# into the texture. What survives is the arm's end-on section, which reads as a
+# rib down the plate, and the AO contact it casts.
+#
+# So a fitting is distinguished by SILHOUETTE and MATERIAL, never by standoff:
+# a flaring brass cup against two iron collars and a burnt shaft. Depth is
+# still worth modelling — it is what the AO darkens against — but it must not
+# be what tells two fittings apart.
+#
+# The wall behind them is NOT modelled, and gotcha 7 is why: an occluder the
+# camera cannot see does not occlude the AO node either, and a wall the camera
+# CAN see fills the frame. So the backplate does that job. It has to be there
+# anyway — a plate bolted flat to the stone is the single detail that says
+# "fixed to the wall" rather than "floating in front of it".
+
+MOUTH = 0.90
+
+
+def build_sconce_bracket(h=0.40, chamfer=0.007):
+    """
+    An iron wall bracket with a brass cup — the standard sconce fitting.
+
+    THE CUP IS WHAT DOES THE WORK. In elevation the arm and the brace are both
+    pointing at the camera and collapse into a single rib down the middle of
+    the plate, so what the player actually sees is: a bolted plate, a rib, and
+    a cup that FLARES. The flare is the whole silhouette — a straight tube
+    would read as a pipe stub — and it is why the cup is a frustum rather than
+    a cylinder.
+
+    The two struts are still modelled, and still earn their place, but in the
+    AO rather than in the outline: they are what darkens the plate beneath the
+    cup, which is the shading that says the cup is held off the wall rather
+    than printed on it.
+
+    Brass cup on an iron bracket, one shape, two materials — the same trick
+    `build_trap_tile` uses for its iron lid in a stone floor, and the reason
+    the cup is the part your eye lands on.
+    """
+    mouth = h * MOUTH
+    plate_w, plate_t = 0.16, 0.032
+    out = -0.125  # how far the cup stands off the wall
+
+    plate = box(plate_w, plate_t, 0.26, (0.0, -plate_t / 2.0, 0.15))
+    bevelled(plate, chamfer)
+
+    arm = strut((0.0, -plate_t, 0.245), (0.0, out, 0.290), 0.036)
+    brace = strut((0.0, -plate_t, 0.075), (0.0, out * 0.94, 0.248), 0.024)
+    bevelled(arm, chamfer * 0.8)
+    bevelled(brace, chamfer * 0.8)
+
+    stem = cylinder(0.020, 0.055, (0.0, out, 0.268), verts=32)
+    cup = frustum(0.042, 0.070, 0.075, (0.0, out, mouth - 0.0375), verts=48)
+    bevelled(cup, chamfer * 0.8)
+    rim = ring(0.070, 0.009, (0.0, out, mouth - 0.007))
+    for obj in (stem, cup, rim):
+        obj["albedo"] = BRASS
+
+    objs = [plate, arm, brace, stem, cup, rim]
+    # Four bolts through the plate. Their axis runs along Y — a rivet baked as
+    # a Z-axis cylinder on an UPRIGHT part is a disc seen edge-on, which is a
+    # line, which is nothing.
+    for sx in (-1, 1):
+        for z in (0.235, 0.062):
+            bolt = cylinder(0.013, 0.012, (sx * 0.046, -plate_t - 0.004, z),
+                            verts=16, rot=(math.radians(90.0), 0.0, 0.0))
+            bevelled(bolt, 0.004)
+            objs.append(bolt)
+    return objs
+
+
+def build_torch_bracket(h=0.50, chamfer=0.008):
+    """
+    The heavy variant: two collars holding a torch shaft that leans out.
+
+    A RING rather than a cup, because a torch is a stick and a stick is held
+    round its middle. Two of them, spaced apart, because one ring is a hinge —
+    a shaft through a single collar has nothing setting its angle and reads as
+    resting there by luck.
+
+    WHAT SEPARATES IT FROM `sconce_bracket` AT A GLANCE is the silhouette and
+    the materials, not the pose: two hard iron rings and a pale wooden shaft
+    ending in a black burnt head, against a smooth brass flare. The shaft does
+    lean out and up, which is right — it keeps the flame off the stone — but
+    the lean is along the view axis and the texture cannot show it, so it is
+    not doing any of the telling-apart. See the section note above.
+
+    The burnt head is not decoration either: without it the shaft stops at a
+    flat disc and reads as a cut dowel rather than as something that has been
+    lit.
+    """
+    top = h * MOUTH
+    plate_w, plate_t = 0.19, 0.038
+    foot = (0.0, -0.078, 0.055)
+    head = (0.0, -0.185, top)
+
+    plate = box(plate_w, plate_t, 0.30, (0.0, -plate_t / 2.0, 0.175))
+    bevelled(plate, chamfer)
+
+    shaft = rod(foot, lerp(foot, head, 0.90), 0.027)
+    shaft["albedo"] = WOOD_FRAME
+    # The pitched head, fatter and burnt. It is what the flame sits on, and
+    # without it the shaft ends in a flat disc that reads as a cut dowel.
+    burnt = rod(lerp(foot, head, 0.84), head, 0.040)
+    burnt["albedo"] = CHARCOAL
+
+    objs = [plate, shaft, burnt]
+    # The two collars, each at the point on the shaft it actually grips, and
+    # each turned to the shaft's own axis — `aim` derives both from the same
+    # two endpoints, so a change to the lean cannot leave a collar behind.
+    for t, major, minor, strap_z, strap_w in ((0.62, 0.046, 0.014, 0.288, 0.048),
+                                              (0.12, 0.038, 0.012, 0.088, 0.048)):
+        at = lerp(foot, head, t)
+        _, _, rot = aim(foot, head)
+        objs.append(ring(major, minor, at, rot=rot, major_segments=48))
+        strap = strut((0.0, -plate_t, strap_z), (at[0], at[1] + 0.012, at[2]), strap_w, 0.026)
+        bevelled(strap, chamfer * 0.7)
+        objs.append(strap)
+
+    for sx in (-1, 1):
+        for z in (0.272, 0.072):
+            bolt = cylinder(0.014, 0.013, (sx * 0.056, -plate_t - 0.004, z),
+                            verts=16, rot=(math.radians(90.0), 0.0, 0.0))
+            bevelled(bolt, 0.004)
+            objs.append(bolt)
+    return objs
+
+
+def build_wall_plate(w=0.28, h=0.34, t=0.042, chamfer=0.012):
+    """
+    A backplate on its own, for when a fitting needs to look BOLTED rather than
+    merely adjacent.
+
+    Both brackets carry their own plate, so this is not a dependency — it is
+    the heavier option, drawn behind a bracket where the wall wants a bigger
+    statement, and usable under anything else that has to appear fixed to
+    stone. A routed border and four corner bolts, nothing else: whatever sits
+    in front of it is the thing being looked at.
+
+    The plate is centred at `h / 2 + 0.03`, so a frame of `h + 0.06` puts equal
+    headroom above and below it and the shape reads as centred in its quad.
+    """
+    cz = h / 2.0 + 0.03
+    plate = box(w, t, h, (0.0, -t / 2.0, cz))
+    bevelled(plate, chamfer)
+    # Inset 0.075, not the 0.05 that looks right on paper: the bolts sit
+    # BETWEEN the groove and the edge, and at 0.05 the groove's outer wall and
+    # the bolt heads want the same 0.007 of plate. Two features overlapping by
+    # a hair does not read as tight tolerance, it reads as a mistake.
+    route_ring(plate, w - 0.15, h - 0.15, 0.020, (0.0, -t, cz), plane="xz")
+    lipped(plate, 0.006)
+
+    objs = [plate]
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            bolt = cylinder(0.015, 0.014, (sx * (w / 2.0 - 0.032), -t - 0.005, cz + sz * (h / 2.0 - 0.036)),
+                            verts=16, rot=(math.radians(90.0), 0.0, 0.0))
+            bevelled(bolt, 0.004)
+            objs.append(bolt)
+    return objs
+
+
+def build_brazier(bowl=0.32, feet=0.44, chamfer=0.010):
+    """
+    A standing floor bowl on four legs — a fire for the middle of a room rather
+    than for a wall.
+
+    LYING, like a plinth, and for the same reason: it is a thing standing on
+    the board, so `buildVertexData` squashes it by cos(tilt) at draw time and
+    the bake must not do it again (gotcha 3). What the plan view shows is the
+    rim, the inside of the far wall, the coal bed and four feet radiating out.
+
+    FOUR LEGS AT THE CARDINALS, and the tripod a real brazier would have is
+    wrong here for two separate reasons. A three-legged bounding box is not
+    symmetric, so the shape would sit off-centre in a quad the engine centres
+    on a tile. And legs must splay PAST the rim to exist at all in a plan view
+    — anything inside `bowl` is hidden under the bowl it holds up.
+
+    The mouth is at z = 0.42 at this scale, i.e. `0.447 * spriteWidth` above
+    the floor: that is where a flame billboard's base belongs.
+    """
+    objs = []
+    for i in range(4):
+        a = math.radians(90.0 * i)
+        c, s = math.cos(a), math.sin(a)
+        leg = strut((feet * c, feet * s, 0.0), (0.17 * c, 0.17 * s, 0.245), 0.055, 0.045)
+        bevelled(leg, chamfer)
+        pad = box(0.085, 0.085, 0.036, (feet * c, feet * s, 0.018))
+        bevelled(pad, chamfer * 0.8)
+        objs += [leg, pad]
+
+    # The tie ring, at the radius where it actually meets the legs. Under the
+    # bowl it would be invisible; outside the feet it would be a hoop floating
+    # in space. It is the detail that says the legs are one frame rather than
+    # four sticks.
+    tie_r = 0.36
+    objs.append(ring(tie_r, 0.014, (0.0, 0.0, 0.245 * (feet - tie_r) / (feet - 0.17))))
+
+    body = frustum(0.20, bowl, 0.20, (0.0, 0.0, 0.32))
+    bevelled(body, chamfer)
+    cut(body, frustum(0.155, bowl - 0.035, 0.24, (0.0, 0.0, 0.36)), "Hollow")
+    lipped(body, chamfer * 0.5)
+    objs.append(body)
+    objs.append(ring(bowl - 0.018, 0.016, (0.0, 0.0, 0.42)))
+
+    coals = frustum(0.152, 0.105, 0.05, (0.0, 0.0, 0.262), verts=32)
+    coals["albedo"] = CHARCOAL
+    bevelled(coals, chamfer * 0.5)
+    objs.append(coals)
+    return objs
+
+
+# -------------------------------------------------------------------------
+# THE PLAYER CONSOLE (§19)
+# -------------------------------------------------------------------------
+#
+# §19 settled where the UI lives: not on the board, which pans and zooms, but
+# on the TABLE, as a fixed console at the near edge facing the player. And it
+# settled the split that keeps it affordable, which is §1.2's line:
+#
+#     THE GPU DRAWS EVERY SURFACE. THE DOM DRAWS TEXT AND HIT TARGETS.
+#
+# So NOTHING HERE HAS A GLYPH ON IT, and that is a constraint rather than an
+# omission. Bake a label into a plate and you have baked in a language, a
+# breakpoint, a font size and a screen reader that cannot read it. Every plate
+# below therefore has a deliberately EMPTY, FLAT centre — the routed border
+# stops well short of it — and a transparent DOM element sits on top carrying
+# the text, the click handler, the ARIA role and `data-nav-item`.
+#
+# COMPONENTS, NOT A MONOLITH, so a console can be assembled at any width. The
+# body tiles along a run the way `board_rim` does; the plates and their sockets
+# are dropped onto it wherever the layout wants them.
+#
+# THE PLATE AND ITS SOCKET SHARE A FRAME, which is the one thing here that will
+# save somebody an afternoon. A plate baked at its own extent and a socket
+# baked at its own extent have to be aligned by arithmetic at draw time, and
+# any disagreement shows as a plate sitting crooked in its hole. Instead both
+# are baked into the SAME frame — plate footprint plus `BUTTON_SURROUND` on
+# every side — so the engine draws the two quads at the identical rect and they
+# cannot drift. The margin the silhouette needs comes free with it.
+
+BUTTON_SURROUND = 0.10
+# (width, depth) of the plate itself, in tiles. The frame is this plus surround.
+BTN_SMALL = (0.34, 0.34)
+BTN = (0.86, 0.34)
+BTN_WIDE = (1.50, 0.34)
+# A socket is cut 0.055 deep for a plate 0.045 thick, so a pressed button has
+# 0.010 of travel to sink into and still clears the floor of its own hole.
+PLATE_T = 0.045
+SOCKET_DEPTH = 0.055
+
+
+def socket(size):
+    """The shared frame for a plate and the recess it drops into."""
+    return (size[0] + 2.0 * BUTTON_SURROUND, size[1] + 2.0 * BUTTON_SURROUND)
+
+
+def build_console_body(run=6.0, deep=1.30, thick=0.16, chamfer=0.022):
+    """
+    The slab everything is mounted on: timber deck, brass lip at the near edge.
+
+    IT RUNS PAST THE FRAME SIDEWAYS and carries no feature on the left or right
+    edge, which is `build_face`'s `joint = 0` case — the console is one
+    continuous surface however wide it is assembled, so a chamfer on the frame
+    edge would be a seam every four tiles down a deck that is supposed to be
+    unbroken.
+
+    The BRASS RAIL IS AT THE BOTTOM OF THE IMAGE. Board +y is world -Y and
+    points at the player (see the axes note), and a plan camera puts world +Y
+    at the top — so the near edge, the one the player's hands reach, renders at
+    the bottom. Getting this backwards puts the finger rail against the board.
+    """
+    deck = box(run, deep, thick, (0.0, 0.0, -thick / 2.0))
+    bevelled(deck, chamfer)
+    # Two inlay lines running the length. They cross the frame edge on purpose:
+    # they are part of what tiles, so each texture carries a section of one
+    # continuous groove.
+    for y in (-0.44, -0.50):
+        cut(deck, box(run + 0.4, 0.030, 0.024, (0.0, y, -0.002)), f"Inlay{y}")
+    lipped(deck, 0.010)
+
+    front = box(run, 0.09, 0.05, (0.0, -deep / 2.0 + 0.065, 0.025))
+    back = box(run, 0.06, 0.03, (0.0, deep / 2.0 - 0.050, 0.015))
+    for rail, ch in ((front, 0.012), (back, 0.008)):
+        rail["albedo"] = BRASS
+        bevelled(rail, ch)
+    return [deck, front, back]
+
+
+def build_button_plate(size, ring_groove=True, chamfer=0.014):
+    """
+    A brass plate a DOM label sits on. THE CENTRE IS EMPTY AND STAYS EMPTY.
+
+    The routed border stops 0.041 from the edge and the bolts sit outside it,
+    which leaves a flat rectangle of `w - 0.15` by `d - 0.15` in the middle
+    with nothing on it at all. That rectangle is the whole product: it is where
+    the text goes, and anything baked into it would be text the DOM cannot
+    change, translate, resize or read aloud.
+
+    The square variant drops the border and takes four corner bolts instead —
+    at that size the groove and the bolts want the same 0.02 of plate, and a
+    bolt clipping a groove is the sort of detail that looks like a mistake
+    because it is one.
+    """
+    w, d = size
+    plate = box(w, d, PLATE_T, (0.0, 0.0, PLATE_T / 2.0))
+    bevelled(plate, chamfer)
+    if ring_groove:
+        # Inset further on the LONG axis than the short one, because that is
+        # the end the bolts are at. A uniform 0.05 border leaves the groove's
+        # outer wall and the bolt heads fighting over the same 0.004 of brass,
+        # and there is no bolt radius that fits between them.
+        route_ring(plate, w - 0.15, d - 0.10, 0.018, (0.0, 0.0, PLATE_T))
+    lipped(plate, 0.006)
+
+    objs = [plate]
+    corners = ((-1, -1), (-1, 1), (1, -1), (1, 1)) if not ring_groove else ((-1, 0), (1, 0))
+    for sx, sy in corners:
+        bolt = cylinder(0.013, 0.014, (sx * (w / 2.0 - 0.030), sy * (d / 2.0 - 0.045), PLATE_T + 0.002),
+                        verts=16)
+        bevelled(bolt, 0.004)
+        objs.append(bolt)
+    return objs
+
+
+def build_button_recess(size, chamfer=0.020):
+    """
+    The routed socket a plate drops into, cut into a patch of console deck.
+
+    THE DECK OVERRUNS THE FRAME AND CARRIES NO EDGE FEATURE, so this sprite has
+    no silhouette of its own — exactly `build_trap_tile`'s floor. It is drawn
+    on top of `console_body`, in the same timber, and the only thing visible is
+    the hole. Put a chamfer on the frame edge instead and every button on the
+    console acquires a rectangular outline nobody asked for.
+    """
+    w, d = size
+    fw, fd = socket(size)
+    deck = box(fw + 0.30, fd + 0.30, 0.16, (0.0, 0.0, -0.08))
+    bevelled(deck, chamfer)
+    cut(deck, box(w + 0.044, d + 0.044, 0.20, (0.0, 0.0, 0.10 - SOCKET_DEPTH)), "Socket")
+    # The mouth chamfer is cut, not bevelled. `lipped()` alone does hold up here
+    # — one boolean, measured at 104/128 — but it holds up by luck of the cut
+    # count, and the next person to add a feature to this socket would lose it
+    # silently. Same construction as the tray, for the same reason.
+    route_ring(deck, w + 0.044, d + 0.044, 0.026, (0.0, 0.0, 0.0), name="Mouth")
+    lipped(deck, 0.012)
+    return [deck]
+
+
+def build_tray(pocket=(1.66, 0.76), frame=(1.86, 0.96), depth=0.075, chamfer=0.020):
+    """
+    A shallow routed recess for cards or tokens, with a finger scallop.
+
+    The scallop is the detail that makes it a TRAY rather than a hole: a real
+    card well has a thumb notch bitten out of its near wall, because otherwise
+    you cannot get the bottom card out. It is cut with a vertical cylinder that
+    stops at the pocket floor — run it through the deck instead and the sprite
+    gets a transparent bite taken out of the console.
+
+    Near wall means the BOTTOM of the image, same as the console's brass rail.
+    """
+    pw, pd = pocket
+    deck = box(frame[0] + 0.40, frame[1] + 0.40, 0.16, (0.0, 0.0, -0.08))
+    bevelled(deck, chamfer)
+    cut(deck, box(pw, pd, 0.24, (0.0, 0.0, 0.12 - depth)), "Pocket")
+    # The pocket's MOUTH CHAMFER, cut as geometry rather than left to
+    # `lipped()`. This shape carries six booleans and the lip does not survive
+    # them — gotcha 8. A V-ring centred exactly on the pocket's perimeter has
+    # its inner half already carved away, so what is left is a 45-degree
+    # chamfer running round the mouth, which is what a router leaves anyway.
+    route_ring(deck, pw, pd, 0.030, (0.0, 0.0, 0.0), name="Mouth")
+    # The thumb notch, DRAFTED rather than straight-walled, for `build_trap_hole`'s
+    # reason: a vertical wall is edge-on in a plan view and contributes nothing.
+    # Radius 0.077 at the surface, not the 0.17 a thumb suggests — a scallop
+    # wider than the lip it is cut into reaches past the FRAME, and then it is
+    # not a notch in a near wall, it is a channel running off the texture.
+    cut(deck, frustum(0.055, 0.115, depth + 0.13, (0.0, -pd / 2.0, (0.13 - depth) / 2.0), verts=48),
+        "Scallop")
+    # Centreline midway between the pocket and the frame edge. On the frame
+    # edge itself — which is what `frame` reads like — half the groove would be
+    # outside the texture.
+    route_ring(deck, frame[0] - 0.10, frame[1] - 0.10, 0.022, (0.0, 0.0, 0.0))
+    lipped(deck, 0.012)
+    return [deck]
+
+
+def build_bezel(outer=(1.30, 0.60), opening=(1.02, 0.32), thick=0.05, chamfer=0.016):
+    """
+    A brass frame round a panel or a readout. The middle is TRANSPARENT.
+
+    THE OPENING IS EXACTLY 3/4 OF THE FRAME WIDTH AND 1/2 OF ITS HEIGHT, and
+    that is the point of choosing these numbers rather than pretty ones: the
+    thing being framed is the bezel's own quad scaled by (0.75, 0.50) about the
+    same centre. No offset table, no measuring a PNG.
+    """
+    body = box(outer[0], outer[1], thick, (0.0, 0.0, thick / 2.0))
+    bevelled(body, chamfer)
+    cut(body, box(opening[0], opening[1], thick * 4.0, (0.0, 0.0, thick / 2.0)), "Opening")
+    lipped(body, 0.010)
+
+    objs = [body]
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bolt = cylinder(0.017, 0.014, (sx * (outer[0] / 2.0 - 0.048), sy * (outer[1] / 2.0 - 0.048),
+                                           thick + 0.002), verts=16)
+            bevelled(bolt, 0.005)
+            objs.append(bolt)
+    return objs
+
+
 def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None):
     """One row of the table below. Everything a bake needs and nothing else."""
     return {
@@ -918,6 +1556,58 @@ SHAPES = {
     # --- what a piece falls through (§14.2) ------------------------------
     "trap_tile": shape(build_trap_tile, width=1.0, height=1.0, ao=0.22, colour=STONE),
     "trap_hole": shape(build_trap_hole, width=1.0, height=1.0, ao=0.45, colour=STONE),
+
+    # --- what the flame is mounted in (§18.1) ----------------------------
+    # FREE-STANDING, so they carry MARGIN: the engine sizes a fitting by its
+    # own quad rather than by the tile. The mouth of each wall fitting is at
+    # 0.90 of the frame height — see `MOUTH`.
+    "sconce_bracket": shape(
+        build_sconce_bracket, width=0.18, height=0.40, view=VIEW_UPRIGHT, ao=0.09, colour=IRON,
+    ),
+    "torch_bracket": shape(
+        build_torch_bracket, width=0.22, height=0.50, view=VIEW_UPRIGHT, ao=0.11, colour=IRON,
+    ),
+    "wall_plate": shape(
+        build_wall_plate, width=0.32, height=0.40, view=VIEW_UPRIGHT, ao=0.08, colour=IRON,
+    ),
+    # LYING, not upright: a brazier stands ON the board like a plinth, and the
+    # engine squashes it. Baking it in elevation would be gotcha 3 again.
+    "brazier": shape(build_brazier, width=0.94, height=0.94, ao=0.22, colour=IRON),
+
+    # --- the player console (§19) ----------------------------------------
+    # The body tiles along a run: exact width, no margin, geometry overscanning
+    # sideways. Everything else is dropped onto it.
+    "console_body": shape(
+        build_console_body, width=4.0, height=1.36, ao=0.20, colour=WOOD_FRAME,
+    ),
+    # Plate and socket SHARE A FRAME so the engine can draw both quads at one
+    # rect. Change `BUTTON_SURROUND` or a size and both move together.
+    "button_plate_small": shape(
+        lambda: build_button_plate(BTN_SMALL, ring_groove=False),
+        width=socket(BTN_SMALL)[0], height=socket(BTN_SMALL)[1], ao=0.10, colour=BRASS,
+    ),
+    "button_recess_small": shape(
+        lambda: build_button_recess(BTN_SMALL),
+        width=socket(BTN_SMALL)[0], height=socket(BTN_SMALL)[1], ao=0.10, colour=WOOD_FRAME,
+    ),
+    "button_plate": shape(
+        lambda: build_button_plate(BTN),
+        width=socket(BTN)[0], height=socket(BTN)[1], ao=0.10, colour=BRASS,
+    ),
+    "button_recess": shape(
+        lambda: build_button_recess(BTN),
+        width=socket(BTN)[0], height=socket(BTN)[1], ao=0.10, colour=WOOD_FRAME,
+    ),
+    "button_plate_wide": shape(
+        lambda: build_button_plate(BTN_WIDE),
+        width=socket(BTN_WIDE)[0], height=socket(BTN_WIDE)[1], ao=0.10, colour=BRASS,
+    ),
+    "button_recess_wide": shape(
+        lambda: build_button_recess(BTN_WIDE),
+        width=socket(BTN_WIDE)[0], height=socket(BTN_WIDE)[1], ao=0.10, colour=WOOD_FRAME,
+    ),
+    "tray": shape(build_tray, width=1.86, height=0.96, ao=0.16, colour=WOOD_FRAME),
+    "bezel": shape(build_bezel, width=1.36, height=0.64, ao=0.10, colour=BRASS),
 }
 
 
