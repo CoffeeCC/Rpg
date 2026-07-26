@@ -494,13 +494,191 @@ is unreachable for all five gates; 41 of 92 monster PNGs are not in
 
 ---
 
-## 9. Open, and mine to close
+## 9. Decisions closed by the graphics research (2026-07-25)
 
-- WebGL2 versus WebGPU as the target — research in flight. The likely answer is
-  WebGL2 for the web build and WebGPU for the Steam/Electron build behind one
-  interface, but that is a guess until the report lands, and if WebGPU support
-  is universal enough it is one path.
-- Cascade count, probe spacing and interval scaling at 1280x800 — pending the
-  same research.
-- Whether the battlefield gets a real tile grid at M6, which would let it share
+A full research pass on radiance cascades, render targets, normal-map
+derivation, 2D soft shadows and HDR ran on 2026-07-25. It closed every open
+question in this document and **overturned one conclusion**, which is recorded
+first because it is the one that would otherwise have cost weeks.
+
+### 9.1 Derived normals: right for tiles, WRONG for characters
+
+M0 measured a textbook normal map off the shipped `hollow_wall` tile and I read
+that as "derived normals work". That claim was too broad, and the statistics I
+used **cannot tell a correct normal map from an inside-out one** — a map whose
+bumps are all inverted has identical mean and range.
+
+The literature is blunt. Moreira, Coutinho & Chaimowicz, *Analysis and
+Compilation of Normal Map Generation Techniques for Pixel Art* (SBGames 2022,
+arXiv:2212.09692) evaluates six methods and concludes **"none of the automated
+techniques could deliver completely satisfactory geometry."** Luminance→Sobel
+specifically produces **inverted volumes** wherever an artist painted shading:
+the image is `albedo x irradiance`, and the gradient of that product is not the
+surface gradient. A painted crevice becomes a bump. Worse, the artifact is
+invisible under the light direction the artist implied and only appears as the
+light swings away — i.e. it is invisible in a screenshot and obvious in the one
+feature we are building.
+
+**The correct test, and the result.** Orbit the light through 360° and correlate
+the lit image against the flat albedo at each angle. Baked-in lighting shows up
+as a strong peak at the baked direction and a trough 180° opposite. Measured on
+`hollow_wall`, 16 angles:
+
+> correlation **0.4187 – 0.4433**, spread **0.025**, peak at 180°, trough at
+> 293° — **113° apart, not 180°.**
+
+Flat, with no directional signature. **The tile's derived normals are sound.**
+That is consistent with the paper rather than against it: it explicitly allows
+luminance→Sobel "for texture-like sprites where noise reads as detail", and a
+cave wall is exactly that — a stochastic surface with almost no artist-implied
+form lighting.
+
+**So the pipeline splits by asset class:**
+
+| assets | method | why |
+|---|---|---|
+| **10 tiles** | luminance → auto-level → dual-band Sobel (the Lab) | measured sound; stochastic texture is the good case |
+| **92 monsters, 5 heroes, 10 npcs, 3 sprites** | **EDT beveling** — Euclidean distance transform of the alpha silhouette, edge mask, blend, smooth, Sobel | the paper's best *automatic* method; **it cannot invert volumes** because it derives from the silhouette, not from painted tone. Every one of these is already a transparent PNG, so the alpha it needs is there. |
+| the ~20 assets that carry the look | hand-authored or four-illumination-angle | the paper's only consistently good results |
+
+The orbit test becomes standing QC: **every** asset gets it, and a spread above
+~0.10 with peak and trough ~180° apart is a reject.
+
+Rejected: ML monocular normal estimation (StableNormal, Lotus et al.) as a
+*shipped* output — trained on photographs, and the domain gap to stylised 2D
+narrows but does not close. Fine as an artist's starting point.
+
+### 9.2 WebGL2, single path. WebGPU is a trap here.
+
+- The workload is a per-texel **gather** — texture-fetch-bound ray marching.
+  There is no cross-thread cooperation, so compute shaders buy an estimated
+  20–40% on one pass, not a category change. The canonical 2D RC reference
+  implementation (jason.today) is fragment-shader WebGL.
+- `RGBA16F` is renderable in WebGL2 via `EXT_color_buffer_float` (universal on
+  WebGL2 hardware — treat as a hard requirement and fail loudly), and **linear
+  filtering of half-float is core**, which is exactly what cascade upsampling
+  needs. So the format story costs nothing.
+- **The decisive fact: WebGPU on the Steam Deck is worse than WebGL2 today.**
+  Chromium's Linux WebGPU rollout covers Intel Gen12+ (144+) and NVIDIA/Wayland
+  (147+). **AMD is not on that list**, and the Deck is AMD. Shipping the
+  headline feature behind a flag literally named `--enable-unsafe-webgpu` is a
+  support-ticket generator. The Electron build does not rescue this; it inherits
+  Chromium's gating.
+- The web build cannot be WebGPU-only in 2026 regardless (~70% coverage; Linux
+  desktop and Android Firefox are gaps), so WebGL2 must exist either way. Adding
+  WebGPU means *both*, never WebGPU alone — two shader languages, two sets of
+  driver bugs, and every lighting feature written twice.
+
+**Do:** put a thin `Device` interface between the renderer and the API so a
+WebGPU backend stays possible, and wire `EXT_disjoint_timer_query_webgl2` into
+the M1 debug HUD so any future revisit is driven by numbers rather than by
+fashion.
+
+#### Two Steam targets, and they point the same way
+
+Paul is targeting **both the Steam Deck and the Steam Machine**. Both run
+SteamOS on AMD graphics — which is precisely the vendor Chromium's Linux WebGPU
+rollout has *not* reached. Two AMD/Linux targets rather than one does not make
+WebGPU a closer call; it makes it a worse one. WebGL2 runs unflagged on both.
+
+*(Verify the Steam Machine's exact GPU before tuning against it — the AMD/SteamOS
+part is confident, the specific silicon is not something to assert from memory.)*
+
+What it does change is the **shape of the quality dial**, which is now a real
+range rather than a fallback:
+
+| target | intent |
+|---|---|
+| **Steam Deck** | the floor. `d₀ = 4`, bilinear fix off, 4-direction cascade 0, bloom chain shortened. Must hold 60fps at the Deck's native resolution — this is the setting that has to be *good*, not merely playable. |
+| **Steam Machine** | the ceiling. `d₀ = 2`, bilinear fix on, base-16 cascade 0, full mip-chain bloom. Where HRC lands first. |
+| **desktop web** | auto-detect between them off a startup timing probe. |
+
+Designing for a fixed spec was never going to happen; designing for a *spread*
+with the Deck as the floor is the discipline that keeps the top end honest.
+Build the dial in M1 alongside the debug HUD, not at the end.
+
+### 9.3 Radiance cascade parameters (M5)
+
+- **Branching α = 4.** Probe spacing doubles per axis as ray count quadruples,
+  so every cascade texture is **the same size**. This is the choice everyone
+  actually implements.
+- **Cascade-0 probe spacing `d₀` = 2 px**, **6 cascades** at 1280x800
+  (diagonal 1509 px), **RGBA16F** — alpha carries transmittance, which the
+  interval merge needs. **≈49 MB**, ~60–70 MB with ping-pong. Fine.
+- Interval geometry: `start(i) = t₀(4^i − 1)/3`, `length(i) = t₀·4^i`.
+- Merge is **top-down**, and is premultiplied-alpha compositing:
+  `L(a,c) = L(a,b) + β(a,b)·L(b,c)`, `β(a,c) = β(a,b)·β(b,c)`. Only merge where
+  the near interval is not fully occluded.
+- **The bilinear fix is mandatory, not optional.** Ringing is worst with small,
+  high-opacity emitters — *a lantern in the dark is the pathological case for
+  this algorithm*, and it is the entire game. Cost is 4x rays on every cascade
+  but the topmost; it also fixes leaking past small occluders. Budget for it
+  from the start rather than discovering it.
+- Keep **mips off** for the occluder channel, or build a conservative
+  max-opacity chain — averaged mips blur thin walls out of existence, which is a
+  fog-of-war leak on the map.
+- Cost is rays, not memory: ~6.1M intervals/frame, ~24M with the bilinear fix.
+  Calibration point — Holographic RC measures 7.67 ms at 1024² on a 3080 Laptop.
+  **Ship a quality dial** (drop `d₀` to 4, disable the bilinear fix) from day one.
+
+**Holographic Radiance Cascades** (Freeman, Sannikov & Margel, arXiv:2505.02041)
+uses anisotropic probe spacing and **resolves hard shadows at no added cost** —
+standard RC's weakest point, and one we care about. Plan: build standard RC
+first (the interval algebra is identical and the tutorial material all assumes
+it), then port. Reference: `entropylost/amitabha`.
+
+### 9.4 Two integration decisions that are easy to get wrong
+
+1. **Do not collapse cascade 0 to a scalar.** Project its directions into a 2D
+   circular-harmonic basis (`a₀ + a₁cos θ + b₁sin θ`) and evaluate that against
+   each pixel's normal at full resolution. This is what makes bumps respond to
+   *bounced* light and not merely to the lantern — a half-res GI field driving
+   full-res normal shading, which is the correct frequency split. Use base-16 at
+   cascade 0 if affordable; 4 directions fit the basis poorly.
+2. **Pack height into the normal target's alpha** (normal XY in RG, Z
+   reconstructed, height in A). Costs literally nothing and buys correct depth
+   sorting plus **self-shadowing** — the research calls short-range height-field
+   self-shadowing the single biggest upgrade over plain normal mapping, because
+   the eye reads absence of contact darkening as "flat" no matter how good the
+   normals are. On a board of physical pieces that is precisely the cue that
+   sells the whole thing. Skip parallax offset: a near-orthographic camera
+   barely moves the view vector, so it buys nothing.
+
+### 9.5 No separate shadow system
+
+RC produces penumbrae *by construction* — the penumbra hypothesis is the
+algorithm's founding observation. A second shadow system would disagree with it
+at every boundary. Share **one screen-space SDF** between the cascade march and,
+if sharp contact shadows still need help before HRC lands, a short-range
+full-resolution SDF march for the direct term only.
+
+This retires 1D radial shadow maps (per-light fill cost, least principled
+penumbra) and Slembcke's SFSS (excellent, but wants polygon outlines we would
+have to author for every occluder to get a result RC gives free).
+
+### 9.6 HDR chain
+
+**`RGBA16F` → Jimenez mip-chain bloom → AgX → one baked 3D LUT.**
+
+- **Bloom: Jimenez 13-tap mip chain, with the Karis average on the first
+  downsample only.** A dark scene lit by small warm emitters is the worst case
+  for firefly scintillation, and the Karis average is what actually kills it.
+  Prefer a **soft knee** or no threshold at all over a hard bright-pass, which
+  draws a visible onset line as objects brighten.
+- **Tonemap: AgX, not ACES.** ACES skews bright saturated warms toward
+  yellow-white — it would eat the exact lantern warmth the whole art direction
+  rests on. AgX desaturates highlights toward white the way film does, and its
+  long toe suits a game that lives in shadow. Watch its known blue→cyan shift if
+  cold magic ends up mattering; correct downstream in the grade.
+- **LUT: one 33³ 3D texture, applied post-tonemap** (a LUT on HDR values outside
+  [0,1] is undefined). WebGL2 has native 3D textures — do not use the old 2D
+  strip-atlas hack. **Bake AgX and the grade into a single LUT**; stacking two
+  double-quantises and bands the darks, which is where this game lives.
+
+### 9.7 Still open
+
+- Whether the battlefield gets a real tile grid at M7, which would let it share
   the map's world-space solver instead of needing its own screen-space one.
+- Whether hero assets eventually move to a 3D-authored G-buffer pipeline
+  (the Dead Cells route — they never derived normals because they never had flat
+  art). Revisit after M4, when there is something on screen to judge against.

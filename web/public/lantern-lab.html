@@ -121,6 +121,14 @@
   <label><span class="row">Gloss<b id="vGls">24</b></span><input type="range" id="gls" min="2" max="128" step="1" value="24" /></label>
   <label><span class="row">AO strength<b id="vAoS">0.70</b></span><input type="range" id="aos" min="0" max="1" step="0.01" value="0.7" /></label>
 
+  <h2>QC</h2>
+  <button id="orbit">Run orbit test</button>
+  <p class="note" id="orbitOut">Swings the light through 360° and correlates each
+    lit frame against the flat albedo. Baked-in lighting shows up as a strong peak
+    at the direction the artist lit from, with a trough 180° opposite — which means
+    the derived normals are inverted and the surface will look inside-out as the
+    lantern moves. Flat is a pass.</p>
+
   <h2>Export</h2>
   <button id="exNrm">Download normal map</button>
   <button id="exHgt">Download height map</button>
@@ -651,6 +659,107 @@ canvas.addEventListener('wheel', (e) => {
   $('vLz').textContent = light.z.toFixed(2);
   render();
 }, { passive: false });
+
+/**
+ * THE ORBIT TEST — does this art have lighting painted into it?
+ *
+ * Deriving height from luminance assumes the image IS the surface. It is not;
+ * it is `albedo x irradiance`, and the gradient of that product is not the
+ * surface gradient. Wherever an artist painted a shadow to suggest a recess,
+ * the derived normal comes out as a BUMP. Moreira et al. (SBGames 2022) measure
+ * this across six techniques and conclude none of the automatic ones is
+ * satisfactory; inverted volumes are the specific failure of this one.
+ *
+ * What makes it dangerous is that it is invisible in a still. Lit from the
+ * direction the artist implied, an inverted surface reproduces the original
+ * painting exactly. It only falls apart as the light swings away — which is to
+ * say, it is invisible in a screenshot and obvious in the feature we are
+ * building the whole engine for.
+ *
+ * So: swing the light all the way round and correlate each lit frame against
+ * the flat albedo. Art with a baked light direction correlates best when lit
+ * from that direction and worst from 180° opposite. Clean art has no preferred
+ * direction and the curve is flat.
+ *
+ * Measured on the shipped `hollow_wall.jpg`: 0.4187–0.4433, spread 0.025, peak
+ * and trough 113° apart rather than 180°. No signature — the tile passes.
+ */
+const ORBIT_ANGLES = 16;
+const ORBIT_FAIL_SPREAD = 0.10;
+
+function orbitTest() {
+  if (!albedoTex) return;
+  const W = canvas.width;
+  const H = canvas.height;
+  const g = gl;
+  const grab = () => {
+    const b = new Uint8Array(W * H * 4);
+    g.readPixels(0, 0, W, H, g.RGBA, g.UNSIGNED_BYTE, b);
+    // Every 5th pixel. This is a correlation over ~30k samples; the extra
+    // precision from reading all of them changes the 4th decimal place.
+    const out = new Float64Array(Math.floor((W * H) / 5));
+    let j = 0;
+    for (let i = 0; i < W * H && j < out.length; i += 5) {
+      out[j++] = 0.2126 * b[i * 4] + 0.7152 * b[i * 4 + 1] + 0.0722 * b[i * 4 + 2];
+    }
+    return out;
+  };
+  const correlate = (a, b) => {
+    const n = a.length;
+    let ma = 0;
+    let mb = 0;
+    for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+    ma /= n; mb /= n;
+    let sa = 0; let sb = 0; let sab = 0;
+    for (let i = 0; i < n; i++) {
+      const x = a[i] - ma;
+      const y = b[i] - mb;
+      sa += x * x; sb += y * y; sab += x * y;
+    }
+    return sab / Math.sqrt(sa * sb || 1);
+  };
+
+  const keptView = view;
+  const keptLight = { ...light };
+  view = 2;
+  render();
+  const albedo = grab();
+  view = 0;
+
+  const cs = [];
+  for (let k = 0; k < ORBIT_ANGLES; k++) {
+    const th = (k * Math.PI * 2) / ORBIT_ANGLES;
+    light = { x: 0.5 + 0.34 * Math.cos(th), y: 0.5 + 0.34 * Math.sin(th), z: keptLight.z };
+    render();
+    cs.push(correlate(albedo, grab()));
+  }
+
+  view = keptView;
+  light = keptLight;
+  render();
+
+  const max = Math.max(...cs);
+  const min = Math.min(...cs);
+  const spread = max - min;
+  const step = 360 / ORBIT_ANGLES;
+  const peak = cs.indexOf(max) * step;
+  const trough = cs.indexOf(min) * step;
+  // A real baked light puts peak and trough opposite each other. Anything else
+  // is texture anisotropy, which is harmless.
+  let sep = Math.abs(peak - trough);
+  if (sep > 180) sep = 360 - sep;
+  const opposed = sep > 135;
+  const fail = spread > ORBIT_FAIL_SPREAD && opposed;
+
+  $('orbitOut').textContent =
+    `${fail ? 'FAIL' : 'PASS'} — spread ${spread.toFixed(3)} ` +
+    `(${min.toFixed(3)}–${max.toFixed(3)}), peak ${peak}°, trough ${trough}°, ${sep}° apart. ` +
+    (fail
+      ? 'Baked directional light survived in this art. The derived normals are inverted where the artist painted shading, and the surface will read inside-out as the lantern swings past. Repaint it flat.'
+      : 'No directional signature — nothing painted in that the light has to fight.');
+  $('orbitOut').style.color = fail ? '#e06d5a' : 'var(--dim)';
+}
+$('orbit').onclick = orbitTest;
 
 $('exNrm').onclick = () => download(tNormal.tex, 'normal.png');
 $('exHgt').onclick = () => download(tDetail.tex, 'height.png');

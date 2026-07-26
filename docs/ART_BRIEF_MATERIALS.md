@@ -81,6 +81,36 @@ plus a `QC_REPORT.md`. **View every image before reporting it done** — the
 labelling has been wrong before while the quality was fine, so check that each
 file is the gate it claims to be.
 
+## The measured baseline you are beating
+
+Every shipped tile was run through the Lab's orbit test and level meter on
+2026-07-25. This is what you are replacing:
+
+| tile | orbit | spread | tonal range |
+|---|---|---|---|
+| verdant ground | pass | 0.009 | 16% |
+| verdant wall | pass | 0.012 | 23% |
+| abyss wall | pass | 0.016 | **6%** |
+| storm wall | pass | 0.017 | 29% |
+| sunken ground | pass | 0.024 | **50%** ← best of the set |
+| hollow wall | pass | 0.025 | 23% |
+| storm ground | pass | 0.026 | 30% |
+| sunken wall | pass | 0.037 | 29% |
+| hollow ground | pass | 0.067 | 11% |
+| **abyss ground** | **FAIL** | **0.182** | 14% |
+
+Two things to take from it:
+
+1. **`abyss_ground` is the priority.** It fails the orbit test with a spread 7x
+   any other tile and its peak and trough exactly 180° apart — the textbook
+   signature of light painted into the art. The cause is almost certainly that
+   the ember-glow was painted *spilling onto the surrounding rock*. Paint the
+   cracks emissive; do not paint what they illuminate. The engine does that, and
+   does it correctly for wherever the lantern actually is.
+2. **Every tile is starved of tonal range.** The best is 50%, most sit at
+   11–30%, `abyss_wall` is 6%. That is what "use the full tonal range" in the
+   requirements means in numbers. **Target above 60% for all ten.**
+
 ## How to check your own work
 
 Open `http://localhost:5174/lantern-lab.html`, load a finished PNG with the
