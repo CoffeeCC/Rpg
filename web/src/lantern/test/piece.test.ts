@@ -17,13 +17,29 @@ import { describe, expect, it } from 'vitest';
 import {
   baseDiscNormalPixels,
   baseDiscPixels,
+  blockShadowPixels,
   contactShadowPixels,
   contactShadowShape,
   contactShadowSprite,
   pieceBaseSprites,
+  wallBlockSprites,
 } from '../scene/piece';
-import { LAYER_BOARD, LAYER_DECAL, LAYER_PIECE, sortForPainting, spriteLayer, type Sprite } from '../scene/sprite';
-import { sortKey } from '../scene/camera';
+import {
+  buildVertexData,
+  FLOATS_PER_VERTEX,
+  isStanding,
+  LAYER_BOARD,
+  LAYER_DECAL,
+  LAYER_PIECE,
+  ORIENT_BILLBOARD,
+  ORIENT_FACE,
+  ORIENT_FLAT,
+  sortForPainting,
+  spriteLayer,
+  spriteOrientation,
+  type Sprite,
+} from '../scene/sprite';
+import { makeCamera, sortKey } from '../scene/camera';
 
 describe('the contact shadow falloff law', () => {
   it('is tightest and darkest at contact', () => {
@@ -189,6 +205,185 @@ describe('painter layers', () => {
   });
 });
 
+/**
+ * WALL BLOCKS.
+ *
+ * ENGINE_PLAN §12.1: a wall is a block sitting on the board, not a floor tile
+ * with a face bolted on. The tests that matter are the paint-order ones,
+ * because that is where a block made of two quads at the same board position
+ * goes wrong.
+ */
+describe('a wall is a block', () => {
+  const at = { x: 4, y: 6 };
+  const uv = { u0: 0, v0: 0, u1: 1, v1: 1 };
+  const block = (o = {}) =>
+    wallBlockSprites(at, { textureId: 'wall', topUv: uv, frontUv: uv, height: 0.7, shadowTextureId: 'bs', ...o });
+
+  it('is a shadow, a top face and a front face', () => {
+    const parts = block();
+    expect(parts).toHaveLength(3);
+    expect(spriteLayer(parts[0])).toBe(LAYER_DECAL);
+    expect(parts[1].position.z).toBeCloseTo(0.7, 6);
+    expect(parts[2].upright).toBe(true);
+  });
+
+  it('drops the front face when another block stands in front of it', () => {
+    // A buried face costs a quad and a batch break to draw something nobody
+    // can see.
+    expect(block({ front: false })).toHaveLength(2);
+  });
+
+  it('sits ON the board: its footprint shadow is centred on the tile, not on the corner', () => {
+    const shadow = block()[0];
+    expect(shadow.position.x).toBeCloseTo(4.5, 6);
+    expect(shadow.position.y).toBeCloseTo(6.5, 6);
+    // And spills past the tile, or there is nothing to see.
+    expect(shadow.size.x).toBeGreaterThan(1);
+  });
+
+  it('THE ORDER: the top face must draw with the pieces, not with the board', () => {
+    // A top face at height can legitimately hide the feet of a figure
+    // standing behind the block. Left on the board layer it would be painted
+    // over by every decal and piece on the board, including shadows cast by
+    // things that are physically below it.
+    expect(spriteLayer(block()[1])).toBe(LAYER_PIECE);
+  });
+
+  it('THE ORDER: the front face draws after the top, so the block closes over itself', () => {
+    const parts = block();
+    const sorted = sortForPainting(parts);
+    expect(sorted.map((s) => s.textureId)).toEqual(['bs', 'wall', 'wall']);
+    expect(sortKey(sorted[2].position)).toBeGreaterThan(sortKey(sorted[1].position));
+    expect(sorted[2].upright).toBe(true);
+  });
+
+  it('THE ORDER: a piece standing in the row in front is never buried by the block', () => {
+    // The case that goes wrong. The piece's board y is larger than the front
+    // face's, so it must sort last within the piece layer.
+    const piece: Sprite = {
+      position: { x: 4, y: 7.6, z: 0 },
+      size: { x: 1, y: 1.7 },
+      uv,
+      textureId: 'hero',
+      billboard: true,
+    };
+    const sorted = sortForPainting([...block(), piece]);
+    expect(sorted[sorted.length - 1]).toBe(piece);
+  });
+
+  it('THE ORDER: a piece standing BEHIND the block is partly hidden by it', () => {
+    // The mirror case, and it must come out the other way round — a block
+    // three quarters of a tile tall does occlude the base of a figure behind
+    // it, and a renderer that draws the figure last makes the block
+    // transparent.
+    const behind: Sprite = {
+      position: { x: 4, y: 5.4, z: 0 },
+      size: { x: 1, y: 1.7 },
+      uv,
+      textureId: 'hero',
+      billboard: true,
+    };
+    const sorted = sortForPainting([...block(), behind]);
+    expect(sorted.indexOf(behind)).toBeLessThan(sorted.length - 1);
+    expect(sorted[sorted.length - 1].upright).toBe(true);
+  });
+});
+
+/**
+ * ORIENTATION.
+ *
+ * Three cases, one flat float. The billboard case exists because of a bug
+ * that was visible in every single frame and still took a close-up to name:
+ * the hero rendered as a BLACK SILHOUETTE in the middle of his own pool of
+ * light, because a horizontal surface normal meets a light directly overhead
+ * at ninety degrees.
+ */
+describe('orientation', () => {
+  const base: Sprite = {
+    position: { x: 0, y: 0, z: 0 },
+    size: { x: 1, y: 1 },
+    uv: { u0: 0, v0: 0, u1: 1, v1: 1 },
+    textureId: 't',
+  };
+
+  it('distinguishes lying, a fixed face and a billboard', () => {
+    expect(spriteOrientation(base)).toBe(ORIENT_FLAT);
+    expect(spriteOrientation({ ...base, upright: true })).toBe(ORIENT_FACE);
+    expect(spriteOrientation({ ...base, billboard: true })).toBe(ORIENT_BILLBOARD);
+  });
+
+  it('a billboard stands up without having to also say so', () => {
+    expect(isStanding({ ...base, billboard: true })).toBe(true);
+    expect(spriteLayer({ ...base, billboard: true })).toBe(LAYER_PIECE);
+  });
+
+  it('a billboard scales by sin(tilt) like any standing quad', () => {
+    const cam = makeCamera({ centre: { x: 0, y: 0 }, zoom: 100, viewport: { x: 800, y: 600 } });
+    const heightOf = (s: Sprite) => {
+      const d = buildVertexData([s], cam);
+      const ys: number[] = [];
+      for (let i = 0; i < 6; i++) ys.push(d[i * FLOATS_PER_VERTEX + 1]);
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    expect(heightOf({ ...base, billboard: true })).toBeCloseTo(cam.zoom * Math.sin(cam.tilt), 3);
+  });
+
+  it('writes the orientation into the vertex stream where the shader reads it', () => {
+    const cam = makeCamera({ viewport: { x: 800, y: 600 } });
+    const orientAt = (s: Sprite) => buildVertexData([s], cam)[10];
+    expect(orientAt(base)).toBe(ORIENT_FLAT);
+    expect(orientAt({ ...base, upright: true })).toBe(ORIENT_FACE);
+    expect(orientAt({ ...base, billboard: true })).toBe(ORIENT_BILLBOARD);
+  });
+});
+
+describe('height above the board, per vertex', () => {
+  const cam = makeCamera({ centre: { x: 0, y: 0 }, zoom: 64, viewport: { x: 800, y: 600 } });
+  const uv = { u0: 0, v0: 0, u1: 1, v1: 1 };
+  const heights = (s: Sprite) => {
+    const d = buildVertexData([s], cam);
+    const out: number[] = [];
+    for (let i = 0; i < 6; i++) out.push(d[i * FLOATS_PER_VERTEX + 11]);
+    return out;
+  };
+
+  it('is constant across a quad lying on the board, at its own z', () => {
+    const decal: Sprite = { position: { x: 0, y: 0, z: 0.7 }, size: { x: 1, y: 1 }, uv, textureId: 't' };
+    // Float32-precision: the vertex buffer is a Float32Array.
+    for (const h of heights(decal)) expect(h).toBeCloseTo(0.7, 5);
+  });
+
+  it('SPANS a standing quad, so the top of a wall face is nearer the lantern than its base', () => {
+    // The old shader assumed a flat 0.35 for every standing fragment, which
+    // lit the top of a wall as though it were level with the bottom.
+    const face: Sprite = {
+      position: { x: 0, y: 0, z: 0 },
+      size: { x: 1, y: 0.8 },
+      pivot: { x: 0, y: 1 },
+      uv,
+      textureId: 't',
+      upright: true,
+    };
+    const h = heights(face);
+    expect(Math.min(...h)).toBeCloseTo(0, 5);
+    expect(Math.max(...h)).toBeCloseTo(0.8, 5);
+  });
+
+  it('lifts a standing quad that starts above the board', () => {
+    const onPlinth: Sprite = {
+      position: { x: 0, y: 0, z: 0.11 },
+      size: { x: 1, y: 1.7 },
+      pivot: { x: 0.5, y: 1 },
+      uv,
+      textureId: 't',
+      billboard: true,
+    };
+    const h = heights(onPlinth);
+    expect(Math.min(...h)).toBeCloseTo(0.11, 5);
+    expect(Math.max(...h)).toBeCloseTo(1.81, 5);
+  });
+});
+
 describe('procedural pixels', () => {
   const alphaAt = (px: Uint8Array, size: number, x: number, y: number) => px[(y * size + x) * 4 + 3];
 
@@ -259,8 +454,29 @@ describe('procedural pixels', () => {
     }
   });
 
+  it('the BLOCK shadow keeps its corners dark, unlike a disc', () => {
+    // THE REPRO: a disc under a square block darkens the middle of the tile
+    // and leaves the corners bright, which reads as the block resting on a
+    // cushion. Measured against the disc it replaces, at the same size.
+    const size = 64;
+    const box = blockShadowPixels(size);
+    const disc = contactShadowPixels(size);
+    // Out along the diagonal, toward the tile's corner: inside the square's
+    // footprint, near the rim of the inscribed circle.
+    const p = Math.round(size / 2 + (size / 2) * 0.6);
+    const at = (px: Uint8Array) => px[(p * size + p) * 4 + 3];
+    expect(at(disc)).toBeLessThan(45);
+    expect(at(box)).toBeGreaterThan(100);
+    // Stated as a ratio too, so retuning either profile does not quietly
+    // turn this into a test of two arbitrary constants.
+    expect(at(box)).toBeGreaterThan(at(disc) * 3);
+    // Still fades out before the quad's own edge, or it would cut a hard line.
+    expect(box[((size / 2) * size + (size - 1)) * 4 + 3]).toBe(0);
+  });
+
   it('generates buffers the uploader will accept', () => {
     expect(contactShadowPixels(16).length).toBe(16 * 16 * 4);
+    expect(blockShadowPixels(16).length).toBe(16 * 16 * 4);
     expect(baseDiscPixels(16).length).toBe(16 * 16 * 4);
     expect(baseDiscNormalPixels(16).length).toBe(16 * 16 * 4);
   });

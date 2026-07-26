@@ -53,10 +53,11 @@
   <h2>Camera</h2>
   <label><span class="row">Tilt<b id="vTilt">55°</b></span>
     <input type="range" id="tilt" min="10" max="85" step="1" value="55" /></label>
-  <label><span class="row">Zoom<b id="vZoom">64</b></span>
-    <input type="range" id="zoom" min="16" max="160" step="1" value="64" /></label>
-  <p class="note">Tilt to 10° and the board goes flat — pieces lie down like
-    decals, which is what top-down renders as. Push it up and they stand.</p>
+  <label><span class="row">Zoom<b id="vZoom">48</b></span>
+    <input type="range" id="zoom" min="16" max="160" step="1" value="48" /></label>
+  <p class="note">48 is the framing from ENGINE_PLAN §13: the WHOLE 22x14 board
+    on screen with its rim and some table around it. Tiles land near 48px and a
+    piece stands about 67px, which is the Deck legibility floor.</p>
 
   <h2>Gate</h2>
   <div class="seg" id="gate">
@@ -143,7 +144,8 @@ try {
   const { formatHud } = await import('/src/lantern/debug/hud.ts' + V);
   const { LAYER_DECAL } = await import('/src/lantern/scene/sprite.ts' + V);
   const { createRGBATexture } = await import('/src/lantern/gl/procedural.ts' + V);
-  const { contactShadowPixels, baseDiscPixels, baseDiscNormalPixels, pieceBaseSprites, contactShadowSprite }
+  const { contactShadowPixels, blockShadowPixels, baseDiscPixels, baseDiscNormalPixels,
+          pieceBaseSprites, contactShadowSprite, wallBlockSprites }
     = await import('/src/lantern/scene/piece.ts' + V);
 
   const canvas = $('gl');
@@ -208,6 +210,9 @@ try {
   const furniture = new Map([
     // Alpha-only, so no sRGB decode: this texture is a mask, not a colour.
     ['shadow', { id: 'shadow', albedo: createRGBATexture(gl, 96, contactShadowPixels(96), { mipmap: true }) }],
+    // A block's footprint is square. A disc under it darkens the middle and
+    // leaves the corners bright, which reads as the block resting on a cushion.
+    ['blockshadow', { id: 'blockshadow', albedo: createRGBATexture(gl, 96, blockShadowPixels(96), { mipmap: true }) }],
     ['base', {
       id: 'base',
       albedo: createRGBATexture(gl, 128, baseDiscPixels(128), { srgb: true, mipmap: true }),
@@ -227,12 +232,28 @@ try {
     const tamer = await loadTexture('art/sprites/tamer.png');
     materials = new Map([
       ...furniture,
-      ['ground', { id: 'ground', albedo: ground }],
-      ['wall', { id: 'wall', albedo: wall }],
+      // `inlay` is what stops the floor reading as one continuous slab of
+      // rock — every whole-tile boundary gets a seam and a chamfer, so the
+      // board resolves into laid pieces the moment the lantern moves.
+      ['ground', { id: 'ground', albedo: ground, inlay: 1 }],
+      ['wall', { id: 'wall', albedo: wall, inlay: 0.85 }],
       ['hero', { id: 'hero', albedo: hero }],
       ['merchant', { id: 'merchant', albedo: merchant }],
       ['tamer', { id: 'tamer', albedo: tamer }],
     ]);
+  }
+
+  /**
+   * Per-block height, hashed off the tile so it is identical every frame.
+   *
+   * Blocks that are all exactly the same height read as an extrusion of the
+   * floor plan. A few percent of variation reads as separate objects somebody
+   * placed — the same reason `tileArt.tsx` hashes its clutter instead of
+   * calling Math.random.
+   */
+  function blockHeight(x, y) {
+    const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return 0.66 + (h - Math.floor(h)) * 0.13;
   }
 
   const layout = buildLayout();
@@ -253,37 +274,43 @@ try {
     });
 
     const sprites = [];
+    // Window the shared tile texture per cell so neighbouring tiles do not
+    // repeat visibly — the same trick FloorScreen already does in CSS with
+    // backgroundPosition, which is a UV lookup by another name.
+    const cellUv = (x, y) => ({ u0: (x % 4) / 4, v0: (y % 4) / 4, u1: (x % 4 + 1) / 4, v1: (y % 4 + 1) / 4 });
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
-        const isWall = layout[y][x];
-        sprites.push({
-          position: { x, y, z: 0 },
-          size: { x: 1, y: 1 },
-          pivot: { x: 0, y: 0 },
-          // Window the shared tile texture per cell so neighbouring tiles do
-          // not repeat visibly — the same trick FloorScreen already does in
-          // CSS with backgroundPosition, which is a UV lookup by another name.
-          uv: { u0: (x % 4) / 4, v0: (y % 4) / 4, u1: (x % 4 + 1) / 4, v1: (y % 4 + 1) / 4 },
-          textureId: isWall ? 'wall' : 'ground',
-          tint: isWall ? [0.85, 0.85, 0.9, 1] : [1, 1, 1, 1],
-        });
-        // A wall gets a FRONT FACE — a quad STANDING UP out of the board at
-        // its near edge. `upright` is what makes it stand rather than lie:
-        // its height scales by sin(tilt) instead of cos(tilt). This is the
-        // whole reason to tilt the camera at all, because without a vertical
-        // surface a lantern has nothing but floor to rake across.
-        if (isWall && !layout[y + 1]?.[x]) {
+        if (layout[y][x]) {
+          // A WALL IS A BLOCK, not a floor tile with a face bolted on
+          // (ENGINE_PLAN §12.1). It sits ON the board with a contact shadow
+          // like any other piece, and the top face and the front face
+          // together cover the tile completely, so the ground under it is
+          // never drawn.
+          sprites.push(
+            ...wallBlockSprites({ x, y }, {
+              textureId: 'wall',
+              height: blockHeight(x, y),
+              topUv: cellUv(x, y),
+              frontUv: { u0: (x % 4) / 4, v0: 0.5, u1: (x % 4 + 1) / 4, v1: 1 },
+              // Buried faces cost a quad and a batch break to draw something
+              // nobody can see.
+              front: !layout[y + 1]?.[x],
+              topTint: [0.88, 0.88, 0.92, 1],
+              // A vertical face catches less of the sky than a horizontal
+              // one. With `vHeight` carried per fragment the lantern now does
+              // most of this properly; the tint is what is left of the guess.
+              frontTint: [0.78, 0.78, 0.84, 1],
+              shadowTextureId: 'blockshadow',
+              shadowStrength: 0.55,
+            }),
+          );
+        } else {
           sprites.push({
-            position: { x, y: y + 1, z: 0 },
-            size: { x: 1, y: 0.9 },
-            pivot: { x: 0, y: 1 },
-            upright: true,
-            uv: { u0: (x % 4) / 4, v0: 0.5, u1: (x % 4 + 1) / 4, v1: 1 },
-            textureId: 'wall',
-            // Slightly darker than the cap: a vertical face catches less of
-            // the ambient sky than a horizontal one. A placeholder until M2
-            // computes it properly from a normal map.
-            tint: [0.72, 0.72, 0.78, 1],
+            position: { x, y, z: 0 },
+            size: { x: 1, y: 1 },
+            pivot: { x: 0, y: 0 },
+            uv: cellUv(x, y),
+            textureId: 'ground',
           });
         }
       }
@@ -322,9 +349,15 @@ try {
         position: { x, y, z: thick + lift },
         size,
         pivot: { x: 0.5, y: 1 },
-        // A piece, not a decal. Without this it lies face-up on the board
-        // like a printed counter.
-        upright: true,
+        // A piece, not a decal. Without standing up it lies face-up on the
+        // board like a printed counter.
+        // A BILLBOARD, not a fixed vertical face. A painted figure presents
+        // itself to whoever is looking at it, and its surface normal is
+        // therefore the view direction. With a +y normal the hero's own
+        // lantern — almost directly overhead — arrives at 90 degrees and
+        // contributes nothing, so he renders as a black silhouette in the
+        // middle of his own light.
+        billboard: true,
         uv: UV,
         textureId,
       });
@@ -343,6 +376,11 @@ try {
       sprites,
       materials,
       occluders: grid,
+      // The shortest block `blockHeight` can produce. A receiver at or above
+      // this is standing on top of the wall layer and nothing in that layer
+      // can shadow it — without which every block top is shadowed by its own
+      // neighbours and a run of wall reads as a black trench.
+      occluderHeight: 0.66,
       time: t,
       ambient: Number($('amb').value),
       lights: [

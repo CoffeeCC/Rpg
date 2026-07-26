@@ -60,10 +60,35 @@ export const SHADOW_GLSL = `
 uniform sampler2D uOccupancy;
 uniform vec2 uGridSize;
 uniform float uShadowSoftness;
+/**
+ * How tall the occupancy grid's solid tiles stand, in tiles.
+ *
+ * The grid is 2D and binary, so it says WHERE a wall is and not how tall.
+ * That is fine while every receiver is on the board, and wrong the moment
+ * walls become BLOCKS with tops you can see (ENGINE_PLAN section 12.1): a
+ * block top standing at 0.7 is above the wall layer and cannot be shadowed
+ * by it, but a flat grid shadows it from every neighbour and a whole run of
+ * wall goes black. One number closes that, honestly and cheaply.
+ *
+ * IT IS A PLACEHOLDER WITH A KNOWN EXPIRY. ENGINE_PLAN section 14 takes the
+ * map vertical — climbable tiles, a second and third layer — so blocks stop
+ * all being the same height and one global number stops meaning anything.
+ * The replacement is a per-tile column height in the grid, and the march
+ * below is already the right shape for it: the early-out becomes a
+ * comparison against the tile the ray is currently standing over, and the
+ * ray height at that step is a lerp from the receiver height toward the
+ * light. Do not add a second consumer of this uniform in the meantime; the
+ * migration cost is per-consumer.
+ */
+uniform float uOccluderHeight;
 
 /** 1.0 = fully lit, 0.0 = fully blocked. */
-float traceShadow(vec2 from, vec2 to) {
-  vec2 delta = to - from;
+float traceShadow(vec3 from, vec2 to) {
+  // Above the wall layer there is nothing left to hide behind. Without this,
+  // every block top is shadowed by its own neighbours.
+  if (from.z >= uOccluderHeight) return 1.0;
+
+  vec2 delta = to - from.xy;
   float dist = length(delta);
   if (dist < 1e-4) return 1.0;
   vec2 dir = delta / dist;
@@ -74,19 +99,25 @@ float traceShadow(vec2 from, vec2 to) {
   // LIGHTING_PLAN §9.3 also insists on conservative mips for the cascades.
   float stepLen = 0.75;
   int steps = int(min(float(SHADOW_STEPS), dist / stepLen));
+  // A surface must not shadow itself. The first version skipped by DISTANCE,
+  // which fails on any receiver that sits INSIDE a solid tile — the top face
+  // of a wall block being exactly that — because the sample lands back in the
+  // block's own footprint and the cap goes black. Every wall read as a hole
+  // punched in the board. Skipping by TILE is what the grid actually means:
+  // a tile is solid or it is not, and the tile you are standing on cannot be
+  // between you and anything.
+  vec2 originTile = floor(from.xy);
 
   for (int i = 1; i <= SHADOW_STEPS; i++) {
     if (i > steps) break;
-    vec2 p = from + dir * (float(i) * stepLen);
-    // Skip the tile the receiver is standing on: a surface must not shadow
-    // itself, or every wall face goes black and the whole board reads as
-    // unlit no matter where the lantern is.
-    if (i == 1 && length(p - from) < 0.5) continue;
+    vec2 p = from.xy + dir * (float(i) * stepLen);
+    vec2 tile = floor(p);
+    if (all(equal(tile, originTile))) continue;
     // The grid is R8 UNORM, so a solid tile is uploaded as 255 and arrives
     // here as 1.0. Uploading a literal 1 instead would arrive as 1/255 and
     // never clear this test — shadows would silently never cast, which looks
     // exactly like "the shadow code is not wired up".
-    float solid = texture(uOccupancy, (floor(p) + 0.5) / uGridSize).r;
+    float solid = texture(uOccupancy, (tile + 0.5) / uGridSize).r;
     if (solid > 0.5) return 0.0;
   }
   return 1.0;
@@ -100,8 +131,8 @@ float traceShadow(vec2 from, vec2 to) {
  * across the ray matters, since spreading along it just moves the sample
  * nearer or further along the same line.
  */
-float softShadow(vec2 surface, vec2 lightPos, float radius) {
-  vec2 toLight = lightPos - surface;
+float softShadow(vec3 surface, vec2 lightPos, float radius) {
+  vec2 toLight = lightPos - surface.xy;
   vec2 perp = normalize(vec2(-toLight.y, toLight.x)) * radius;
   float sum = 0.0;
   for (int s = 0; s < SHADOW_SAMPLES; s++) {
@@ -133,6 +164,7 @@ in vec2 vUV;
 in vec4 vTint;
 in vec2 vWorld;       // board position of this fragment, in tiles
 flat in float vUpright;
+in float vHeight;     // height of this fragment above the board, in tiles
 
 uniform sampler2D uAlbedo;
 uniform sampler2D uNormal;
@@ -149,6 +181,27 @@ uniform float uNormalStrength;
 uniform float uSpecular;
 uniform float uGloss;
 uniform float uTilt;
+
+/**
+ * INLAY — how much this material reads as individual tiles rather than as one
+ * continuous rock texture. 0 off.
+ *
+ * ENGINE_PLAN section 11 lists tile seams as a board cue for a reason worth
+ * stating: a continuous texture reads as TERRAIN, and terrain is a place you
+ * are inside. Pieces with edges read as a board, which is a thing you are
+ * looking at. Same pixels, different object.
+ *
+ * Per MATERIAL rather than per vertex, because "this surface is laid as
+ * separate tiles" is a fact about the material and not about any one quad —
+ * and a uniform costs no vertex bandwidth at all.
+ */
+uniform float uInlay;
+/** Seam half-width, in tiles. */
+uniform float uSeamWidth;
+/** How dark the seam paints, 0..1 as a multiplier at the very edge. */
+uniform float uSeamDarken;
+/** How far the tile's chamfer tips the normal outward at its edge. */
+uniform float uSeamBevel;
 
 /**
  * False-colour debug output. ENGINE_PLAN section 6 asks for these, and the
@@ -184,20 +237,67 @@ void main() {
     N = vec3(0.0, 0.0, 1.0);
   }
 
-  // Bring the tangent-space normal into board space. A quad lying on the
-  // board has its surface normal pointing straight up (+z); a quad standing
-  // up faces along -y. Getting this wrong is the classic "lighting is
-  // inverted on half the objects" bug, and it is invisible until a light
-  // passes the object rather than sitting in front of it.
+  // Bring the tangent-space normal into board space. Three cases, and which
+  // one applies is the whole difference between a floor, a wall and a piece.
+  //
+  // WHICH WAY IS THE CAMERA? Board +y. Everything in the projection agrees on
+  // this and it is worth pinning down because the first version got it
+  // backwards: project() sends larger y further DOWN the screen, sortKey
+  // paints larger y LAST, and visibleBounds widens maxY so that tall pieces
+  // standing below the viewport still poke into it. Near is +y. The image
+  // plane is spanned by (1,0,0) and (0,cos,-sin), so its normal — the
+  // direction from a surface toward the viewer — is (0, sin(tilt), cos(tilt)).
+  //
+  // THE BUG THIS REPLACES: a standing quad mapped texture +z to board MINUS
+  // y, i.e. into the board and away from the viewer. Wall faces were
+  // therefore lit only by lights BEHIND them, and every character sprite —
+  // whose normal is horizontal — met its own lantern at exactly 90 degrees
+  // and contributed zero, so the hero rendered as a black silhouette in the
+  // middle of his own pool of light. Both symptoms, one sign.
   vec3 worldN;
-  if (vUpright > 0.5) {
-    // Standing: texture +y maps to board +z, texture +z faces -y (toward camera).
-    worldN = vec3(N.x, -N.z, N.y);
+  if (vUpright > 1.5) {
+    // BILLBOARD (a game piece). The quad turns to face the viewer, so its
+    // surface normal IS the view direction. Its own vertical axis leans back
+    // accordingly: perpendicular to the view and to board x.
+    float c = cos(uTilt), s = sin(uTilt);
+    worldN = vec3(N.x, 0.0, 0.0)
+           + vec3(0.0, -c, s) * N.y
+           + vec3(0.0, s, c) * N.z;
+  } else if (vUpright > 0.5) {
+    // VERTICAL FACE (a wall). Fixed plane: texture +y is board +z, and the
+    // face looks out along board +y toward the near edge of the table.
+    worldN = vec3(N.x, N.z, N.y);
   } else {
-    // Lying down: texture +z is board +z.
+    // LYING DOWN. Texture +z is board +z.
     worldN = vec3(N.x, N.y, N.z);
   }
   worldN = normalize(worldN);
+
+  // --- INLAY: laid as separate tiles, not poured as one surface --------
+  //
+  // Two things happen at a seam and only one of them is the dark line. The
+  // line alone is a drawn line — it does not move, so the eye files it as
+  // texture. The CHAMFER is what makes it an edge: tip the normal outward as
+  // it approaches the seam and the near side of every tile catches the
+  // lantern while the far side falls away, so the whole board resolves into
+  // separate pieces the moment the light moves. That is the same argument
+  // this pass exists for, one scale down.
+  //
+  // A lying quad seams on the board grid. A standing one seams on x only —
+  // the vertical groove between two blocks in a wall run, which is what stops
+  // a run reading as a single slab. Its height coordinate is carried too, so
+  // a block also gets a chamfer where it meets the board.
+  if (uInlay > 0.001) {
+    vec2 sc = vUpright > 0.5 ? vec2(vWorld.x, vHeight) : vWorld;
+    vec2 f = fract(sc);
+    vec2 d = min(f, 1.0 - f);
+    vec2 w = 1.0 - smoothstep(vec2(0.0), vec2(uSeamWidth), d);
+    float seam = max(w.x, w.y) * uInlay;
+    albedo.rgb *= mix(1.0, uSeamDarken, seam);
+    vec2 outward = vec2(f.x < 0.5 ? -1.0 : 1.0, f.y < 0.5 ? -1.0 : 1.0) * w;
+    vec3 tip = vUpright > 0.5 ? vec3(outward.x, 0.0, 0.0) : vec3(outward, 0.0);
+    worldN = normalize(worldN + tip * uSeamBevel * uInlay);
+  }
 
   if (uDebug == 1) { outColor = vec4(fract(vWorld * 0.1), 0.0, 1.0); return; }
   if (uDebug == 5) { outColor = vec4(worldN * 0.5 + 0.5, 1.0); return; }
@@ -210,8 +310,12 @@ void main() {
     float reach = uLightParams[i].y;
     float radius = uLightParams[i].z;
 
-    // Surface sits on the board plane, or partway up it if standing.
-    vec3 surface = vec3(vWorld, vUpright > 0.5 ? 0.35 : 0.0);
+    // Where this fragment actually is. vHeight interpolates up a standing
+    // quad and is constant across a lying one, so the top of a wall block's
+    // face is correctly nearer the lantern than its base — which the old
+    // hardcoded 0.35 could not express, and which is most of what makes a
+    // block look like it has a top at all.
+    vec3 surface = vec3(vWorld, vHeight);
     vec3 toLight = lp - surface;
     float dist = length(toLight);
     if (dist > reach) continue;
@@ -226,7 +330,7 @@ void main() {
     float atten = falloff * window;
 
     float ndl = max(dot(worldN, L), 0.0);
-    float shadow = softShadow(vWorld, lp.xy, radius);
+    float shadow = softShadow(surface, lp.xy, radius);
 
     if (uDebug == 2) { outColor = vec4(vec3(ndl), 1.0); return; }
     if (uDebug == 3) { outColor = vec4(vec3(atten), 1.0); return; }
@@ -236,7 +340,9 @@ void main() {
 
     // Blinn-Phong, gated on diffuse: a highlight floating on a surface the
     // light cannot reach is the tell of a specular term added without one.
-    vec3 V = vec3(0.0, -sin(uTilt), cos(uTilt));
+    // Toward the viewer, who is on the +y side of the board. Same derivation
+    // as the normal basis above, and it had the same sign error.
+    vec3 V = vec3(0.0, sin(uTilt), cos(uTilt));
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(worldN, H), 0.0), uGloss) * uSpecular;
     contribution += uLightColour[i] * spec * atten * shadow * step(0.001, ndl);
@@ -275,7 +381,7 @@ export const LIT_SPRITE_VERT = `#version 300 es
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec4 aTint;
-layout(location = 3) in vec3 aWorld;   // board xy + upright flag
+layout(location = 3) in vec4 aWorld;   // board xy, upright flag, height above the board
 
 uniform vec2 uViewport;
 
@@ -283,6 +389,7 @@ out vec2 vUV;
 out vec4 vTint;
 out vec2 vWorld;
 flat out float vUpright;
+out float vHeight;
 
 void main() {
   vec2 ndc = (aPos / uViewport) * 2.0 - 1.0;
@@ -290,7 +397,11 @@ void main() {
   vUV = aUV;
   vTint = aTint;
   vWorld = aWorld.xy;
+  // FLAT, because a quad is one object and cannot be half standing up.
   vUpright = aWorld.z;
+  // NOT flat: height is the axis a standing quad spans, so interpolating it
+  // is the whole point.
+  vHeight = aWorld.w;
 }`;
 
 /**

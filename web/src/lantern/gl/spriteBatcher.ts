@@ -74,10 +74,11 @@ export class SpriteBatcher {
     gl.vertexAttribPointer(1, 2, gl.FLOAT, false, STRIDE, 8);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 4, gl.FLOAT, false, STRIDE, 16);
-    // Board position + upright flag, for the lighting pass. Every light
-    // calculation happens in board space; see FLOATS_PER_VERTEX.
+    // Board position, upright flag and height above the board, for the
+    // lighting pass. Every light calculation happens in board space; see
+    // FLOATS_PER_VERTEX.
     gl.enableVertexAttribArray(3);
-    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, STRIDE, 32);
+    gl.vertexAttribPointer(3, 4, gl.FLOAT, false, STRIDE, 32);
     gl.bindVertexArray(null);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }

@@ -96,6 +96,26 @@ export interface Sprite {
    */
   upright?: boolean;
   /**
+   * Standing up AND turned to face the viewer. A game piece.
+   *
+   * `upright` alone means a fixed vertical plane — a wall's front face, which
+   * stays put whatever you do with the camera and whose surface normal points
+   * along board +y, out of the wall toward the near edge of the table.
+   *
+   * A PIECE is not that. A painted figure on a plinth presents its face to
+   * whoever is looking at it, which is what a billboard is, and its surface
+   * normal is therefore the VIEW direction rather than +y. At 55 degrees
+   * those differ by 35 degrees — and the difference is not cosmetic, because
+   * the lantern the hero is carrying sits almost directly above him. Against
+   * a +y normal that light arrives at exactly 90 degrees and contributes
+   * NOTHING: the hero renders as a black silhouette in the middle of his own
+   * pool of light. Against the view normal it lands at cos(55) and he lights.
+   *
+   * Implies `upright` for the height math; the two differ only in where the
+   * surface is deemed to be pointing.
+   */
+  billboard?: boolean;
+  /**
    * Which coat of paint this belongs to. See the LAYER_ constants.
    *
    * Defaults to `LAYER_PIECE` for upright quads and `LAYER_BOARD` for flat
@@ -107,9 +127,30 @@ export interface Sprite {
   layer?: number;
 }
 
+/** Standing up off the board, either as a fixed face or as a billboard. */
+export function isStanding(s: Sprite): boolean {
+  return Boolean(s.upright || s.billboard);
+}
+
+/**
+ * How the fragment shader is told what this quad is.
+ *
+ * 0 lying on the board, 1 a fixed vertical face, 2 a billboard facing the
+ * viewer. One flat float rather than two, because it is genuinely one choice
+ * with three answers and two booleans would allow a fourth, meaningless one.
+ */
+export const ORIENT_FLAT = 0;
+export const ORIENT_FACE = 1;
+export const ORIENT_BILLBOARD = 2;
+
+export function spriteOrientation(s: Sprite): number {
+  if (s.billboard) return ORIENT_BILLBOARD;
+  return s.upright ? ORIENT_FACE : ORIENT_FLAT;
+}
+
 /** The layer a sprite sorts in, with the default applied. */
 export function spriteLayer(s: Sprite): number {
-  return s.layer ?? (s.upright ? LAYER_PIECE : LAYER_BOARD);
+  return s.layer ?? (isStanding(s) ? LAYER_PIECE : LAYER_BOARD);
 }
 
 const DEFAULT_PIVOT: Vec2 = { x: 0.5, y: 1 };
@@ -155,19 +196,25 @@ export function batchGroups(sorted: readonly Sprite[]): SpriteBatch[] {
   return out;
 }
 
-/** x, y (screen px), u, v, r, g, b, a. */
 /**
- * x, y (screen px), u, v, r, g, b, a, worldX, worldY, upright.
+ * x, y (screen px), u, v, r, g, b, a, worldX, worldY, upright, surfaceZ.
  *
- * The last three exist for the lighting pass. Every light calculation happens
+ * The last four exist for the lighting pass. Every light calculation happens
  * in BOARD space, so the fragment shader needs to know which tile it is
  * standing on — and it cannot recover that by inverting the projection,
  * because an upright quad's screen position maps to a whole column of board
- * positions rather than to one. Carrying it costs 12 bytes a vertex and
+ * positions rather than to one. Carrying it costs 16 bytes a vertex and
  * removes an entire class of "the lighting is subtly offset from the geometry"
  * bug.
+ *
+ * `surfaceZ` is the last to arrive and it is what lets a wall be a BLOCK
+ * rather than a tile with a face bolted on (ENGINE_PLAN §12.1). Before it the
+ * shader assumed every upright fragment sat at a hardcoded 0.35 above the
+ * board, so the top of a wall face was lit as though it were level with the
+ * bottom — and a block's top face, which is a FLAT quad at height, had no way
+ * to say it was up there at all.
  */
-export const FLOATS_PER_VERTEX = 11;
+export const FLOATS_PER_VERTEX = 12;
 /** Two triangles, no index buffer — simplest thing that works at M1 sprite counts. */
 export const VERTICES_PER_SPRITE = 6;
 
@@ -187,10 +234,11 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
   for (const sp of sprites) {
     const anchor = project(sp.position, camera);
     const w = sp.size.x * camera.zoom;
+    const standing = isStanding(sp);
     // The one line that decides whether this is a piece or a decal. See the
     // `upright` note on Sprite: lying down squashes by cos, standing up
     // scales by sin, and they are the same number only at 45 degrees.
-    const h = sp.size.y * camera.zoom * (sp.upright ? sin : cos);
+    const h = sp.size.y * camera.zoom * (standing ? sin : cos);
     const pivot = sp.pivot ?? DEFAULT_PIVOT;
     const left = anchor.x - w * pivot.x;
     const top = anchor.y - h * pivot.y;
@@ -222,20 +270,33 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
     // decides how far the lantern is and what shadows it. Interpolating Y
     // there would light the top of the face as though it were a tile further
     // back, which bends every wall away from the light.
-    const upright = sp.upright ? 1 : 0;
+    const upright = spriteOrientation(sp);
     const wx0 = sp.position.x - sp.size.x * pivot.x;
     const wx1 = wx0 + sp.size.x;
-    const wy0 = sp.upright ? sp.position.y : sp.position.y - sp.size.y * pivot.y;
-    const wy1 = sp.upright ? sp.position.y : wy0 + sp.size.y;
+    const wy0 = standing ? sp.position.y : sp.position.y - sp.size.y * pivot.y;
+    const wy1 = standing ? sp.position.y : wy0 + sp.size.y;
+    // HEIGHT ABOVE THE BOARD, per corner, and the two cases are mirror images
+    // of the world-Y ones above. A quad LYING on the board is all at one
+    // height and spans depth; a quad STANDING UP is all at one depth and
+    // spans height. So the axis that is constant for one is the axis that
+    // interpolates for the other, and it is the same `upright` flag that
+    // decides both.
+    // `pivot.y` is measured DOWN the quad on screen, so 1 puts the anchor at
+    // the quad's base — which for a standing quad is its lowest point, at
+    // height `position.z`. Getting this factor the wrong way round put the
+    // hero's whole body at NEGATIVE height, i.e. under the board, and the
+    // symptom was only that the lighting looked a bit off.
+    const zTop = standing ? sp.position.z + sp.size.y * pivot.y : sp.position.z;
+    const zBottom = standing ? zTop - sp.size.y : sp.position.z;
     // Same winding as `corners`: left/top, right/top, right/bottom, left/top,
     // right/bottom, left/bottom.
-    const world: [number, number][] = [
-      [wx0, wy0],
-      [wx1, wy0],
-      [wx1, wy1],
-      [wx0, wy0],
-      [wx1, wy1],
-      [wx0, wy1],
+    const world: [number, number, number][] = [
+      [wx0, wy0, zTop],
+      [wx1, wy0, zTop],
+      [wx1, wy1, zBottom],
+      [wx0, wy0, zTop],
+      [wx1, wy1, zBottom],
+      [wx0, wy1, zBottom],
     ];
     for (let c = 0; c < corners.length; c++) {
       const [x, y, u, v] = corners[c];
@@ -250,6 +311,7 @@ export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Flo
       out[o++] = world[c][0];
       out[o++] = world[c][1];
       out[o++] = upright;
+      out[o++] = world[c][2];
     }
   }
   return out;

@@ -66,6 +66,17 @@ export interface RenderOptions {
   normalStrength?: number;
   specular?: number;
   gloss?: number;
+  /**
+   * Tile-seam geometry, for materials that declare an `inlay` strength.
+   *
+   * Global rather than per-material because they describe the BOARD's
+   * construction — how wide the grout is and how the tiles are chamfered —
+   * and a board whose tiles were bevelled inconsistently would read as a
+   * mistake rather than as variety. `Material.inlay` is the per-surface dial.
+   */
+  seamWidth?: number;
+  seamDarken?: number;
+  seamBevel?: number;
   /** False-colour overlay: 0 off, 1 board pos, 2 N.L, 3 attenuation, 4 shadow, 5 normal. */
   debug?: number;
 }
@@ -82,6 +93,9 @@ const DEFAULTS: Required<RenderOptions> = {
   normalStrength: 1,
   specular: 0.25,
   gloss: 24,
+  seamWidth: 0.045,
+  seamDarken: 0.42,
+  seamBevel: 0.85,
   debug: 0,
 };
 
@@ -297,6 +311,10 @@ export class Renderer {
         gl.uniform1f(prog.u('uSpecular'), opts.specular);
         gl.uniform1f(prog.u('uGloss'), opts.gloss);
         gl.uniform1f(prog.u('uTilt'), scene.camera.tilt);
+        gl.uniform1f(prog.u('uOccluderHeight'), scene.occluderHeight);
+        gl.uniform1f(prog.u('uSeamWidth'), opts.seamWidth);
+        gl.uniform1f(prog.u('uSeamDarken'), opts.seamDarken);
+        gl.uniform1f(prog.u('uSeamBevel'), opts.seamBevel);
         gl.uniform1i(prog.u('uDebug'), opts.debug);
       }
 
@@ -456,6 +474,7 @@ export class Renderer {
       gl.uniform1i(prog.u('uNormal'), 1);
       gl.uniform1i(prog.u('uHasNormal'), mat?.normal ? 1 : 0);
       gl.uniform1f(prog.u('uNormalStrength'), mat?.normalStrength ?? opts.normalStrength);
+      gl.uniform1f(prog.u('uInlay'), mat?.inlay ?? 0);
     });
   }
 

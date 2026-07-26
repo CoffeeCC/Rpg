@@ -32,7 +32,7 @@
 // =========================================================================
 
 import type { Vec2 } from './camera';
-import { LAYER_DECAL, type Sprite, type Tint, type UVRect } from './sprite';
+import { LAYER_DECAL, LAYER_PIECE, type Sprite, type Tint, type UVRect } from './sprite';
 
 const FULL_UV: UVRect = { u0: 0, v0: 0, u1: 1, v1: 1 };
 
@@ -200,6 +200,99 @@ export function pieceBaseSprites(
 }
 
 // -------------------------------------------------------------------------
+// WALL BLOCKS — the same machinery, at a different size
+// -------------------------------------------------------------------------
+
+export interface WallBlockOptions {
+  textureId: string;
+  /** UV window for the top face. */
+  topUv: UVRect;
+  /** UV window for the front face. */
+  frontUv: UVRect;
+  /** Block height in tiles. */
+  height?: number;
+  /**
+   * Draw the front face.
+   *
+   * False when another block stands immediately in front, because then the
+   * face is buried inside the wall and drawing it costs a quad and a batch
+   * break to render something nobody can see.
+   */
+  front?: boolean;
+  topTint?: Tint;
+  frontTint?: Tint;
+  shadowTextureId?: string;
+  shadowStrength?: number;
+  /** How far the footprint shadow spills past the tile, in tiles. */
+  shadowSpill?: number;
+}
+
+/**
+ * A wall as a BLOCK sitting on the board, in paint order.
+ *
+ * ENGINE_PLAN §12.1, in Paul's words: *"the tiles that are walls can just be
+ * blocky wall game pieces with textures on them"*. That is a stronger claim
+ * than it sounds — it says a wall and a hero are THE SAME KIND OF OBJECT at
+ * different sizes, which is why this lives here beside `pieceBaseSprites` and
+ * shares its shadow rather than having its own.
+ *
+ * The old wall was a floor tile with a front face bolted on: the tile was
+ * part of the board and the face was a decoration standing at its near edge.
+ * A block is one object with a top you can see, and the difference shows at
+ * the corners, where a bolted-on face has nothing to be the corner OF.
+ *
+ * PAINT ORDER, which is the part that goes wrong: the top face is a LYING
+ * quad that must nevertheless draw with the pieces rather than with the board,
+ * because it is above the board and can legitimately hide the feet of a figure
+ * standing behind it. Within the piece layer the top (sorted at the block's
+ * back edge) draws before the front face (sorted a full tile nearer), so the
+ * block closes over itself; and any piece standing in front of the block sorts
+ * later still, so it is never buried.
+ */
+export function wallBlockSprites(at: Vec2, o: WallBlockOptions): Sprite[] {
+  const height = o.height ?? 0.7;
+  const out: Sprite[] = [];
+
+  if (o.shadowTextureId) {
+    // A block's footprint is square, so this wants a square falloff — see
+    // `blockShadowPixels`. It is the same sprite otherwise, which is the
+    // point: one shadow implementation for everything that sits on the board.
+    out.push({
+      ...contactShadowSprite({ x: at.x + 0.5, y: at.y + 0.5 }, o.shadowTextureId, {
+        radius: 0.5 + (o.shadowSpill ?? 0.22),
+        height: 0,
+        strength: o.shadowStrength ?? 0.7,
+      }),
+    });
+  }
+
+  out.push({
+    position: { x: at.x, y: at.y, z: height },
+    size: { x: 1, y: 1 },
+    pivot: { x: 0, y: 0 },
+    uv: o.topUv,
+    textureId: o.textureId,
+    tint: o.topTint,
+    // NOT upright, but NOT board either. See the paint-order note above.
+    layer: LAYER_PIECE,
+  });
+
+  if (o.front !== false) {
+    out.push({
+      position: { x: at.x, y: at.y + 1, z: 0 },
+      size: { x: 1, y: height },
+      pivot: { x: 0, y: 1 },
+      upright: true,
+      uv: o.frontUv,
+      textureId: o.textureId,
+      tint: o.frontTint,
+    });
+  }
+
+  return out;
+}
+
+// -------------------------------------------------------------------------
 // PROCEDURAL PIXELS
 // -------------------------------------------------------------------------
 
@@ -223,6 +316,35 @@ export function contactShadowPixels(size = 96, core = 0.3): Uint8Array {
       const d = Math.sqrt(dx * dx + dy * dy);
       // smoothstep(core, 1, d) inverted: 1 inside the core, 0 at the rim.
       const t = clamp01((d - core) / Math.max(1e-4, 1 - core));
+      const a = 1 - t * t * (3 - 2 * t);
+      px[(y * size + x) * 4 + 3] = Math.round(clamp01(a) * 255);
+    }
+  }
+  return px;
+}
+
+/**
+ * The same shadow for a SQUARE footprint — a wall block, a chest, a card.
+ *
+ * A disc under a block is worse than no shadow: it darkens the middle of the
+ * tile and leaves the corners bright, which reads as the block resting on a
+ * cushion. Rounded-box signed distance, so the corners round slightly the way
+ * a real penumbra does around a sharp edge rather than staying perfectly
+ * square.
+ */
+export function blockShadowPixels(size = 96, inner = 0.5, corner = 0.24): Uint8Array {
+  const px = new Uint8Array(size * size * 4);
+  const c = (size - 1) / 2;
+  const r = Math.min(corner, inner);
+  const e = inner - r;
+  const feather = Math.max(1e-4, 1 - inner);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const qx = Math.abs((x - c) / c) - e;
+      const qy = Math.abs((y - c) / c) - e;
+      // Rounded-box SDF: negative inside the core, 0 on it, positive outside.
+      const d = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+      const t = clamp01(d / feather);
       const a = 1 - t * t * (3 - 2 * t);
       px[(y * size + x) * 4 + 3] = Math.round(clamp01(a) * 255);
     }

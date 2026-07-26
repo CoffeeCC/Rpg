@@ -44,6 +44,20 @@ export interface Material {
   normalStrength?: number;
   /** 0 matte, 1 mirror. Drives the specular lobe at M2. */
   roughness?: number;
+  /**
+   * How strongly this surface reads as SEPARATE TILES, 0..1.
+   *
+   * A board's floor is inlaid or printed pieces with edges between them; a
+   * cave floor is one continuous rock texture. Same art either way — the
+   * difference is a seam and a chamfer at every whole-tile boundary, and it
+   * is the difference between "terrain you are inside" and "a board you are
+   * looking at" (ENGINE_PLAN §11).
+   *
+   * A property of the MATERIAL, not of any one quad, so it costs a uniform
+   * and no vertex bandwidth. Undefined or 0 leaves the surface continuous —
+   * which is right for a table top, a piece, or a backdrop.
+   */
+  inlay?: number;
 }
 
 /**
@@ -142,6 +156,20 @@ export interface Scene {
   /** M5+. Null means nothing blocks anything. */
   occluders: OccluderGrid | null;
   /**
+   * How tall a solid tile in `occluders` stands, in tiles.
+   *
+   * The grid says WHERE, not how tall, and that was invisible until walls
+   * became blocks with visible tops (ENGINE_PLAN §12.1): a receiver standing
+   * on top of the wall layer cannot be shadowed BY the wall layer, but a flat
+   * grid shadows it from every neighbour and a whole run of wall goes black.
+   * One number closes it.
+   *
+   * KNOWN EXPIRY: §14 takes the map vertical, so blocks stop all being the
+   * same height and this becomes a per-tile column height on `OccluderGrid`.
+   * `traceShadow` is already shaped for that swap; see the note there.
+   */
+  occluderHeight: number;
+  /**
    * Colour of unlit ground. Not black.
    *
    * Night outdoors is a desaturated blue — the eye's own low-light response
@@ -170,6 +198,7 @@ export function makeScene(camera: Camera, partial: Partial<Scene> = {}): Scene {
     materials: partial.materials ?? new Map(),
     lights: partial.lights ?? [],
     occluders: partial.occluders ?? null,
+    occluderHeight: partial.occluderHeight ?? 1,
     night: partial.night ?? [6 / 255, 9 / 255, 18 / 255],
     ambient: partial.ambient ?? 0.18,
     time: partial.time ?? 0,
