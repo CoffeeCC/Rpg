@@ -1,0 +1,157 @@
+<!doctype html>
+<!--
+  pad-test.html — does this device show the browser a gamepad AT ALL?
+
+  Standalone on purpose: no bundle, no game state, no nav layer. If this page
+  says "no pad", the problem is upstream of every line of game code (on a Steam
+  Deck, almost always Steam Input handing the browser keyboard/mouse instead of
+  a controller). If it says "pad seen" and lights up on input, the pad reaches
+  the page fine and the gap is screens that have no nav scope registered.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Everdusk — controller test</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; padding: 20px 24px;
+        background: #06080f; color: #e8e2d4;
+        font: 16px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+      }
+      h1 { font-size: 20px; margin: 0 0 4px; color: #ffd79a; }
+      p.sub { margin: 0 0 18px; color: #8d8677; }
+      #verdict {
+        font-size: 22px; font-weight: 700; padding: 14px 16px;
+        border-radius: 8px; margin-bottom: 18px;
+      }
+      .bad  { background: #2a0f12; color: #ff9b9b; border: 1px solid #6b2226; }
+      .good { background: #0f2416; color: #9df0b4; border: 1px solid #256b3a; }
+      .row { margin: 3px 0; }
+      .label { color: #8d8677; }
+      .grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .btn {
+        min-width: 46px; text-align: center; padding: 6px 4px;
+        border-radius: 6px; background: #12161f; border: 1px solid #232a38;
+        font-size: 13px; color: #6f7686;
+      }
+      .btn.on { background: #ffd79a; color: #1a1206; border-color: #ffd79a; font-weight: 700; }
+      .bar { height: 10px; background: #12161f; border-radius: 5px; position: relative; overflow: hidden; }
+      .bar i { position: absolute; top: 0; bottom: 0; background: #7fb2ff; }
+      section { margin-bottom: 20px; }
+      h2 { font-size: 14px; color: #8d8677; margin: 0 0 6px; font-weight: 400; text-transform: uppercase; letter-spacing: .08em; }
+      #keys { color: #7fb2ff; min-height: 1.5em; }
+    </style>
+  </head>
+  <body>
+    <h1>Everdusk — controller test</h1>
+    <p class="sub">Press buttons and move both sticks. Nothing here is the game.</p>
+
+    <div id="verdict" class="bad">Waiting… press a button on the controller.</div>
+
+    <section>
+      <h2>What the browser reports</h2>
+      <div class="row"><span class="label">pads visible:</span> <span id="count">0</span></div>
+      <div class="row"><span class="label">id:</span> <span id="padid">—</span></div>
+      <div class="row"><span class="label">mapping:</span> <span id="mapping">—</span></div>
+    </section>
+
+    <section>
+      <h2>Buttons</h2>
+      <div class="grid" id="buttons"></div>
+    </section>
+
+    <section>
+      <h2>Axes (sticks)</h2>
+      <div id="axes"></div>
+    </section>
+
+    <section>
+      <h2>Keyboard / mouse arriving instead</h2>
+      <p class="sub" style="margin:0 0 6px">
+        If this line lights up when you move the sticks, Steam Input is
+        emulating a keyboard — that is the bug, and it is fixed in Steam, not
+        in the game.
+      </p>
+      <div id="keys">—</div>
+    </section>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let everSeen = false;
+      let everPressed = false;
+
+      function pads() {
+        const list = navigator.getGamepads ? navigator.getGamepads() : [];
+        return [...list].filter((p) => p && p.connected);
+      }
+
+      function verdict(seen, pressed) {
+        const v = $('verdict');
+        if (!seen) {
+          v.className = 'bad';
+          v.textContent = 'NO PAD VISIBLE — the browser cannot see a controller.';
+        } else if (!pressed) {
+          v.className = 'bad';
+          v.textContent = 'Pad seen. Now press a button — nothing has registered yet.';
+        } else {
+          v.className = 'good';
+          v.textContent = 'PAD WORKS — input reaches the page.';
+        }
+      }
+
+      function frame() {
+        requestAnimationFrame(frame);
+        const ps = pads();
+        $('count').textContent = String(ps.length);
+        if (!ps.length) { verdict(everSeen, everPressed); return; }
+        everSeen = true;
+        const p = ps[0];
+        $('padid').textContent = p.id || '(no id)';
+        $('mapping').textContent = p.mapping || '(none — non-standard layout)';
+
+        const bwrap = $('buttons');
+        while (bwrap.children.length < p.buttons.length) {
+          const d = document.createElement('div');
+          d.className = 'btn';
+          bwrap.appendChild(d);
+        }
+        p.buttons.forEach((b, i) => {
+          const el = bwrap.children[i];
+          el.textContent = i + (b.value > 0 && b.value < 1 ? ' ' + b.value.toFixed(1) : '');
+          el.className = 'btn' + (b.pressed ? ' on' : '');
+          if (b.pressed) everPressed = true;
+        });
+
+        const awrap = $('axes');
+        while (awrap.children.length < p.axes.length) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = '<span class="label"></span><div class="bar"><i></i></div>';
+          awrap.appendChild(row);
+        }
+        p.axes.forEach((a, i) => {
+          const row = awrap.children[i];
+          row.querySelector('.label').textContent = 'axis ' + i + ': ' + a.toFixed(3) + ' ';
+          const bar = row.querySelector('i');
+          // Centre at 50%, grow toward whichever side the stick is pushed.
+          const half = (a / 2) * 100;
+          bar.style.left = (a < 0 ? 50 + half : 50) + '%';
+          bar.style.width = Math.abs(half) + '%';
+          if (Math.abs(a) > 0.3) everPressed = true;
+        });
+
+        verdict(true, everPressed);
+      }
+
+      addEventListener('gamepadconnected', () => { everSeen = true; });
+      const seenKeys = new Set();
+      addEventListener('keydown', (e) => {
+        seenKeys.add(e.key);
+        $('keys').textContent = [...seenKeys].slice(-12).join('  ');
+      });
+      frame();
+    </script>
+  </body>
+</html>
