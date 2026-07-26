@@ -55,7 +55,12 @@
 # here they cannot fail to, because they are the same render.
 #
 # =========================================================================
-# SIX THINGS THAT HAVE ALREADY GONE WRONG. Read before editing.
+# NINE THINGS THAT HAVE ALREADY GONE WRONG. Read before editing.
+#
+# Four of the nine produced a completely clean run, and one of them (7) was
+# written down BACKWARDS for a while because the check that "confirmed" it
+# measured a surface where the effect could not appear. A number that agrees
+# with you is not evidence until you know what would have made it disagree.
 # =========================================================================
 #
 # 1. OUTPUT PATHS MUST BE ABSOLUTE. Blender resolves a bare relative render
@@ -132,26 +137,42 @@
 #    and is worse: it lets a groove narrower than twice the bevel width
 #    chamfer itself into a V.
 #
-# 7. THERE IS NO SUCH THING AS AN INVISIBLE OCCLUDER. The tempting trick for a
-#    wall-mounted fitting is to park an unrendered wall behind it purely so the
-#    AO pass has something to darken against — `build_face` already does the
-#    same thing with a floor slab, and a bracket wants a wall the way a face
-#    wants a floor. It does not work. Cycles traces the AO node's rays with the
-#    ray type of the path that reached the shading point, so on a surface the
-#    camera can see directly they ARE camera rays, and `visible_camera = False`
-#    takes the occluder out of them too.
+# 7. AN INVISIBLE OCCLUDER WORKS, AND THIS ENTRY USED TO SAY THE OPPOSITE.
+#    `ghost()` — `visible_camera = False` — takes an object out of the picture
+#    and LEAVES IT IN THE AO. That is what makes `split()` possible, so it is
+#    worth showing the measurement that overturned the old claim, and worth
+#    being honest about why the old claim was believed.
 #
-#    Measured: plan view of a box floating over a floor slab, AO over the box.
+#    THE ORIGINAL TEST MEASURED THE WRONG SURFACE. It put a box over a floor
+#    slab and measured AO ON THE BOX — whose top face, 0.3 above the floor with
+#    an AO distance of 0.35, cannot see the floor whatever its visibility flag
+#    says. Three rows came out "identical" and identical was read as "no
+#    occlusion", when it was really "no occlusion was possible here".
 #
-#        no floor at all                     mean 254.8   min 250
-#        floor, visible                      mean 228.9   min 131
-#        floor, visible_camera = False       mean 254.8   min 250   <- identical
+#    Re-run with the floor as the SUBJECT and a block sitting on it as the
+#    occluder, which is the case that actually matters — a brass fitting has to
+#    darken the timber it is bolted to. Plan view, AO on the floor:
 #
-#    So occlusion comes from geometry that is either IN the picture and belongs
-#    there — which is why `sconce_bracket` carries its own backplate instead of
-#    borrowing a wall — or parked OUTSIDE the frame, which is what `build_face`
-#    can do and an upright fitting cannot, because a wall behind a bracket is
-#    squarely in shot.
+#      case                    centre   ring (contact)   far
+#      no block                 254.8        254.9       254.9
+#      block visible            254.8        231.9       254.4
+#      block visible_camera=0     0.1        231.9       254.4
+#      block is_holdout           0.0        231.9       254.4
+#
+#    CENTRE IS THE CONTROL and the reason the table is readable. Inside the
+#    block's footprint, a RENDERED block shows its own unoccluded top face
+#    (254.8); a GHOSTED one shows the floor underneath, boxed in and nearly
+#    black (0.1). So the flag demonstrably took effect — and the contact ring
+#    outside it is 231.9 either way, to a tenth of a level.
+#
+#    `is_holdout` also occludes, and additionally punches the footprint
+#    transparent. That is wrong for us: a pierced fitting has to show the
+#    timber through its own piercings, so `ghost()` is the one to reach for.
+#
+#    None of this rescues the trick the entry was originally about. A wall
+#    behind a bracket is still hopeless, because it fills the frame and the
+#    problem was never occlusion — it was that the wall is IN SHOT. That is
+#    still why `sconce_bracket` carries its own backplate.
 #
 # 8. `lipped()` DIES IN PROPORTION TO HOW MANY CUTS SHARE THE FACE, and it dies
 #    quietly. Gotcha 6 says a bevel after a boolean loses the SILHOUETTE's
@@ -181,6 +202,51 @@
 #    out loud: a pocket cutter has to stand proud of the surface so the cut
 #    goes through it, so the cutter's own chamfered top edge ends up in the air
 #    above the part, nowhere near the mouth it was meant to soften.
+#
+# 9. DISPLACEMENT IS AS COARSE AS THE MESH UNDER IT, and a box has six faces.
+#    `carve()` is the answer to "are we limited to basic shapes" and it fails
+#    in the familiar way: the modifier is there, the render is clean, and the
+#    surface carries no carving, because every vertex the texture had to push
+#    was a corner of the object.
+#
+#    Measured on the log well's panel — `interior%` from the presence test,
+#    which is the one that ignores the outline and looks at the FACE:
+#
+#        no carve at all                        6.1   <- the baseline
+#        displace, no subdivision              14.1   <- and it is not grain
+#        SIMPLE subsurf 4, then displace       16.6
+#        SIMPLE subsurf 6, then displace       50.9   <- the figure is there
+#
+#    THE SECOND ROW IS THE TRAP, not the win it looks like. With eight vertices
+#    to move, the displacement BENDS THE WHOLE SLAB instead of carving it — the
+#    number goes up because a warped panel deviates from flat everywhere, and
+#    it is measuring a defect. A number rising is not the same as the feature
+#    arriving, which is this file's oldest lesson wearing a new hat.
+#
+#    SIMPLE and not CATMULL_CLARK: Catmull-Clark would round every chamfer on
+#    the object into a blob on the way past. And the subdivision has to come
+#    BEFORE the displace and AFTER the bevel, which is the same ordering rule
+#    the rest of this file keeps restating for a different reason.
+#
+#    IT ALSO HAS TO COME BEFORE THE BOOLEANS — see `predivide` — and the CUTTER
+#    needs it too, which is the half that is easy to miss. Same panel, same
+#    settings, the only difference being whether the pocket's cutter was
+#    subdivided before it was used:
+#
+#        plain cutter                          18.1   <- pocket floor quilts
+#        subdivided cutter                     65.3
+#
+#    A Boolean hands the target a brand new surface built from the CUTTER's
+#    topology, so a dense panel cut by a coarse block gets a dense panel with
+#    one enormous face in the middle of it.
+#
+#    THEN SHADE IT BY ANGLE. A displaced surface that is flat-shaded is a field
+#    of facets, and at 64 divisions across a panel those facets are bigger than
+#    the grain they are carrying — the normal map comes out as a quilt. But
+#    plain `shade_smooth()` rounds the chamfers this whole file exists to keep.
+#    `shade_auto_smooth(angle)` is the one that does both, it has to be LAST on
+#    the stack because it is evaluated as a modifier too, and its angle has to
+#    stay under the 22.5 degrees a three-segment bevel puts between its facets.
 #
 # =========================================================================
 # THE BOARD'S AXES, IN BLENDER
@@ -253,7 +319,12 @@ def clear_scene():
     """Blender starts with a cube, a camera and a light. Remove all of it."""
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
-    for block in (bpy.data.meshes, bpy.data.materials, bpy.data.cameras, bpy.data.lights):
+    # `textures` is in the list because `carve` makes one per call and a run of
+    # fifty shapes would otherwise leave fifty of them in the file. Purging
+    # here rather than after a bake is deliberate: it happens BEFORE anything
+    # is built, so it can never take a datablock the current shape is using.
+    for block in (bpy.data.meshes, bpy.data.materials, bpy.data.cameras,
+                  bpy.data.lights, bpy.data.textures):
         for item in list(block):
             block.remove(item)
 
@@ -517,6 +588,17 @@ def bake_object(name, spec, out_dir, px):
     clear_scene()
     objs = spec["build"]()
 
+    # THE WHOLE ASSEMBLY IS BUILT EITHER WAY and only the visibility differs.
+    # That is what makes `<name>` and `<name>_brass` incapable of drifting: the
+    # two textures are not two builds that have to agree, they are one scene
+    # photographed twice. Everything not in this pass is ghosted, so it is
+    # absent from the picture and present in the AO — gotcha 7.
+    part = spec.get("part")
+    if part is not None:
+        for obj in objs:
+            if obj.get("part", "wood") != part:
+                ghost(obj)
+
     width, height, view = spec["width"], spec["height"], spec["view"]
     centre = spec.get("centre")
     if centre is None:
@@ -693,7 +775,7 @@ def rod(p0, p1, radius, verts=32):
     return cylinder(radius, length, mid, verts=verts, rot=rot)
 
 
-def vee(target, length, width, centre, run="x", name="Vee"):
+def vee(target, length, width, centre, run="x", name="Vee", yaw=0.0):
     """
     ONE straight V-groove, cut rather than bevelled. The primitive gotcha 8 is
     about: a modifier can be clamped away, a hole in the mesh cannot.
@@ -704,16 +786,159 @@ def vee(target, length, width, centre, run="x", name="Vee"):
     it cuts is decided by where `centre` sits, not by an argument — put it on
     the top face and the groove goes down, put it on a front face and the
     groove goes in.
+
+    `yaw` swings the run round Z, which is what a MITRE needs — the joint in a
+    picture frame runs at 45 degrees and there is no axis to align it to. It
+    only applies to `run = "x"`, because a yawed groove is a groove in the
+    horizontal plane and that is the plane x and y already span. Blender
+    composes eulers as Rz @ Ry @ Rx, so (45, 0, yaw) is "tip the section into a
+    diamond, THEN swing the run", which is the order that keeps the V pointing
+    down whatever the yaw is.
     """
     s = width / math.sqrt(2.0)
     q = math.radians(45.0)
     if run == "x":
-        cutter = box(length, s, s, centre, (q, 0.0, 0.0))
+        cutter = box(length, s, s, centre, (q, 0.0, yaw))
     elif run == "y":
         cutter = box(s, length, s, centre, (0.0, q, 0.0))
     else:
         cutter = box(s, s, length, centre, (0.0, 0.0, q))
     return cut(target, cutter, name)
+
+
+def ball(radius, loc, segments=24, rings=12):
+    """
+    A sphere, which is here almost entirely as a CUTTER.
+
+    A scalloped or petalled rim wants material taken out of the silhouette, and
+    the obvious cutter — a cylinder — leaves a vertical wall, which in a plan
+    view is exactly edge-on and contributes nothing to the normal map (the same
+    argument `build_trap_hole` makes about its shaft). A sphere leaves a
+    spherical cap: every point of it is sloped, so the scallop is lit as well
+    as shaped. That matters more than usual here because gotcha 6 means the
+    outer chamfer does not survive the cut that makes the scallop — so the cut
+    has to bring its own shading with it.
+    """
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=segments,
+                                         ring_count=rings, location=loc)
+    return bpy.context.object
+
+
+def bead_and_reel(radius, z, count, bead=0.018, reel=None, name="BeadReel"):
+    """
+    The oldest ornament there is: a round BEAD, then a flat REEL, all the way
+    round. Two objects and two radial arrays, not `2 * count` primitives.
+
+    IT IS HERE BECAUSE IT SURVIVES BEING SMALL. Most carving turns to mush at
+    44 pixels; a bead-and-reel does not, because it is a regular alternation of
+    light and dark at a fixed pitch, and regular alternation is the one thing a
+    low-resolution image renders well — it degrades into a dotted line rather
+    than into noise. Pick `count` so the pitch is at least three screen pixels
+    and it will still read as a moulding when everything else has gone grey.
+
+    The reel is offset by HALF a step by placing its geometry at that angle
+    rather than by rotating the object: `radial` derives its per-copy transform
+    from the object's own matrix, so an object turned on its axis gets a
+    per-copy rotation that is short by exactly that turn, and the ring comes
+    out with a gap in it.
+    """
+    step = math.pi / count
+    r_reel = bead * 0.62 if reel is None else reel
+
+    b = ball(bead, (0.0, 0.0, 0.0), segments=16, rings=8)
+    shift_mesh(b, (radius, 0.0, z))
+    radial(b, count, name=f"{name}B")
+
+    # The reel is a barrel lying TANGENTIALLY, so it is built on its side, then
+    # turned by the half step (which aims its axis along the circle at the
+    # position it is about to be moved to), and only then moved there. Turning
+    # after moving would swing it round the ring's centre instead of its own.
+    r = cylinder(r_reel, bead * 2.1, (0.0, 0.0, 0.0), verts=12,
+                 rot=(math.radians(90.0), 0.0, 0.0))
+    bpy.ops.object.select_all(action="DESELECT")
+    r.select_set(True)
+    bpy.context.view_layer.objects.active = r
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+    spin_mesh(r, step)
+    shift_mesh(r, (radius * math.cos(step), radius * math.sin(step), z))
+    radial(r, count, name=f"{name}R")
+    return [b, r]
+
+
+def escutcheon(w, d, opening, z=0.0, t=0.024, chamfer=0.009, bolt=0.021, name="Esc"):
+    """
+    The brass plate round an opening — a keyhole escutcheon at furniture scale.
+
+    Paul's rule says every wood-to-wood joint gets a fitting, and an OPENING is
+    the case that is easy to miss: a routed pocket has no joint in it, but its
+    mouth is the edge everybody's eye lands on and the edge that takes all the
+    wear. Real casework puts a plate there for exactly that reason.
+
+    It is also the cheapest possible win for the split, because an escutcheon
+    is a thin ring of metal around a big dark hole — which is to say it is
+    almost entirely EDGE, and edge is where a travelling highlight shows.
+    """
+    plate = box(w, d, t, (0.0, 0.0, z + t / 2.0))
+    bevelled(plate, chamfer)
+    cut(plate, box(opening[0], opening[1], t * 8.0, (0.0, 0.0, z + t / 2.0)), f"{name}Open")
+    lipped(plate, chamfer * 0.5)
+    objs = [brass(plate)]
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            head = cylinder(bolt * 0.5, t * 0.7,
+                            (sx * (w / 2.0 - bolt), sy * (d / 2.0 - bolt), z + t + t * 0.25),
+                            verts=14)
+            bevelled(head, 0.004)
+            objs.append(brass(head))
+    return objs
+
+
+def corner_bracket(size, arm, sx, sy, at, z=0.0, t=0.026, chamfer=0.010, pierce=True,
+                   name="Bracket"):
+    """
+    An L-shaped brass cap over a corner where two lengths of timber meet.
+
+    THE MITRE IS THE JOINT AND THIS IS WHAT COVERS IT. Paul: *"wherever there
+    is wood joints meeting on any part of the game furniture to be brass
+    fittings."* A frame corner is the joint everybody can see, and a bracket
+    there is not decoration — it is how the corner is actually held together.
+
+    `pierce` takes a keyhole out of each arm. It costs nothing (silhouette is
+    free) and it earns its place twice: it breaks up what would otherwise be a
+    solid brass L, and it lets the timber's own figure show THROUGH the
+    fitting, which is the detail that says the bracket is laid on the wood
+    rather than being part of it.
+    """
+    cx, cy = at
+    plate = box(size, size, t, (cx, cy, z + t / 2.0))
+    bevelled(plate, chamfer)
+    keep = size / 2.0 - arm
+    cut(plate, box(size, size, t * 6.0,
+                   (cx - sx * (size / 2.0 - keep), cy - sy * (size / 2.0 - keep), z + t / 2.0)),
+        f"{name}Inner")
+    # The two arms, as centre lines measured from the corner outwards. Every
+    # piercing and every bolt is placed against these rather than against the
+    # plate's own extents, which is `build_portrait_bezel`'s lesson: mixing
+    # fractions with absolute offsets is how a fitting clears at one size and
+    # collides at another.
+    spine = size / 2.0 - arm / 2.0
+    if pierce:
+        for along in (arm * 1.5, arm * 2.5):
+            if along > size - arm * 0.6:
+                continue
+            cut(plate, ball(arm * 0.24, (cx + sx * (size / 2.0 - along), cy + sy * spine, z + t / 2.0),
+                            segments=16, rings=10), f"{name}PX{along:.3f}")
+            cut(plate, ball(arm * 0.24, (cx + sx * spine, cy + sy * (size / 2.0 - along), z + t / 2.0),
+                            segments=16, rings=10), f"{name}PY{along:.3f}")
+    lipped(plate, chamfer * 0.5)
+    objs = [brass(plate)]
+    for bx, by in ((sx * spine, sy * spine),
+                   (sx * spine, sy * (size / 2.0 - size * 0.86)),
+                   (sx * (size / 2.0 - size * 0.86), sy * spine)):
+        head = cylinder(arm * 0.19, t * 0.8, (cx + bx, cy + by, z + t + t * 0.3), verts=16)
+        bevelled(head, 0.004)
+        objs.append(brass(head))
+    return objs
 
 
 def grain(target, offsets, run, length, level, name="Grain"):
@@ -825,8 +1050,433 @@ def cut(target, cutter, name="Cut"):
     mod.object = cutter
     # Hidden from the render AND from the AO node's rays, which is the part
     # that matters: a visible cutter would occlude the shape it carved.
+    #
+    # `hide_render`, note, and NOT `ghost()`. They are opposites: a ghost stays
+    # in the AO on purpose, and a cutter that stayed in the AO would darken the
+    # pocket it just carved with the shadow of the block that carved it.
     cutter.hide_render = True
     return target
+
+
+# -------------------------------------------------------------------------
+# THE MODIFIER TOOLBOX — why the furniture stopped being cylinders
+# -------------------------------------------------------------------------
+#
+# Paul, looking at the first console: *"are we limited to basic shapes?"*
+#
+# We were not. This script was. Counted before this pass: 69 calls to `bevel`,
+# a cube, a cylinder, a cone and a torus, and ZERO uses of array, curve,
+# displacement, subdivision, screw or solidify. That is exactly the recipe for
+# machine-turned discs — one vocabulary of stacked primitives with the edges
+# softened, applied to twenty objects, so of course they all looked alike.
+#
+# WHAT THE RENDERER CAN USE decides which of these are worth having, and the
+# answer is a good deal more than it sounds:
+#
+#   SILHOUETTE IS FREE. The engine draws a quad and the alpha decides its
+#     outline, so scalloped, pierced and foliate cost exactly what a rectangle
+#     costs. `radial()` feeding ONE boolean is the cheapest way to spend it,
+#     and it is the only kind of detail that survives at any size, because it
+#     changes the shape rather than the shading.
+#   SURFACE IS NEARLY FREE. Carving lands in a normal map, and a normal map
+#     does not care whether the relief is two millimetres or two centimetres.
+#     `carve()` is the point of this section.
+#   UNDERCUT IS NOT AVAILABLE. No parallax, no runtime self-occlusion beyond
+#     the baked AO. A deep overhang modelled in the hope that it will shade
+#     itself is geometry spent on nothing. Model RELIEF, not depth.
+#
+# AND ALL OF IT HAS TO SURVIVE 44 x 25 PIXELS, which is `candle_socket` at true
+# on-screen size. Ornament finer than about three screen pixels does not become
+# subtle, it becomes noise — and noise is worse than nothing, because it spends
+# the contrast that the features which DO read were living on. Every count in
+# this file was picked by rendering it at true size and looking at it.
+
+
+def ghost(obj):
+    """
+    In the scene for the AO, out of the picture. See gotcha 7.
+
+    This is what lets a brass fitting and the timber it is bolted to be baked
+    as two textures that still know about each other: the timber pass ghosts
+    the fittings and gets their contact shadows, the brass pass ghosts the
+    timber and gets its. Without it, splitting the parts would cost every
+    joint the dark line that says the two are touching.
+    """
+    obj.visible_camera = False
+    return obj
+
+
+def brass(obj):
+    """
+    Tag a part as brass: its own colour AND its own texture (§19.1).
+
+    THE SEPARATION IS NOT TIDINESS, it is the only way the metal can be shiny.
+    Paul: *"the brass accents should be fairly reflective of the light."* The
+    renderer's specular is per-MATERIAL — `Material.roughness`, no roughness
+    map — so a quad carrying both timber and brass has to pick ONE. Bake them
+    together and the choice is between matte brass and glossy wood; bake them
+    apart and the fitting gets a highlight that travels with the lantern, which
+    is most of what makes metal read as metal at all.
+
+    It is also §19.1's wear note honoured in advance: wax on a socket, polish
+    where a thumb rests, scorch at the exhaust, each authored on its own part.
+    """
+    obj["part"] = "brass"
+    obj["albedo"] = BRASS
+    return obj
+
+
+def shift_mesh(obj, delta):
+    """
+    Move the GEOMETRY and leave the ORIGIN where it is.
+
+    Only `radial()` needs this, and it needs it badly — see the note there.
+    """
+    d = mathutils.Vector(delta)
+    for v in obj.data.vertices:
+        v.co += d
+    return obj
+
+
+def spin_mesh(obj, angle):
+    """Turn the GEOMETRY about the object's own Z, leaving the origin alone."""
+    m = mathutils.Matrix.Rotation(angle, 3, "Z")
+    for v in obj.data.vertices:
+        v.co = m @ v.co
+    return obj
+
+
+def radial(obj, count, name="Radial"):
+    """
+    `count` copies of `obj` spun about ITS OWN ORIGIN. Bead-and-reel, rope
+    twist, a scalloped rim, a ring of bosses — one modifier instead of a loop.
+
+    THE PIVOT IS THE OBJECT'S ORIGIN AND NOT THE EMPTY'S LOCATION, which is the
+    first thing to know before using this. Array's per-copy transform is
+    `inverse(object) @ offset_object`, so putting the empty at the centre of
+    the intended circle and the object out at the radius does NOT give a ring —
+    the two translations compound and the copies walk off in a spiral. The
+    empty and the object have to share a location, and the geometry gets moved
+    out to the radius with `shift_mesh` instead. Build at the centre, push the
+    mesh out, then call this.
+
+    AND THE SAME `inverse(object)` EATS THE OBJECT'S OWN ROTATION, which is the
+    second thing and it cost a render to find. A reel is a barrel lying on its
+    side, so it is created with `rot = (90, 0, 0)`; the per-copy transform then
+    comes out as `Rx(-90) @ Rz(theta)` instead of `Rz(theta)`, and the copies
+    tumble away out of the plane instead of going round. The symptom is worth
+    recognising because it does not look like a transform bug: twenty-four
+    beads appear in a tidy ring and the twenty-four reels between them appear
+    as ONE little coil, the rest having been flung somewhere off-frame.
+
+    So the rotation is applied to the mesh first, which is a no-op for anything
+    that did not have one. Location is deliberately NOT applied: it is the
+    pivot, and applying it would move the origin to the geometry and turn the
+    ring back into a spiral.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+    pivot = bpy.data.objects.new(f"{obj.name}_{name}_pivot", None)
+    bpy.context.collection.objects.link(pivot)
+    pivot.location = obj.location
+    pivot.rotation_euler = (0.0, 0.0, 2.0 * math.pi / count)
+    mod = obj.modifiers.new(name=name, type="ARRAY")
+    mod.use_relative_offset = False
+    mod.use_object_offset = True
+    mod.offset_object = pivot
+    mod.count = count
+    return obj
+
+
+def run_of(obj, count, offset, name="Run"):
+    """
+    A straight ARRAY: dentils along a rail, beads down a strap, bolts in a row.
+
+    CONSTANT offset, in board units, never the relative one — relative offset
+    is a multiple of the object's own bounding box, so changing a dentil's
+    width would silently change its spacing too, and the run would no longer
+    line up with whatever it was aligned to.
+
+    The array grows in ONE direction from the original, so `count` copies of a
+    bead placed at `-((count - 1) / 2) * pitch` end up centred. `centred_run`
+    does that arithmetic.
+    """
+    mod = obj.modifiers.new(name=name, type="ARRAY")
+    mod.use_relative_offset = False
+    mod.use_constant_offset = True
+    mod.constant_offset_displace = offset
+    mod.count = count
+    return obj
+
+
+def centred_run(obj, count, pitch, axis="x", name="Run"):
+    """`run_of`, positioned so the whole run is centred on where `obj` started."""
+    i = "xyz".index(axis)
+    back = [0.0, 0.0, 0.0]
+    back[i] = -pitch * (count - 1) / 2.0
+    shift_mesh(obj, back)
+    off = [0.0, 0.0, 0.0]
+    off[i] = pitch
+    return run_of(obj, count, off, name=name)
+
+
+def turned(profile, name="Turned", steps=96, smooth=35.0):
+    """
+    A LATHE. `profile` is a CLOSED loop of (radius, z) points, spun about Z.
+
+    This is what a socket, a collar or a finial is actually made on, and it is
+    the difference between a turned form and a stack of cylinders: an ogee, a
+    cove, an astragal and a fillet are one profile with corners in it, and
+    there is no arrangement of primitives that gives you the same section
+    without a seam at every join.
+
+    THE PROFILE MUST CLOSE, and the cheap way to close it is to run the last
+    points back along the axis at radius 0; `use_merge_vertices` then collapses
+    them into a single pole instead of leaving a puckered hole. A profile that
+    does not close screws into an open shell, which renders as a solid from the
+    outside and has NO INTERIOR — the AO pass sees through it and the part
+    comes back weightless.
+
+    `steps` is around the axis and wants to be generous: this is the direction
+    a plan view shows in full, so faceting here is faceting in the silhouette.
+    `smooth` is the auto-smooth angle, which keeps the round direction smooth
+    while leaving the profile's own corners as the sharp edges they are.
+    """
+    mesh = bpy.data.meshes.new(name)
+    verts = [(r, 0.0, z) for r, z in profile]
+    edges = [(i, (i + 1) % len(profile)) for i in range(len(profile))]
+    mesh.from_pydata(verts, edges, [])
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    mod = obj.modifiers.new(name="Screw", type="SCREW")
+    mod.axis = "Z"
+    mod.angle = math.radians(360.0)
+    mod.steps = steps
+    mod.render_steps = steps
+    mod.screw_offset = 0.0
+    mod.use_merge_vertices = True
+    mod.use_normal_calculate = True
+    # SMOOTH OUT OF THE SCREW, sharpened back by angle afterwards — and the two
+    # halves of that are not interchangeable. Setting the screw to flat and
+    # relying on `auto_smooth` to soften it does not work: the modifier marks
+    # every face sharp on the way out, and smooth-by-angle only ADDS sharpness,
+    # so nothing downstream can take it off again. The symptom is a cup that
+    # comes out in visible horizontal bands, one per profile segment, which
+    # looks like a coarse profile and is really a shading flag.
+    mod.use_smooth_shade = True
+    auto_smooth(obj, smooth)
+    return obj
+
+
+def auto_smooth(obj, angle=32.0):
+    """
+    Smooth-shade what is curved, leave sharp what is an edge.
+
+    MUST BE LAST ON THE STACK — in 4.1 and later this is a modifier of its own,
+    so calling it before a displace or a screw means smoothing the mesh that
+    went IN rather than the surface that came out. Gotcha 9.
+
+    THE ANGLE HAS TO CLEAR THE FAMILY CHAMFER, and the default here is chosen
+    for that rather than for the curve being smoothed. `bevelled()` uses three
+    segments, so a 90-degree edge comes out as facets 22.5 degrees apart — set
+    this above that and every chamfer in the file quietly becomes a round-over,
+    which is a change to the house style made by a default nobody looked at.
+    Carving wants 16; a lathe wants ~35, because its 96 steps are 3.75 degrees
+    apart and its profile corners are 45 or more.
+    """
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.shade_auto_smooth(angle=math.radians(angle))
+    return obj
+
+
+def figure_texture(name, scale=0.35, turbulence=6.0, kind="RINGNOISE"):
+    """
+    The legacy WOOD texture, which is a better fit here than it has any right
+    to be: RINGNOISE is literally growth rings with noise on them.
+    """
+    tex = bpy.data.textures.new(name, type="WOOD")
+    tex.wood_type = kind
+    tex.noise_basis_2 = "SIN"
+    tex.noise_scale = scale
+    tex.turbulence = turbulence
+    tex.contrast = 1.0
+    return tex
+
+
+def carve(obj, tex, strength, stretch=(1.0, 1.0, 1.0), at=(0.0, 0.0, 0.0),
+          levels=6, name="Carve", smooth=16.0):
+    """
+    Relief from a texture — wood figure, a chased pattern, a foliate scroll.
+
+    THE SUBDIVISION IS THE WHOLE JOB, not the displacement. See gotcha 9: a box
+    has six faces and eight vertices, so a displace on its own has nothing to
+    move and returns a perfectly clean, perfectly flat render. SIMPLE
+    subdivision (never Catmull-Clark, which would round the chamfers on the way
+    past) gives the texture somewhere to land.
+
+    `stretch` IS WHAT MAKES IT WOOD RATHER THAN MARBLE. The texture is sampled
+    through an empty, so the empty's SCALE stretches the pattern along that
+    axis: rings pulled thirty times along the run stop being a bullseye and
+    become the long nested arches of flat-sawn timber — cathedral figure, which
+    is what a board actually looks like and what three noise grooves were
+    standing in for.
+
+    `at` puts the ring centre OFF the part on purpose. Centred, a board gets a
+    bullseye in the middle of it, which is a plank sawn straight through the
+    pith and the one cut a joiner would throw away.
+
+    Strength is in board units and stays small: this is read through a normal
+    map, so 0.004 of a tile is already a strong carving. Big values do not read
+    as deeper, they read as a melted surface, because the silhouette does not
+    move with them.
+    """
+    sub = obj.modifiers.new(name=f"{name}Sub", type="SUBSURF")
+    sub.subdivision_type = "SIMPLE"
+    sub.levels = levels
+    sub.render_levels = levels
+
+    coords = bpy.data.objects.new(f"{obj.name}_{name}_tex", None)
+    bpy.context.collection.objects.link(coords)
+    coords.location = at
+    coords.scale = stretch
+
+    mod = obj.modifiers.new(name=name, type="DISPLACE")
+    mod.texture = tex
+    mod.texture_coords = "OBJECT"
+    mod.texture_coords_object = coords
+    mod.direction = "NORMAL"
+    mod.mid_level = 0.5
+    mod.strength = strength
+    auto_smooth(obj, smooth)
+    return obj
+
+
+def predivide(obj, levels=6, name="Grid"):
+    """
+    Subdivide BEFORE the booleans, so `carve` has clean topology to displace.
+
+    THE ORDER IS THE POINT AND IT IS THE OPPOSITE OF THE OBVIOUS ONE. Adding
+    the subdivision at the end, next to the displace that needs it, puts it
+    downstream of every Boolean — and a Boolean leaves the face it cut as
+    n-gons, which SIMPLE subdivision resolves into a FAN of quads radiating
+    from each n-gon's centre. Displace that and the fan's spokes show up as a
+    great diagonal X across the panel, which is not a lighting artefact you can
+    argue with: it is a genuine crease in genuine geometry.
+
+    Subdivided first, the top face is still the single quad the box was born
+    with, so it subdivides to a true grid and the Booleans cut through it. The
+    fan is visible in the render either way you measure it — the panel's normal
+    map came back with a great diagonal cross on it — and it goes away entirely
+    when the order is swapped.
+
+    SPLIT THE DENSITY, though, rather than putting it all here. Booleans run
+    against whatever mesh they are given, so a level-6 predivide means fifteen
+    Boolean operations against a 400,000-face panel, and that panel took over
+    two minutes to bake where the rest of the family takes seconds. A coarse
+    predivide (3 or 4) fixes the TOPOLOGY, which is all it is needed for, and
+    `carve`'s own `levels` then adds the density on the far side of the cuts
+    where it is cheap. Measured on the log panel, whole shape, three passes:
+
+        predivide 3 + carve 3                  7.8 s
+        predivide 3 + carve 4                 16.5 s
+        predivide 4 + carve 2                 13.5 s   <- the one in use
+        predivide 5 + carve 2                 38.2 s
+    """
+    mod = obj.modifiers.new(name=name, type="SUBSURF")
+    mod.subdivision_type = "SIMPLE"
+    mod.levels = levels
+    mod.render_levels = levels
+    return obj
+
+
+def wood_figure(obj, run="x", span=1.0, length=None, rings=8.0, strength=0.005, levels=6,
+                taper=4.0, turbulence=5.0, name="Figure"):
+    """
+    CATHEDRAL FIGURE, cut as geometry. The grain stops being three grooves.
+
+    `grain()` puts six V-cuts down a board and its own docstring is honest
+    about what it is for: the albedo is flat, so the normal map is the only
+    channel that can say "timber", and the only thing that says it there is
+    that the detail runs ONE WAY. Six grooves satisfy that test and read as a
+    comb. This is the same argument answered properly — a flat-sawn board's
+    figure IS a set of growth rings sliced off-centre, which is precisely what
+    the legacy WOOD texture computes, so the arches come out because the maths
+    is the same maths and not because they were drawn.
+
+    THE RING PITCH IS DERIVED, NOT TUNED, and that is what makes one call site
+    match another. Blender's wood texture rings at `sin(20 * r)` in texture
+    space and nothing about that is adjustable, so the density has to come from
+    the empty's SCALE — which means the number in the file would be an opaque
+    0.054 that has to be re-guessed for every part with a different width. So
+    `rings` says how many arches to show across the board and the compression
+    is solved for:
+
+        cycles across the half span = 20 * (sqrt((span/2)^2 + D^2) - D)
+                                      / (2 * pi * k)
+
+    with the ring centre parked D = `span` below the board — far enough that
+    the arches are the long gentle ones of a flat-sawn plank rather than the
+    tight bullseye of a board sawn through the pith, which is the cut a joiner
+    throws away.
+
+    `run` is the board's LENGTH. Getting it backwards is not subtle and is
+    worth checking on the sheet: a panel wider than it is deep with its figure
+    running across the short way reads as a cutting board.
+
+    AND `taper` IS WHY THERE ARE ARCHES AT ALL, which took a render to see. The
+    first version stretched the run axis by 30, making the rings true cylinders
+    about the board's length — and a plane parallel to a cylinder's axis cuts
+    it in a STRAIGHT LINE. So the carving came out as perfectly straight stripes
+    down the board: correct, anisotropic, passed the grain check, and looked
+    like decking. Real cathedral figure is the arch you get because a tree
+    TAPERS, so the rings the plane cuts are cones and the intersection is a set
+    of nested arches. `taper` is that cone angle expressed as a milder stretch,
+    and it is the single number that turns stripes into figure.
+
+    `length` IS THE BOARD'S OTHER DIMENSION AND IT IS NOT OPTIONAL IN PRACTICE.
+    The taper has to be read against how long the board is, not against how
+    wide: a panel 2.4 by 1.3 and a rail 2.6 by 0.56 given the same `taper` get
+    completely different results, because on the rail the run axis is nearly
+    five times the span and the same cone angle crams five times as many
+    arch-crossings into it. The rail's first bake is what proved it — the
+    figure came out as corduroy, a dense vertical hatch that looked like grain
+    at 4x and dissolved into noise at the 49 pixels it is actually drawn at.
+    Scaling the stretch by `length / span` makes one number mean the same thing
+    on every board, which is the whole reason to have a helper rather than a
+    tuned constant per call site.
+
+    NOT FOR ROUND PARTS. A cylinder's top face is a single n-gon, so
+    subdividing it fans from the centre and the figure comes out as a SUNBURST
+    — visibly a spiral, not a board. `lantern_cradle` gets `grain()`'s straight
+    V-cuts instead, which are Booleans and do not care about topology at all.
+    """
+    across = span / 2.0
+    depth_below = span
+    reach = math.sqrt(across * across + depth_below * depth_below) - depth_below
+    k = 20.0 * reach / (2.0 * math.pi * max(rings, 0.1))
+    stretch_run = k * taper * max(1.0, (length if length else span) / span)
+
+    tex = figure_texture(f"{obj.name}_{name}", scale=k * 2.2, turbulence=turbulence)
+    if run == "x":
+        stretch, at = (stretch_run, k, k), (0.0, 0.0, -depth_below)
+    else:
+        stretch, at = (k, stretch_run, k), (0.0, 0.0, -depth_below)
+    return carve(obj, tex, strength, stretch=stretch, at=at, levels=levels, name=name)
+
+
+# SOLIDIFY is deliberately absent, having been tried and found to have no
+# honest job here. It is for giving thickness to something authored as a
+# SURFACE, and nothing in this family is: every part starts as a solid
+# primitive or comes off `turned()` closed, so a solidify would be a modifier
+# added to say that a modifier had been added. The one place it looked
+# promising — a pierced bracket — is better as a box with balls cut out of it,
+# because that way the piercings get chamfered walls instead of the dead
+# square edges an extruded outline would have.
 
 
 # -------------------------------------------------------------------------
@@ -899,7 +1549,8 @@ def build_wall_top(height=0.7, chamfer=0.035, worn=False):
     return [block]
 
 
-def build_face(height=0.7, chamfer=0.035, courses=(), joint=0.0, overscan=2.2, depth=0.5, chipped=False):
+def build_face(height=0.7, chamfer=0.035, courses=(), joint=0.0, overscan=2.2, depth=0.5,
+               chipped=False, timber=False, straps=()):
     """
     A vertical face at a height discontinuity — §16's `ledgeFace`, which is
     the board's rim, a wall's front, a stair riser and the drop at the edge of
@@ -923,9 +1574,24 @@ def build_face(height=0.7, chamfer=0.035, courses=(), joint=0.0, overscan=2.2, d
     the AO pass has something to darken against. That contact darkening at the
     base is most of what makes a face read as standing on the board rather
     than as floating in it.
+
+    `timber` makes it a board rather than a stone, so it takes cathedral figure
+    instead of course lines. The board's own rim is the one face in the game
+    made of wood, and the flat-albedo argument applies to it exactly as it does
+    to the console: the grain has to be in the normal or it is not there.
+
+    `straps` are brass bands at the given x positions, and THEY BELONG ON THE
+    FRAME EDGE. A face is drawn as a repeating run, so a strap at x = +-2.0 of
+    a four-tile texture puts half a band at each end, and two neighbours make
+    one whole band standing over the seam where they butt. That is exactly the
+    device `joint` uses to turn a ribbon into a run of separate blocks, spent
+    on metal instead of on a groove — and it is Paul's rule applied to the one
+    joint a tiling texture actually has.
     """
     body = box(1.0 * overscan, depth, height, (0.0, depth / 2.0, height / 2.0))
     bevelled(body, chamfer)
+    if timber:
+        predivide(body, 3)
     for i, at in enumerate(courses):
         # A course line: the joint between the capstone and the riser below
         # it. Cut into the face plane at y = 0.
@@ -953,9 +1619,28 @@ def build_face(height=0.7, chamfer=0.035, courses=(), joint=0.0, overscan=2.2, d
             # the difference is whether the chip reads as damage or as a hole.
             cut(body, box(size, size, size, (x, 0.0, height * at), rot=rot), f"Chip{x}")
     lipped(body, chamfer * 0.4)
+    if timber:
+        wood_figure(body, run="x", span=height, length=overscan, rings=4.5, strength=0.006,
+                    levels=2, turbulence=6.0)
 
     floor = box(overscan * 1.4, 1.4, 0.3, (0.0, -0.7, -0.15))
-    return [body, floor]
+    objs = [body, floor]
+
+    for i, x in enumerate(straps):
+        band = box(0.20, 0.030, height + 0.03, (x, -0.014, height / 2.0))
+        bevelled(band, 0.008)
+        objs.append(brass(band))
+        for z in (height * 0.80, height * 0.20):
+            # y = -0.033, not -0.038. The strap's own front face is at -0.029,
+            # and a bolt 0.016 deep centred at -0.038 starts at -0.030 — a one
+            # thousandth gap, which is a bolt head floating in front of the
+            # strap it is supposed to be through. Invisible in the albedo and
+            # a hairline of background in the alpha.
+            head = cylinder(0.026, 0.016, (x, -0.033, z), verts=16,
+                            rot=(math.radians(90.0), 0.0, 0.0))
+            bevelled(head, 0.005)
+            objs.append(brass(head))
+    return objs
 
 
 def build_frame(play=4.0, border=1.1, thickness=0.34, chamfer=0.03, rebate=0.05, bead=0.10):
@@ -979,15 +1664,40 @@ def build_frame(play=4.0, border=1.1, thickness=0.34, chamfer=0.03, rebate=0.05,
     outer = play + border * 2.0
     slab = box(outer, outer, thickness, (0.0, 0.0, -thickness / 2.0))
     bevelled(slab, chamfer)
+    # Level 3 only: this slab is 6.2 tiles across and carries eleven booleans,
+    # and the figure it has to show is a frame's, seen edge-on-ish at the far
+    # side of the board. See `predivide` for why any of it comes first.
+    predivide(slab, 3)
 
     # The rebate: everything above -rebate inside the play area is removed, so
     # the tile grid sits down in a tray rather than on top of a table mat.
     cut(slab, box(play, play, 2.0, (0.0, 0.0, -rebate + 1.0)), "Rebate")
 
+    # THE MITRES, which is what makes this a frame rather than a slab with a
+    # hole in it. A frame is four lengths of timber cut at 45 degrees, and the
+    # joint runs from the outer corner to the inner one. Everything Paul's rule
+    # asks for hangs off these four lines: they are the wood-to-wood joints on
+    # the biggest piece of furniture in the game, and the brass part below caps
+    # every one of them.
+    #
+    # Cut as a V and yawed rather than bevelled, for gotcha 8's reason — this
+    # face already carries the rebate and the bead, so a modifier would be
+    # clamped to nothing by the time it got here.
+    reach = border * math.sqrt(2.0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            mid = ((outer + play) / 4.0 * sx, (outer + play) / 4.0 * sy, 0.0)
+            vee(slab, reach + 0.06, 0.030, mid, run="x", name=f"Mitre{sx}{sy}",
+                yaw=math.radians(45.0 * sx * sy))
+
     # The bead: four crossing strips, which is a rectangular ring, which
     # mitres at the corners for free. A ring built as four separate grooves
     # meeting at 45 degrees is the same shape and four more chances to be
     # half a millimetre out.
+    #
+    # It is now a CHANNEL FOR THE BRASS INLAY rather than a groove for its own
+    # sake, which is why it stays a square-bottomed slot: a strip of metal has
+    # to sit down in something flat.
     line = play / 2.0 + border * 0.5
     depth = 0.05
     for i, (sx, sy, x, y) in enumerate(
@@ -1001,7 +1711,40 @@ def build_frame(play=4.0, border=1.1, thickness=0.34, chamfer=0.03, rebate=0.05,
         cut(slab, box(sx, sy, depth, (x, y, 0.02 - depth / 2.0)), f"Bead{i}")
 
     lipped(slab, chamfer * 0.45)
-    return [slab]
+    wood_figure(slab, run="x", span=border * 2.0, length=outer, rings=5.0, strength=0.006,
+                levels=2, turbulence=6.0)
+    objs = [slab]
+
+    # ---------------------------------------------------------------- brass
+    # THE INLAY RUNS RIGHT ROUND AND IS CONTINUOUS ON PURPOSE. `frame_edge_h`
+    # and `frame_edge_v` are one-tile windows that TILE along their side, so
+    # anything with a start and an end in them repeats every tile — a strap
+    # every 88 pixels, implying a joint every tile in a length of timber that
+    # has none. A continuous strip has no period at all, so it tiles perfectly
+    # and says "one length of wood" instead.
+    inlay_t = 0.030
+    for i, (sx, sy, x, y) in enumerate(
+        (
+            (outer + 0.4, bead - 0.024, 0.0, line),
+            (outer + 0.4, bead - 0.024, 0.0, -line),
+            (bead - 0.024, outer + 0.4, line, 0.0),
+            (bead - 0.024, outer + 0.4, -line, 0.0),
+        )
+    ):
+        strip = box(sx, sy, inlay_t, (x, y, 0.02 - depth + inlay_t / 2.0))
+        bevelled(strip, 0.006)
+        objs.append(brass(strip))
+
+    # And a bracket over each mitre. `arm` is a fifth of the bracket so the L
+    # stays slender — a heavy L at this size reads as a filled corner and takes
+    # the frame's own outline away.
+    cap = border * 0.92
+    at = (outer / 2.0 - cap / 2.0 + 0.02, outer / 2.0 - cap / 2.0 + 0.02)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            objs += corner_bracket(cap, cap * 0.30, sx, sy, (at[0] * sx, at[1] * sy),
+                                   z=0.0, t=0.030, name=f"Cap{sx}{sy}")
+    return objs
 
 
 # The frame is baked at these numbers, and the windows below are expressed
@@ -1147,14 +1890,28 @@ def build_sconce_bracket(h=0.40, chamfer=0.007):
     bevelled(arm, chamfer * 0.8)
     bevelled(brace, chamfer * 0.8)
 
+    # The cup, turned rather than stacked — the same argument as the candle
+    # socket, on the part §18.1 says is doing all the work here: *"what the
+    # player actually sees is a bolted plate, a rib, and a cup that FLARES."*
+    # A flare with a foot, a cove and a lipped rim in one continuous section is
+    # what a spun brass cup looks like; a cone with a torus on it is not.
+    cup = turned(
+        (
+            (0.006, 0.000), (0.030, 0.000), (0.034, 0.008),
+            (0.040, 0.022), (0.038, 0.034),                 # the foot's cove
+            (0.052, 0.052), (0.066, 0.066),                 # the flare
+            (0.072, 0.072), (0.070, 0.079),                 # the lipped rim
+            (0.060, 0.075), (0.046, 0.056), (0.036, 0.034),  # back down inside
+            (0.030, 0.016), (0.006, 0.014),
+        ),
+        name="SconceCup", steps=64, smooth=34.0,
+    )
+    cup.location = (0.0, out, mouth - 0.079)
     stem = cylinder(0.020, 0.055, (0.0, out, 0.268), verts=32)
-    cup = frustum(0.042, 0.070, 0.075, (0.0, out, mouth - 0.0375), verts=48)
-    bevelled(cup, chamfer * 0.8)
-    rim = ring(0.070, 0.009, (0.0, out, mouth - 0.007))
-    for obj in (stem, cup, rim):
-        obj["albedo"] = BRASS
+    for obj in (stem, cup):
+        brass(obj)
 
-    objs = [plate, arm, brace, stem, cup, rim]
+    objs = [plate, arm, brace, stem, cup]
     # Four bolts through the plate. Their axis runs along Y — a rivet baked as
     # a Z-axis cylinder on an UPRIGHT part is a disc seen edge-on, which is a
     # line, which is nothing.
@@ -1370,19 +2127,49 @@ def build_console_body(run=6.0, deep=1.30, thick=0.16, chamfer=0.022):
     """
     deck = box(run, deep, thick, (0.0, 0.0, -thick / 2.0))
     bevelled(deck, chamfer)
+    predivide(deck, 3)
     # Two inlay lines running the length. They cross the frame edge on purpose:
     # they are part of what tiles, so each texture carries a section of one
     # continuous groove.
     for y in (-0.44, -0.50):
         cut(deck, box(run + 0.4, 0.030, 0.024, (0.0, y, -0.002)), f"Inlay{y}")
+    # THE BUTT JOINT, at the frame edge. A console four tiles wide is assembled
+    # from sections, and where two sections meet there is a seam whether or not
+    # it is drawn. Drawing it — and then covering it with the strap below — is
+    # the difference between a run of joined boards and an impossibly long one.
+    for sx in (-1, 1):
+        vee(deck, deep * 1.4, 0.026, (sx * 2.0, 0.0, 0.0), run="y", name=f"Butt{sx}")
     lipped(deck, 0.010)
+    wood_figure(deck, run="x", span=deep, length=run, rings=6.0, strength=0.0075,
+                levels=3, turbulence=7.0)
 
+    objs = [deck]
     front = box(run, 0.09, 0.05, (0.0, -deep / 2.0 + 0.065, 0.025))
     back = box(run, 0.06, 0.03, (0.0, deep / 2.0 - 0.050, 0.015))
     for rail, ch in ((front, 0.012), (back, 0.008)):
-        rail["albedo"] = BRASS
         bevelled(rail, ch)
-    return [deck, front, back]
+        objs.append(brass(rail))
+    # A run of beads down the front rail. It is the one piece of ornament on
+    # the console the player's hands are actually near, and a plain brass bar
+    # 88 pixels from the bottom of the screen for the whole game is a waste of
+    # the only long uninterrupted metal edge in the layout.
+    bead = ball(0.026, (0.0, 0.0, 0.0), segments=14, rings=8)
+    shift_mesh(bead, (0.0, -deep / 2.0 + 0.065, 0.052))
+    centred_run(bead, 41, 0.148, axis="x", name="RailBead")
+    objs.append(brass(bead))
+
+    # And the strap over the butt joint — half of it in this texture and half
+    # in the neighbour's, so two sections make one band. Paul's rule, on the
+    # only joint a tiling deck has.
+    for sx in (-1, 1):
+        strap = box(0.22, deep - 0.10, 0.026, (sx * 2.0, 0.0, 0.013))
+        bevelled(strap, 0.008)
+        objs.append(brass(strap))
+        for y in (-deep / 2.0 + 0.20, 0.0, deep / 2.0 - 0.20):
+            head = cylinder(0.028, 0.016, (sx * 2.0, y, 0.032), verts=16)
+            bevelled(head, 0.005)
+            objs.append(brass(head))
+    return objs
 
 
 def build_button_plate(size, ring_groove=True, chamfer=0.014):
@@ -1418,6 +2205,19 @@ def build_button_plate(size, ring_groove=True, chamfer=0.014):
                         verts=16)
         bevelled(bolt, 0.004)
         objs.append(bolt)
+
+    # A bead run down the two long edges — outside the routed border, so the
+    # empty middle stays empty and the DOM label still owns it. The pitch is
+    # picked so the beads are about four screen pixels apart at the size a
+    # button is actually drawn; closer and they merge into a bright line, which
+    # is the same amount of brass carrying none of the information.
+    if ring_groove:
+        n = max(4, int(round(w / 0.085)))
+        for sy in (-1, 1):
+            bead = ball(0.014, (0.0, 0.0, 0.0), segments=12, rings=8)
+            shift_mesh(bead, (0.0, sy * (d / 2.0 - 0.026), PLATE_T - 0.002))
+            centred_run(bead, n, w / n, axis="x", name=f"Bead{sy}")
+            objs.append(bead)
     return objs
 
 
@@ -1435,13 +2235,22 @@ def build_button_recess(size, chamfer=0.020):
     fw, fd = socket(size)
     deck = box(fw + 0.30, fd + 0.30, 0.16, (0.0, 0.0, -0.08))
     bevelled(deck, chamfer)
-    cut(deck, box(w + 0.044, d + 0.044, 0.20, (0.0, 0.0, 0.10 - SOCKET_DEPTH)), "Socket")
+    predivide(deck, 3)
+    pocket = box(w + 0.044, d + 0.044, 0.20, (0.0, 0.0, 0.10 - SOCKET_DEPTH))
+    # The cutter carries density too, or the floor it creates is one enormous
+    # face and the figure lands on it as a quilt of flat cells. gotcha 9's
+    # second half: subdividing the TARGET is not enough when a Boolean is about
+    # to hand it a brand new surface with none.
+    predivide(pocket, 3)
+    cut(deck, pocket, "Socket")
     # The mouth chamfer is cut, not bevelled. `lipped()` alone does hold up here
     # — one boolean, measured at 104/128 — but it holds up by luck of the cut
     # count, and the next person to add a feature to this socket would lose it
     # silently. Same construction as the tray, for the same reason.
     route_ring(deck, w + 0.044, d + 0.044, 0.026, (0.0, 0.0, 0.0), name="Mouth")
     lipped(deck, 0.012)
+    wood_figure(deck, run="x", span=fd, length=fw, rings=4.0, strength=0.006,
+                levels=2, turbulence=7.0)
     return [deck]
 
 
@@ -1460,7 +2269,10 @@ def build_tray(pocket=(1.66, 0.76), frame=(1.86, 0.96), depth=0.075, chamfer=0.0
     pw, pd = pocket
     deck = box(frame[0] + 0.40, frame[1] + 0.40, 0.16, (0.0, 0.0, -0.08))
     bevelled(deck, chamfer)
-    cut(deck, box(pw, pd, 0.24, (0.0, 0.0, 0.12 - depth)), "Pocket")
+    predivide(deck, 3)
+    floor = box(pw, pd, 0.24, (0.0, 0.0, 0.12 - depth))
+    predivide(floor, 3)
+    cut(deck, floor, "Pocket")
     # The pocket's MOUTH CHAMFER, cut as geometry rather than left to
     # `lipped()`. This shape carries six booleans and the lip does not survive
     # them — gotcha 8. A V-ring centred exactly on the pocket's perimeter has
@@ -1479,7 +2291,31 @@ def build_tray(pocket=(1.66, 0.76), frame=(1.86, 0.96), depth=0.075, chamfer=0.0
     # outside the texture.
     route_ring(deck, frame[0] - 0.10, frame[1] - 0.10, 0.022, (0.0, 0.0, 0.0))
     lipped(deck, 0.012)
-    return [deck]
+    wood_figure(deck, run="x", span=frame[1], length=frame[0], rings=5.0, strength=0.0075,
+                levels=2, turbulence=7.0)
+
+    objs = [deck]
+    # An escutcheon round the pocket, in two halves so the thumb notch in the
+    # near wall stays open. A ring right round would bridge the scallop, which
+    # is the one feature that says this is a tray you can get a card out of.
+    for sy in (-1, 1):
+        band = box(pw + 0.11, 0.075, 0.024, (0.0, sy * (pd / 2.0 + 0.008), 0.012))
+        bevelled(band, 0.008)
+        if sy < 0:
+            cut(band, frustum(0.075, 0.135, 0.20, (0.0, sy * (pd / 2.0 + 0.008), 0.012), verts=32),
+                "NotchClear")
+            lipped(band, 0.004)
+        objs.append(brass(band))
+    for sx in (-1, 1):
+        side = box(0.070, pd - 0.02, 0.024, (sx * (pw / 2.0 + 0.006), 0.0, 0.012))
+        bevelled(side, 0.008)
+        objs.append(brass(side))
+        for sy in (-1, 1):
+            head = cylinder(0.026, 0.016,
+                            (sx * (pw / 2.0 + 0.006), sy * (pd / 2.0 - 0.06), 0.030), verts=16)
+            bevelled(head, 0.005)
+            objs.append(brass(head))
+    return objs
 
 
 def build_bezel(outer=(1.30, 0.60), opening=(1.02, 0.32), thick=0.05, chamfer=0.016):
@@ -1503,6 +2339,19 @@ def build_bezel(outer=(1.30, 0.60), opening=(1.02, 0.32), thick=0.05, chamfer=0.
                                            thick + 0.002), verts=16)
             bevelled(bolt, 0.005)
             objs.append(bolt)
+
+    # DENTILS along the long sides — a row of little blocks under a cornice,
+    # which is the rectangular equivalent of the bead-and-reel and reads for
+    # the same reason: a regular alternation degrades into a dotted line rather
+    # than into mush. One array each, not a loop of twenty boxes.
+    n = max(6, int(round(outer[0] / 0.105)))
+    pitch = outer[0] / n
+    for sy in (-1, 1):
+        tooth = box(pitch * 0.55, 0.055, 0.020,
+                    (0.0, sy * (opening[1] / 2.0 + (outer[1] - opening[1]) / 4.0), thick - 0.002))
+        bevelled(tooth, 0.005)
+        centred_run(tooth, n, pitch, axis="x", name=f"Dentil{sy}")
+        objs.append(tooth)
     return objs
 
 
@@ -1567,27 +2416,60 @@ def build_candle_socket(pan=0.235, bore=0.10, chamfer=0.008):
 
     Baked LYING (gotcha 3): it stands on the board like a plinth and the engine
     squashes it by cos(tilt) at draw time.
+
+    AND IT IS NOW ACTUALLY TURNED. The first version was three cylinders, a
+    cone and a torus stacked up, which is a fair description of the SHAPE and
+    the wrong description of the OBJECT: a candle socket is spun on a lathe out
+    of one piece, and the thing that says so is that the profile is continuous
+    — a foot, an ogee up to the rim, a dished basin, a cove into the collar, an
+    astragal, and the countersunk mouth of the bore, with no seam anywhere
+    because there is no join anywhere. Six primitives cannot produce that; they
+    can only meet at six places where a lathe would not have stopped.
+
+    THE PROFILE BELOW IS THE PART. Read it as a cross-section drawn on paper,
+    left to right and bottom to top, and `turned()` spins it.
     """
-    body = cylinder(pan, 0.044, (0.0, 0.0, 0.022))
-    bevelled(body, chamfer)
-    # The basin. Steep enough that the pan's top opening is 0.206 while the
-    # floor is 0.150 — most of the visible annulus is sloped wall, which is the
-    # part a light can catch.
-    cut(body, frustum(0.150, 0.230, 0.040, (0.0, 0.0, 0.036)), "Basin")
-    lipped(body, chamfer * 0.5)
+    # (radius, z), once round a closed section. It never quite reaches the axis:
+    # a profile that touches r = 0 screws into a pole, and a pinhole 0.006 wide
+    # under a soot disc is cheaper than trusting the merge. See `turned`.
+    profile = (
+        (0.006, 0.000), (pan * 0.957, 0.000),          # the foot
+        (pan, 0.014), (pan * 0.991, 0.030),            # the ogee out and back
+        (pan * 0.911, 0.040), (pan * 0.885, 0.052),    # the cove
+        (pan * 0.919, 0.062), (pan * 0.881, 0.072),    # the astragal at the rim
+        (pan * 0.826, 0.076),                          # over the rim
+        (0.172, 0.056), (0.152, 0.046), (0.150, 0.044),  # down into the basin
+        (0.152, 0.062), (0.147, 0.078),                # the collar's own cove
+        (0.155, 0.090), (0.145, 0.102),                # its astragal
+        (0.140, 0.118), (0.132, 0.127), (0.114, 0.130),  # the collar top
+        (bore + 0.008, 0.122),                         # the countersink
+        (bore, 0.074), (bore - 0.002, 0.058),          # the bore, drafted
+        (0.006, 0.058),                                # its floor
+    )
+    body = turned(profile, name="SocketBody", steps=96, smooth=34.0)
+    objs = [body]
 
-    collar = frustum(0.148, 0.138, 0.098, (0.0, 0.0, 0.065))
-    bevelled(collar, chamfer)
-    cut(collar, frustum(bore, bore + 0.020, 0.14, (0.0, 0.0, 0.120)), "Bore")
-    lipped(collar, chamfer * 0.5)
+    # A ROPE TWIST round the collar. It is a radial array of one bead leaned
+    # over, which at this size is indistinguishable from a real cabled moulding
+    # and costs one object. Twenty is the count that survives: the collar is
+    # about 90 screen pixels round, so twenty beads land every four and a half
+    # pixels, which is just above where a repeat stops being a repeat and
+    # becomes a grey ring.
+    twist = ball(0.0175, (0.0, 0.0, 0.0), segments=12, rings=8)
+    for v in twist.data.vertices:
+        v.co.y *= 2.1              # draw the bead out into a strand...
+        v.co.z += v.co.y * 0.62    # ...and lean it, which is what reads as twist
+    shift_mesh(twist, (0.150, 0.0, 0.090))
+    radial(twist, 20, name="Rope")
+    objs.append(twist)
 
-    bead = ring(0.132, 0.012, (0.0, 0.0, 0.111))
     # Spent wax and soot in the bottom of the bore. With a candle in the socket
     # it is hidden; with the socket empty it is what stops the bore reading as
-    # a bright brass dimple.
-    spent = cylinder(0.096, 0.012, (0.0, 0.0, 0.056), verts=32)
+    # a bright brass dimple — and it covers the profile's pinhole.
+    spent = cylinder(0.096, 0.012, (0.0, 0.0, 0.058), verts=32)
     spent["albedo"] = CHARCOAL
-    return [body, collar, bead, spent]
+    objs.append(spent)
+    return objs
 
 
 def build_candle_rail(width=0.52, run=2.6, thick=0.09, chamfer=0.016):
@@ -1613,14 +2495,33 @@ def build_candle_rail(width=0.52, run=2.6, thick=0.09, chamfer=0.016):
     """
     plank = box(width, run, thick, (0.0, 0.0, thick / 2.0))
     bevelled(plank, chamfer)
+    predivide(plank, 3)
+    # THE BUTT JOINT, at the frame edge — y = +-1.0 for a rail framed at 2.0.
+    # A rail is a length of timber and a run of them is joined somewhere; this
+    # is where, and the brass band below is what covers it.
+    for sy in (-1, 1):
+        vee(plank, width * 1.4, 0.024, (0.0, sy * 1.0, thick), run="x", name=f"Butt{sy}")
     grain(plank, OAK_GRAIN, "y", run * 1.2, thick)
+    wood_figure(plank, run="y", span=width, length=run, rings=2.5, strength=0.005,
+                levels=2, turbulence=7.0)
 
     objs = [plank]
     for sx in (-1, 1):
         edge = box(0.06, run, 0.022, (sx * (width / 2.0 - 0.03), 0.0, thick + 0.011))
-        edge["albedo"] = BRASS
         bevelled(edge, 0.006)
-        objs.append(edge)
+        objs.append(brass(edge))
+    # The strap over the butt. Half in this texture and half in the next, so a
+    # run of rail segments shows one whole band at every join and nothing in
+    # between — `build_face`'s `joint` device, in brass.
+    for sy in (-1, 1):
+        strap = box(width - 0.02, 0.16, 0.024, (0.0, sy * 1.0, thick + 0.012))
+        bevelled(strap, 0.008)
+        objs.append(brass(strap))
+        for sx in (-1, 1):
+            head = cylinder(0.026, 0.016, (sx * (width / 2.0 - 0.10), sy * 1.0, thick + 0.030),
+                            verts=16)
+            bevelled(head, 0.005)
+            objs.append(brass(head))
     return objs
 
 
@@ -1670,9 +2571,32 @@ def build_portrait_bezel(frame_w, chamfer=0.014):
     # cutting it means it survives whatever else lands on this face — the same
     # argument as the V-grooves, with a round bit instead of a chamfer bit.
     cut(body, ring(bore / 2.0 + f * 0.030, f * 0.014, (0.0, 0.0, t)), "Bead")
+
+    # A SCALLOPED RIM, which is the one change here that costs nothing and
+    # changes everything: the silhouette is whatever the alpha says, so a
+    # petalled outline is exactly as cheap as a circle and is legible at any
+    # size, because it alters the SHAPE rather than the shading. A round object
+    # among round objects has no identity — the same complaint `lantern_cradle`
+    # records about its own first version.
+    #
+    # Cut with balls rather than cylinders on purpose (see `ball`): the outer
+    # chamfer cannot survive being cut away, so the cut has to arrive with its
+    # own sloped wall. And it is ONE boolean for all sixteen, because the
+    # cutter carries the array — which is also what keeps it clear of gotcha 8,
+    # since every extra boolean on this face costs the lip that is left.
+    scallop = ball(f * 0.052, (0.0, 0.0, 0.0), segments=20, rings=12)
+    shift_mesh(scallop, (outer / 2.0 + f * 0.028, 0.0, t * 0.5))
+    radial(scallop, 16, name="ScallopArr")
+    cut(body, scallop, "Scallop")
     lipped(body, f * 0.008)
 
     objs = [body]
+    # BEAD-AND-REEL round the bore. This is the ornament that has to read at
+    # 60-odd pixels and does, because it is a regular alternation rather than a
+    # shape: it becomes a dotted ring when it stops being a moulding, and a
+    # dotted ring still says "framed".
+    objs += bead_and_reel(bore / 2.0 + f * 0.082, t + f * 0.004, 24, bead=f * 0.020)
+
     # Four bosses on the cardinals. They give the ring an orientation, which a
     # plain annulus does not have — and a frame with no top reads as a washer.
     for i in range(4):
@@ -1717,18 +2641,38 @@ def build_lantern_cradle(base=0.42, chamfer=0.016):
     bevelled(body, chamfer)
     cut(body, frustum(0.25, 0.33, 0.16, (0.0, 0.0, 0.11)), "Well")
     lipped(body, 0.008)
+    # STRAIGHT CUTS, NOT A DISPLACEMENT. The blank was sawn from a board like
+    # everything else, so the figure runs across it — but this is a cylinder,
+    # and a cylinder's top face is one 64-sided n-gon that subdivides into a
+    # fan. `wood_figure` on it came back as a visible SUNBURST spiralling out
+    # of the well, which reads as a manufacturing defect rather than as timber.
+    # `grain()` is Booleans and does not care what the topology is.
+    grain(body, ((-0.27, 0.010), (-0.05, 0.008), (0.19, 0.011)), "y", base * 2.4, 0.12)
+    objs = [body]
 
     collar = ring(0.295, 0.018, (0.0, 0.0, 0.118))
-    collar["albedo"] = BRASS
-    objs = [body, collar]
+    objs.append(brass(collar))
+    # A ring of beads inside the collar. The well is the part that has to say
+    # "down into" whether or not there is a lit lantern in it, and a bright
+    # dotted ring at the mouth is the cheapest possible statement of a rim.
+    objs += bead_and_reel(0.262, 0.118, 18, bead=0.017)
+
     for sx in (-1, 1):
         ear = box(0.15, 0.22, 0.045, (sx * 0.40, 0.0, 0.100))
-        ear["albedo"] = BRASS
         bevelled(ear, 0.010)
+        # A scroll cut out of each ear. The ears ARE the identity of this shape
+        # — they run past the base disc so the outline says "something clamps
+        # in here" — and piercing them makes that outline more legible, not
+        # less, because a pierced L reads as hardware and a solid one reads as
+        # a tab.
+        for sy in (-1, 1):
+            cut(ear, ball(0.052, (sx * 0.455, sy * 0.072, 0.100), segments=16, rings=10),
+                f"Scroll{sx}{sy}")
+        lipped(ear, 0.005)
+        objs.append(brass(ear))
         bolt = cylinder(0.032, 0.020, (sx * 0.40, 0.0, 0.128), verts=20)
-        bolt["albedo"] = BRASS
         bevelled(bolt, 0.005)
-        objs += [ear, bolt]
+        objs.append(brass(bolt))
     return objs
 
 
@@ -1748,23 +2692,40 @@ def build_log_well(w=2.40, d=1.30, well=(2.00, 1.05), depth=0.055, chamfer=0.022
     """
     body = box(w, d, 0.10, (0.0, 0.0, -0.05))
     bevelled(body, chamfer)
-    cut(body, box(well[0], well[1], 0.14, (0.0, 0.0, 0.07 - depth)), "Well")
+    predivide(body, 4)
+    pocket = box(well[0], well[1], 0.14, (0.0, 0.0, 0.07 - depth))
+    predivide(pocket, 3)
+    cut(body, pocket, "Well")
     route_ring(body, well[0], well[1], 0.032, (0.0, 0.0, 0.0), name="Mouth")
     grain(body, ((-0.62, 0.010), (0.58, 0.012), (1.02, 0.009)), "x", w * 1.2, 0.0)
     lipped(body, 0.010)
+    wood_figure(body, run="x", span=d, length=w, rings=7.0, strength=0.0075,
+                levels=2, turbulence=7.0)
 
     objs = [body]
     header = box(w, 0.07, 0.020, (0.0, d / 2.0 - 0.055, 0.010))
-    header["albedo"] = BRASS
     bevelled(header, 0.006)
-    objs.append(header)
+    objs.append(brass(header))
+    # The four corner bolts this shape used to carry are gone: the brackets
+    # below stand where they stood and bring their own. Two fittings competing
+    # for the same 0.05 of panel is `build_wall_plate`'s complaint, and it
+    # looks like a mistake because it is one.
+
+    # AN ESCUTCHEON ROUND THE WELL, which on this shape is the fitting Paul's
+    # rule most obviously asks for: the log's mouth is a routed edge two and a
+    # half tiles long that the player reads text out of all game, and it had
+    # nothing on it at all. The plate's own opening is the well exactly, so the
+    # DOM box that carries the Chronicle is still the panel's rect scaled by
+    # 0.80 x 0.75 and nothing downstream moves.
+    objs += escutcheon(well[0] + 0.13, well[1] + 0.13, well, z=0.0, t=0.022, name="Log")
+
+    # And a bracket at each corner, over the joint between the panel's own
+    # frame members.
     for sx in (-1, 1):
         for sy in (-1, 1):
-            bolt = cylinder(0.026, 0.016, (sx * (w / 2.0 - 0.055), sy * (d / 2.0 - 0.048), 0.008),
-                            verts=16)
-            bolt["albedo"] = BRASS
-            bevelled(bolt, 0.005)
-            objs.append(bolt)
+            objs += corner_bracket(0.30, 0.095, sx, sy,
+                                   (sx * (w / 2.0 - 0.16), sy * (d / 2.0 - 0.16)),
+                                   z=0.0, t=0.024, pierce=False, name=f"LogC{sx}{sy}")
     return objs
 
 
@@ -1789,18 +2750,27 @@ def build_pile_tray(chamfer=0.018):
     """
     body = box(PILE_BODY[0], PILE_BODY[1], 0.09, (0.0, 0.0, -0.045))
     bevelled(body, chamfer)
-    cut(body, box(CARD_SLOT[0], CARD_SLOT[1], 0.12, (0.0, 0.0, 0.06 - 0.05)), "Slot")
+    predivide(body, 4)
+    floor = box(CARD_SLOT[0], CARD_SLOT[1], 0.12, (0.0, 0.0, 0.06 - 0.05))
+    predivide(floor, 3)
+    cut(body, floor, "Slot")
     route_ring(body, CARD_SLOT[0], CARD_SLOT[1], 0.028, (0.0, 0.0, 0.0), name="Mouth")
     grain(body, ((-0.37, 0.009), (0.36, 0.011)), "y", PILE_BODY[1] * 1.2, 0.0)
     lipped(body, 0.009)
+    # The grain runs the SHORT way here and the long way on the log panel, and
+    # both are right: a tray this size is a block, and a block is cut from the
+    # board across its width.
+    wood_figure(body, run="y", span=PILE_BODY[0], length=PILE_BODY[1], rings=3.5,
+                strength=0.007, levels=2, turbulence=7.0)
 
     objs = [body]
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            bolt = cylinder(0.024, 0.014, (sx * 0.385, sy * 0.505, 0.007), verts=16)
-            bolt["albedo"] = BRASS
-            bevelled(bolt, 0.004)
-            objs.append(bolt)
+    # The escutcheon round the card slot. The tray and the grate share a
+    # footprint so they read as a pair (see the note above), and they now share
+    # a fitting too — which sharpens the contrast rather than blurring it,
+    # because the SAME brass ring around a floor and around a hole is the
+    # clearest possible way to say the difference is the hole.
+    objs += escutcheon(CARD_SLOT[0] + 0.115, CARD_SLOT[1] + 0.115, CARD_SLOT,
+                       z=0.0, t=0.022, bolt=0.019, name="Pile")
     return objs
 
 
@@ -1823,10 +2793,13 @@ def build_exhaust_grate(bars=3, chamfer=0.018):
     sw, sd = CARD_SLOT
     body = box(w, d, 0.09, (0.0, 0.0, -0.045))
     bevelled(body, chamfer)
+    predivide(body, 4)
     cut(body, box(sw, sd, 0.30, (0.0, 0.0, 0.0)), "Through")
     route_ring(body, sw, sd, 0.028, (0.0, 0.0, 0.0), name="Mouth")
     grain(body, ((-0.37, 0.009), (0.36, 0.011)), "y", d * 1.2, 0.0)
     lipped(body, 0.009)
+    wood_figure(body, run="y", span=w, length=d, rings=3.5, strength=0.007,
+                levels=2, turbulence=7.0)
     objs = [body]
 
     # The scorched sleeve: four thin uprights lining the opening, dropped below
@@ -1838,12 +2811,23 @@ def build_exhaust_grate(bars=3, chamfer=0.018):
         sleeve["albedo"] = CHARCOAL
         objs.append(sleeve)
 
-    for i in range(bars):
-        t = (i + 0.5) / bars - 0.5
-        bar = box(sw + 0.04, 0.045, 0.032, (0.0, t * sd, -0.012))
-        bar["albedo"] = CHARCOAL
-        bevelled(bar, 0.007)
-        objs.append(bar)
+    # The bars, as ONE array rather than a loop. They stay with the timber
+    # rather than going into the brass texture, and that is the right call for
+    # the same reason the split exists at all: blackened iron is MATTE, so it
+    # wants the wood's roughness and would be actively harmed by the brass
+    # material's. The rule is "brass gets its own texture", not "every material
+    # does" — what cannot share a quad is a shiny thing and a dull one.
+    bar = box(sw + 0.04, 0.045, 0.032, (0.0, -sd * (bars - 1) / (2.0 * bars), -0.012))
+    bar["albedo"] = CHARCOAL
+    bevelled(bar, 0.007)
+    run_of(bar, bars, (0.0, sd / bars, 0.0), name="Bars")
+    objs.append(bar)
+
+    # The escutcheon: the same ring the discard tray wears, so the pair is read
+    # as a pair and the difference between them stays the hole. Scorched at the
+    # mouth is §19.1's wear note and lands later — on this part, on its own.
+    objs += escutcheon(sw + 0.115, sd + 0.115, CARD_SLOT, z=0.0, t=0.022, bolt=0.019,
+                       name="Exh")
     return objs
 
 
@@ -1859,15 +2843,33 @@ def build_brass_strap(length=0.86, wide=0.20, chamfer=0.010):
     """
     band = box(length, wide, 0.030, (0.0, 0.0, 0.015))
     bevelled(band, chamfer)
+    predivide(band, 4)
     # Two beads along the length. They stop a strap reading as a strip of tape,
     # and they are cut as V so they survive whatever else lands on this face.
     for off in (-0.055, 0.055):
         vee(band, length * 1.2, 0.020, (0.0, off, 0.030), run="x", name=f"Bead{off}")
+    # CHASING — the hammered, worked surface a real piece of strap brass has.
+    # It is a displacement rather than an ornament, and it is here because a
+    # strap is a big flat piece of metal and a big flat piece of metal in a
+    # normal map is a mirror: it takes the lantern's highlight and shows it as
+    # one hard blob. A chased surface breaks that blob into a scatter, which is
+    # what worked metal actually does with a light and the only reason the
+    # travelling highlight reads as travelling rather than sliding.
+    chase = figure_texture(f"{band.name}_chase", scale=0.075, turbulence=3.0, kind="BANDNOISE")
+    carve(band, chase, 0.0022, stretch=(0.10, 0.055, 0.10), at=(0.0, 0.0, 0.0),
+          levels=2, name="Chase")
     objs = [band]
     for sx in (-1, 1):
         bolt = cylinder(0.028, 0.018, (sx * (length / 2.0 - 0.06), 0.0, 0.036), verts=20)
         bevelled(bolt, 0.005)
         objs.append(bolt)
+    # A bead run down the middle, between the two V beads. Twelve at this
+    # length is about six screen pixels a bead, which is comfortably above the
+    # size where a repeat turns into a grey stripe.
+    pip = ball(0.017, (0.0, 0.0, 0.0), segments=12, rings=8)
+    shift_mesh(pip, (0.0, 0.0, 0.030))
+    centred_run(pip, 12, length / 13.0, axis="x", name="Pip")
+    objs.append(pip)
     return objs
 
 
@@ -1886,11 +2888,35 @@ def build_board_corner(size=0.56, arm=0.17, sx=-1, sy=1, chamfer=0.014):
     """
     plate = box(size, size, 0.045, (0.0, 0.0, 0.0225))
     bevelled(plate, chamfer)
+    predivide(plate, 4)
     # Remove the inner quadrant, leaving two arms of width `arm`.
     keep = size / 2.0 - arm
     cut(plate, box(size, size, 0.12, (-sx * (size / 2.0 - keep), -sy * (size / 2.0 - keep), 0.0225)),
         "Inner")
+    # PIERCED, and the piercings are what make it a cap rather than a bracket
+    # drawn on paper. Silhouette is free (see the toolbox note), so a hole
+    # through the arm costs the same as no hole and buys two things: the L
+    # stops reading as a solid slab of metal, and the board's own grain shows
+    # THROUGH the fitting, which is the detail that says it is laid on top.
+    spine = size / 2.0 - arm / 2.0
+    for along in (arm * 1.6, arm * 2.9):
+        cut(plate, ball(arm * 0.25, (sx * (size / 2.0 - along), sy * spine, 0.0225),
+                        segments=18, rings=12), f"PX{along:.3f}")
+        cut(plate, ball(arm * 0.25, (sx * spine, sy * (size / 2.0 - along), 0.0225),
+                        segments=18, rings=12), f"PY{along:.3f}")
+    # A scrolled inner corner: one ball taken out of the elbow turns the square
+    # inner angle into a cove, which is how a real cast corner is finished and
+    # is the difference between "cut from sheet" and "made".
+    cut(plate, ball(arm * 0.62, (sx * (size / 2.0 - arm * 1.55), sy * (size / 2.0 - arm * 1.55), 0.0225),
+                    segments=20, rings=12), "Elbow")
     lipped(plate, 0.010)
+    # A FOLIATE SCROLL over the whole face. It is a displacement, so it is
+    # nearly free and it never touches the outline; what it buys is that the
+    # two arms stop being flat and start catching the lantern unevenly along
+    # their length, which is most of what separates cast brass from foil.
+    scroll = figure_texture(f"{plate.name}_scroll", scale=0.10, turbulence=9.0, kind="RINGNOISE")
+    carve(plate, scroll, 0.0026, stretch=(0.085, 0.085, 0.085),
+          at=(sx * size * 0.32, sy * size * 0.32, 0.0), levels=2, name="Scroll")
 
     objs = [plate]
     # A bolt in the corner itself and one at each arm end, which is where a cap
@@ -1902,7 +2928,7 @@ def build_board_corner(size=0.56, arm=0.17, sx=-1, sy=1, chamfer=0.014):
     return objs
 
 
-def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None):
+def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=None, part=None):
     """One row of the table below. Everything a bake needs and nothing else."""
     return {
         "build": build,
@@ -1912,6 +2938,34 @@ def shape(build, width, height, view=VIEW_LYING, ao=0.30, colour=STONE, centre=N
         "ao": ao,
         "colour": colour,
         "centre": centre,
+        "part": part,
+    }
+
+
+def split(name, build, ao=0.30, wood=WOOD_FRAME, brass_ao=None, **kw):
+    """
+    Two rows — `<name>` and `<name>_brass` — from ONE assembly and ONE frame.
+
+    §19.1's requirement, and Paul's: *"wherever there is wood joints meeting on
+    any part of the game furniture to be brass fittings, so we can play with
+    reflective metal and the lighting."* Every joint gets its fitting, and no
+    fitting is ever baked into the timber it sits on, because the renderer's
+    specular is per-material and a mixed quad can only be shiny or matte.
+
+    ONE FRAME IS THE POINT. Both rows carry the same width, height and centre,
+    so the engine draws the two quads at the identical rect and the fitting
+    cannot sit crooked on its own timber however either part is edited later —
+    the same guarantee `BUTTON_SURROUND` gives a plate and its socket, and
+    `build_frame` gives a corner and an edge, applied to a material split.
+
+    The brass row takes a SHORTER AO distance by default. A fitting is a
+    tenth the size of the panel it is bolted to, so a distance tuned for the
+    panel's own pockets would make the fitting read as sitting in a hole.
+    """
+    return {
+        name: shape(build, ao=ao, colour=wood, part="wood", **kw),
+        f"{name}_brass": shape(build, ao=brass_ao if brass_ao is not None else ao * 0.55,
+                               colour=BRASS, part="brass", **kw),
     }
 
 
@@ -1979,27 +3033,37 @@ SHAPES = {
         lambda: build_face(height=0.34, chamfer=0.03, courses=()),
         width=1.0, height=0.34, view=VIEW_UPRIGHT, ao=0.16, colour=STONE_COOL,
     ),
-    "board_rim": shape(
-        lambda: build_face(height=0.34, chamfer=0.035, courses=(0.55,), overscan=6.0, depth=0.8),
-        width=4.0, height=0.34, view=VIEW_UPRIGHT, ao=0.20, colour=WOOD_FRAME,
+    # The rim is TIMBER, so it takes figure rather than course lines, and it
+    # gets a brass band on the frame edge — half here, half in the neighbour,
+    # so a run shows one whole strap at every four-tile seam.
+    **split(
+        "board_rim",
+        lambda: build_face(height=0.34, chamfer=0.035, courses=(0.55,), overscan=6.0, depth=0.8,
+                           timber=True, straps=(-2.0, 2.0)),
+        width=4.0, height=0.34, view=VIEW_UPRIGHT, ao=0.20,
     ),
 
     # --- the board's outline (§13) ---------------------------------------
-    # One frame, four windows. See `build_frame` for why the corner is a crop
-    # of the whole thing rather than its own object.
-    "board_frame": shape(
-        build_frame, width=FRAME_OUTER * MARGIN, height=FRAME_OUTER * MARGIN, ao=0.30, colour=WOOD_FRAME,
+    # One frame, four windows, TWO MATERIALS. See `build_frame` for why the
+    # corner is a crop of the whole thing rather than its own object — and note
+    # that the same argument now does double duty: the brass rows are further
+    # crops of the SAME object, so a corner bracket cannot be misaligned with
+    # the mitre it caps any more than the corner could be misaligned with the
+    # edge.
+    **split(
+        "board_frame", build_frame,
+        width=FRAME_OUTER * MARGIN, height=FRAME_OUTER * MARGIN, ao=0.30,
     ),
-    "frame_corner": shape(
-        build_frame, width=FRAME_WINDOW, height=FRAME_WINDOW, ao=0.30, colour=WOOD_FRAME,
+    **split(
+        "frame_corner", build_frame, width=FRAME_WINDOW, height=FRAME_WINDOW, ao=0.30,
         centre=(-FRAME_OUTER / 2.0 + FRAME_WINDOW / 2.0, FRAME_OUTER / 2.0 - FRAME_WINDOW / 2.0, 0.0),
     ),
-    "frame_edge_h": shape(
-        build_frame, width=1.0, height=FRAME_WINDOW, ao=0.30, colour=WOOD_FRAME,
+    **split(
+        "frame_edge_h", build_frame, width=1.0, height=FRAME_WINDOW, ao=0.30,
         centre=(0.0, FRAME_OUTER / 2.0 - FRAME_WINDOW / 2.0, 0.0),
     ),
-    "frame_edge_v": shape(
-        build_frame, width=FRAME_WINDOW, height=1.0, ao=0.30, colour=WOOD_FRAME,
+    **split(
+        "frame_edge_v", build_frame, width=FRAME_WINDOW, height=1.0, ao=0.30,
         centre=(-FRAME_OUTER / 2.0 + FRAME_WINDOW / 2.0, 0.0, 0.0),
     ),
 
@@ -2011,8 +3075,13 @@ SHAPES = {
     # FREE-STANDING, so they carry MARGIN: the engine sizes a fitting by its
     # own quad rather than by the tile. The mouth of each wall fitting is at
     # 0.90 of the frame height — see `MOUTH`.
-    "sconce_bracket": shape(
-        build_sconce_bracket, width=0.18, height=0.40, view=VIEW_UPRIGHT, ao=0.09, colour=IRON,
+    # The cup was baked into the iron bracket, which is the exact case the
+    # split exists for: §19.1 asks the brass to be "fairly reflective", and one
+    # quad carrying both an iron plate and a brass cup can only be one or the
+    # other. Now the cup is the shiny part and the bracket is not.
+    **split(
+        "sconce_bracket", build_sconce_bracket, wood=IRON,
+        width=0.18, height=0.40, view=VIEW_UPRIGHT, ao=0.09,
     ),
     "torch_bracket": shape(
         build_torch_bracket, width=0.22, height=0.50, view=VIEW_UPRIGHT, ao=0.11, colour=IRON,
@@ -2027,9 +3096,7 @@ SHAPES = {
     # --- the player console (§19) ----------------------------------------
     # The body tiles along a run: exact width, no margin, geometry overscanning
     # sideways. Everything else is dropped onto it.
-    "console_body": shape(
-        build_console_body, width=4.0, height=1.36, ao=0.20, colour=WOOD_FRAME,
-    ),
+    **split("console_body", build_console_body, width=4.0, height=1.36, ao=0.20),
     # Plate and socket SHARE A FRAME so the engine can draw both quads at one
     # rect. Change `BUTTON_SURROUND` or a size and both move together.
     "button_plate_small": shape(
@@ -2056,7 +3123,7 @@ SHAPES = {
         lambda: build_button_recess(BTN_WIDE),
         width=socket(BTN_WIDE)[0], height=socket(BTN_WIDE)[1], ao=0.10, colour=WOOD_FRAME,
     ),
-    "tray": shape(build_tray, width=1.86, height=0.96, ao=0.16, colour=WOOD_FRAME),
+    **split("tray", build_tray, width=1.86, height=0.96, ao=0.16),
     "bezel": shape(build_bezel, width=1.36, height=0.64, ao=0.10, colour=BRASS),
 
     # --- the player board's fittings (§19.1) ------------------------------
@@ -2071,9 +3138,7 @@ SHAPES = {
     # The rail TILES ALONG ITS HEIGHT — board y — so the height is exact and the
     # width carries the margin. See the builder for why it is not baked
     # running along x and turned.
-    "candle_rail_strip": shape(
-        build_candle_rail, width=0.56, height=2.0, ao=0.14, colour=WOOD_FRAME,
-    ),
+    **split("candle_rail_strip", build_candle_rail, width=0.56, height=2.0, ao=0.14),
 
     # Bore is 2/3 of the frame in both sizes, so the art behind either is the
     # bezel's own quad scaled by 2/3.
@@ -2086,12 +3151,12 @@ SHAPES = {
 
     # Wider than tall: the brass ears run past the base disc on the x axis,
     # which is the whole point of them.
-    "lantern_cradle": shape(build_lantern_cradle, width=1.00, height=0.90, ao=0.16, colour=WOOD_FRAME),
-    "log_well": shape(build_log_well, width=2.50, height=1.40, ao=0.18, colour=WOOD_FRAME),
+    **split("lantern_cradle", build_lantern_cradle, width=1.00, height=0.90, ao=0.16),
+    **split("log_well", build_log_well, width=2.50, height=1.40, ao=0.18),
 
     # Same footprint, opposite objects — one has a floor, one goes through.
-    "pile_tray": shape(build_pile_tray, width=0.96, height=1.22, ao=0.13, colour=WOOD_FRAME),
-    "exhaust_grate": shape(build_exhaust_grate, width=0.96, height=1.22, ao=0.13, colour=WOOD_FRAME),
+    **split("pile_tray", build_pile_tray, width=0.96, height=1.22, ao=0.13),
+    **split("exhaust_grate", build_exhaust_grate, width=0.96, height=1.22, ao=0.13),
 
     "brass_strap": shape(build_brass_strap, width=0.90, height=0.26, ao=0.08, colour=BRASS),
     # The far-left corner. The other three are a row each — never a UV flip.
