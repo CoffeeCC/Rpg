@@ -1538,3 +1538,45 @@ metaphor loses and the camera should simply follow the hero.** That is a real
 possible outcome and it should be decided by him looking at the stress lab's
 camera toggle, not by argument. Nothing in the renderer depends on which way it
 goes — the camera takes a centre and a zoom either way.
+
+### 17.1 The camera pans, clamped to the board (2026-07-26)
+
+> Paul: *"Could we maybe have the game board scroll within the confines of the
+> board edges? or do you think that would look strange?"*
+
+Not strange, and it supersedes the last of §13's "the board never scrolls out
+from under the player". The camera **pans, clamped to the board's own edges.**
+
+**The rule that decides whether it looks right: MOVE THE CAMERA, NOT THE
+BOARD.** A table that stays fixed while the board slides across it looks wrong,
+because boards do not slide on tables by themselves. A camera panning over a
+stationary board AND a stationary table reads as a person moving their head
+over a large table. The pixels are identical; the feel is not.
+
+Nothing needs fixing for this — `board.ts` already places the table as a
+world-space sprite at `z = -thickness`, so it travels with the board. The rule
+to preserve is simply: **never draw the table as a fixed backdrop.**
+
+**Clamping to the board edges is what makes it feel like furniture.** Pushing
+against a boundary and having it stop is what tells the player how much board
+exists. A free-floating camera feels like software; a clamped one feels like an
+object on a table.
+
+Three consequences, all of them favourable:
+
+- **It composes with §17's overview/play framings rather than replacing them.**
+  The result is an ordinary tabletop camera: clamped pan to navigate, zoom range
+  to plan versus act. Overview is just the zoom at which the clamp has nothing
+  left to do.
+- **It is already consistent with the fog of war.** Panning to an unexplored
+  corner shows nothing, because it is dark — §14.1's "erase by light". Scrolling
+  a dark board with only the lantern's pool lit IS the fog of war, rather than
+  fighting it.
+- **Edge behaviour is the detail to get right.** At a boundary the player should
+  see the rim and a sliver of table: the signal that this is the end. What must
+  not happen is scrolling until the board is half off-screen with dead space
+  beside it.
+
+This closes the space problem opened in §13 and complained about in §17. Boards
+can now be as large as design wants, because the camera can reach all of them
+without the board ever stopping being an object.
