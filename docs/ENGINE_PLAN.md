@@ -541,8 +541,41 @@ form lighting.
 | **92 monsters, 5 heroes, 10 npcs, 3 sprites** | **EDT beveling** — Euclidean distance transform of the alpha silhouette, edge mask, blend, smooth, Sobel | the paper's best *automatic* method; **it cannot invert volumes** because it derives from the silhouette, not from painted tone. Every one of these is already a transparent PNG, so the alpha it needs is there. |
 | the ~20 assets that carry the look | hand-authored or four-illumination-angle | the paper's only consistently good results |
 
-The orbit test becomes standing QC: **every** asset gets it, and a spread above
-~0.10 with peak and trough ~180° apart is a reject.
+The orbit test becomes standing QC — but **not with one rig and one threshold**,
+and that correction is worth more than the original claim.
+
+#### Correction (2026-07-26): the point-light rig is invalid on sprites
+
+The line above originally read "every asset gets it, and a spread above ~0.10
+with peak and trough ~180° apart is a reject". That is right for tiles and
+**wrong for characters**, and the measurement that shows it is a control I
+should have run first: orbit a **flat** normal map — no material at all,
+featureless by construction — and under a POINT light the first five monsters
+score spreads of **0.145–0.338, three of them 180° apart**. A full failure out
+of nothing. The cause is not the normals; it is the light's own falloff
+sweeping across an off-centre sprite on a transparent background, so image
+brightness tracks light angle no matter what the surface does.
+
+Under a **directional** light the same control scores **exactly 0.000**. So:
+
+| asset class | rig | gate |
+|---|---|---|
+| tiles (opaque, fill the frame) | point | spread > 0.10 **and** sep > 135° = reject |
+| characters (transparent, off-centre) | directional | drift against the manifest |
+
+The 0.10 threshold does not transfer to bevels either, and for a reason that
+is structural rather than a tuning miss: a bevel **is** one large smooth
+volume, so it responds to light direction *by design*. Nine of fifteen
+monsters exceed 0.10 and none of them can mean an inverted volume, because the
+height field is derived from the alpha silhouette and never reads a pixel of
+tone. Those are recorded as **advisories**, and the character path gates on
+drift instead — which is stable, meaningful, and actually catches regressions.
+
+**The general lesson, which is the reusable part:** a QC threshold calibrated
+on one asset class silently becomes a random number on another. Run the null
+control — the input that must score zero — before trusting any threshold. The
+tile rig had never been checked that way, and it would have rejected perfectly
+good character art indefinitely.
 
 Rejected: ML monocular normal estimation (StableNormal, Lotus et al.) as a
 *shipped* output — trained on photographs, and the domain gap to stylised 2D
