@@ -384,18 +384,37 @@ export function createBattleMaterialLibrary(
     if (disposed || materials.has(id) || pending.has(id)) return;
     pending.add(id);
     const { repeat = false, ...matExtra } = extra;
-    const draft: { albedo: WebGLTexture | null; normal: WebGLTexture | null } = {
+    const draft: {
+      albedo: WebGLTexture | null;
+      normal: WebGLTexture | null;
+      material: WebGLTexture | null;
+    } = {
       albedo: null,
       normal: null,
+      material: null,
     };
     const publish = () => {
       if (disposed || !draft.albedo) return;
-      materials.set(id, { id, albedo: draft.albedo, normal: draft.normal ?? undefined, ...matExtra });
+      materials.set(id, {
+        id,
+        albedo: draft.albedo,
+        normal: draft.normal ?? undefined,
+        material: draft.material ?? undefined,
+        ...matExtra,
+      });
     };
     loadTexture(`${BAKED_BOARD_ROOT}/${name}.png`, true, repeat, (tex) => {
       pending.delete(id);
       if (!tex) return;
       draft.albedo = own(id, tex);
+      publish();
+    });
+    // THE MATERIAL MAP (roughness, specular, iridescence, occlusion). Never
+    // sRGB: every channel is DATA, and an sRGB decode would bend all four —
+    // turning 0.12 roughness into 0.014 and making brass a mirror.
+    loadTexture(`${BAKED_BOARD_ROOT}/${name}_material.png`, false, repeat, (tex) => {
+      if (!tex) return;
+      draft.material = own(id, tex);
       publish();
     });
     loadTexture(`${BAKED_BOARD_ROOT}/${name}_normal.png`, false, repeat, (tex) => {
