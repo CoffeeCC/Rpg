@@ -1,0 +1,135 @@
+/* =========================================================================
+   lanternBattle.css — the battlefield, when `?r=lantern` is on. NOTHING HERE
+   APPLIES OTHERWISE.
+
+   Every rule below is scoped under `.lantern-battle`, a class `BattleStage`
+   only adds while the flag is set (see `render/flag.ts`). With the flag off
+   this stylesheet is inert — ENGINE_PLAN §4's arrangement, and the same one
+   `lantern.css` keeps for the map.
+
+   THE ARRANGEMENT, in one picture:
+
+     .battle-stage.lantern-battle
+       .battlefield                    the viewport. Unchanged: same flex
+         .lantern-arena                column, same --bf-scale ladder.
+           canvas                      every SURFACE, drawn by the renderer
+         .bf-rail / .bf-row / ...      UNCHANGED DOM. Plates, badges, HP
+                                       grooves, intents, reticles, popups and
+                                       every hit target stay exactly where and
+                                       what they were.
+
+   WHY THE FIGURES ARE HIDDEN AND NEVER REMOVED. `visibility: hidden` keeps the
+   `<img>` in flow at its exact resolved size, which is the whole mechanism:
+   `render/battleScene.ts` MEASURES that box and stands a lit piece in it. Take
+   the element out of flow with `display: none` and `.bf-figure` collapses to
+   the nameplate's width, the row re-spaces, and the renderer faithfully draws
+   the fight at the wrong size. It also keeps `--bf-scale` — ENGINE_PLAN §8
+   item 5's "real source of truth for scale" — doing its job for the plates and
+   the text, which stay DOM and still have to fit four breakpoints.
+
+   `!important` throughout, and it is earned: battle.css, v5.css and v16.css all
+   select these boxes and are loaded in an order this file cannot control (the
+   §20 bug where `.lantern-grid .hero-walker` lost an equal-specificity tie).
+   Every one of them is scoped under `.lantern-battle`, which does not exist
+   with the flag off, so none can reach the default path.
+   ========================================================================= */
+
+/* --- 1 · The canvas ------------------------------------------------------ */
+.lantern-battle .lantern-arena {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Transparent to the pointer. Every click, hover and `elementFromPoint`
+     probe on this screen belongs to a `.bf-unit` above — §8 item 4's touch
+     targeting reads `document.elementFromPoint(...).closest('[data-enemy-uid]')`
+     and a canvas that ate events would return the canvas. */
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.lantern-battle .lantern-arena > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The rows and the rail are static boxes, so a positioned canvas at z-index 0
+   would paint over them. `.bf-unit` is already `position: relative` and would
+   survive on its own; stating it on the rows as well means a future unit that
+   is not positioned cannot silently fall behind the board. */
+.lantern-battle .bf-row,
+.lantern-battle .bf-gap {
+  position: relative;
+  z-index: 2;
+}
+
+/* --- 2 · The surfaces that moved to the GPU ------------------------------ */
+
+/* The figures. Hidden, not removed — see the header. */
+.lantern-battle .bf-figure > img,
+.lantern-battle .bf-figure > svg,
+.lantern-battle .bf-figure > .painted-figure {
+  visibility: hidden !important;
+}
+
+/* The painted scene. It is a texture now, standing UP at the back of the board
+   as a lit flat, which is what a diorama backdrop is — see `battleScene.ts`.
+   This is what ENGINE_PLAN §8 item 6 bought: while `BattleView.backdrop` was a
+   `ReactNode` the renderer could not have known there was an image. */
+.lantern-battle .stage-backdrop {
+  display: none !important;
+}
+
+/* The candles. ENGINE_PLAN §1.2: "on a board, the candle rail is a rail of
+   candles sitting on the board, and of course it lights the board." They stand
+   on the board now, beside the rail, and each burning one is a real `Light`.
+   The `.candle` BOX survives at its full 26x46 so the rail keeps its height and
+   `lighting.css`'s `:has(.candle.lit)` selectors still have something to match
+   — nothing is deleted, exactly as §4 requires. */
+.lantern-battle .candle > * {
+  display: none !important;
+}
+
+/* THE CHEAT ITSELF (§8 item 9). `lighting.css:762-815` lights the arena from a
+   CSS `:has()` count of lit candles — a HUD-reads-world path that exists
+   nowhere in TypeScript. It is an explicit uniform now (`buildBattleScene`'s
+   `vigor`), so the gradient it drove has to come off, or the fight is lit
+   twice and the second one does not know where anything is. */
+.lantern-battle .battlefield::before,
+.lantern-battle .battlefield::after {
+  display: none !important;
+}
+
+/* --- 3 · The flag's own chrome ------------------------------------------- */
+.lantern-battle .lantern-arena .lantern-hud,
+.lantern-battle .lantern-arena .lantern-error {
+  position: absolute;
+  z-index: 3;
+  margin: 0;
+  pointer-events: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.lantern-battle .lantern-arena .lantern-hud {
+  right: 8px;
+  top: 6px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre;
+  color: rgba(232, 227, 216, 0.8);
+  background: rgba(6, 5, 4, 0.66);
+  border: 1px solid rgba(200, 162, 74, 0.22);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.lantern-battle .lantern-arena .lantern-error {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 70%;
+  font-size: 12px;
+  color: #e06d5a;
+  text-align: center;
+}

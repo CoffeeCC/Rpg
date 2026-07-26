@@ -255,7 +255,14 @@ export function MultiplayerScreen({ state, dispatch }: { state: GameState; dispa
       handKey: you.turn,
       // The ring is chalked in Everdusk, not in the gates — the town's own
       // painting stands in for a gate backdrop.
-      backdrop: <img className="painted-scene" src={PAINTED_TOWN} alt="" />,
+      //
+      // DATA, not a `ReactNode`, since ENGINE_PLAN §8 item 6: "must become
+      // data, and BOTH adapters have to change together." `BattleStage` builds
+      // the same `<img className="painted-scene">` from it, and the lantern
+      // renderer can stand the same painting up behind the ring. `gateId` is
+      // null because a duel is not in a gate — which is the honest answer, and
+      // the renderer reads it as "no gate stone to lay the floor with".
+      backdrop: { painted: PAINTED_TOWN, gateId: null },
       portrait: {
         kind: 'tamer',
         uid: DUEL_FOE_HERO_UID,

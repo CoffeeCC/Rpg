@@ -1,0 +1,400 @@
+// =========================================================================
+// THE ARENA BRIDGE.
+//
+// The point of these is not that a Scene comes out. It is that the ONE thing
+// the battlefield port rests on — the solve that reconciles a measured DOM box
+// with a projected board — is exact, and that ENGINE_PLAN §8's traps are
+// actually handled rather than described.
+//
+//   the solve    `arenaCamera` must put the authored ranks on the MEASURED
+//                feet lines, checked against `camera.project` itself rather
+//                than against a re-derivation of the same algebra. This is the
+//                battlefield's counterpart to §20's lattice check, and it fails
+//                the same way if it is wrong: every piece stands in the wrong
+//                place and it looks like "the canvas is slightly misaligned".
+//   the inverse  `placeFigure` must round-trip. A figure's quad has to draw at
+//                the pixel size the DOM reserved for it, or the GPU art and the
+//                `getBoundingClientRect` the aim line is built from disagree.
+//   §8 item 9    the `--vigor-lume` CSS `:has()` count becomes an explicit
+//                input. Burning candles are real lights; snuffed ones are not.
+//   §8 item 5    nothing here reads a `--bf-scale` or a TSX `size={150}`.
+//   robustness   a degenerate measurement (a row that has not been laid out)
+//                must produce a finite camera, not a scene full of NaN.
+// =========================================================================
+import { describe, expect, it } from 'vitest';
+import { project, type Camera } from '../../lantern/scene/camera';
+import type { Material } from '../../lantern/scene/scene';
+import {
+  ARENA_DEPTH,
+  ENEMY_RANK,
+  MAT_ARENA,
+  MAT_BACKDROP,
+  MAT_BLANK,
+  MAT_CANDLE,
+  MAX_ARENA_ZOOM,
+  MIN_ARENA_ZOOM,
+  PARTY_RANK,
+  arenaCamera,
+  arenaExtent,
+  arenaWidth,
+  buildBattleScene,
+  candlePositions,
+  heroTextureId,
+  lanternForVigor,
+  monsterTextureId,
+  placeFigure,
+  type FigureBox,
+} from '../battleScene';
+
+/** Every id the builder can ask for, so nothing is skipped for want of art. */
+function allMaterials(extra: string[] = []): Map<string, Material> {
+  const ids = [
+    MAT_BLANK,
+    MAT_ARENA,
+    MAT_BACKDROP,
+    MAT_CANDLE,
+    'shadow',
+    'blockshadow',
+    'base',
+    'frame',
+    'rim',
+    'table',
+    'flame',
+    ...extra,
+  ];
+  return new Map(ids.map((id) => [id, { id, albedo: null } as Material]));
+}
+
+const FIELD = { x: 1000, y: 420 };
+const ENEMY_FEET = 236;
+const PARTY_FEET = 398;
+
+function camera(): Camera {
+  return arenaCamera({ viewport: FIELD, enemyFeet: ENEMY_FEET, partyFeet: PARTY_FEET });
+}
+
+function figure(over: Partial<FigureBox> = {}): FigureBox {
+  return {
+    uid: 'e1',
+    side: 'enemy',
+    cx: 520,
+    feetY: ENEMY_FEET,
+    w: 120,
+    h: 120,
+    textureId: monsterTextureId('duskhound'),
+    ...over,
+  };
+}
+
+describe('the solve: authored ranks land on measured feet lines', () => {
+  it('projects ENEMY_RANK exactly onto the enemy row', () => {
+    const cam = camera();
+    expect(project({ x: cam.centre.x, y: ENEMY_RANK, z: 0 }, cam).y).toBeCloseTo(ENEMY_FEET, 6);
+  });
+
+  it('projects PARTY_RANK exactly onto the party row', () => {
+    const cam = camera();
+    expect(project({ x: cam.centre.x, y: PARTY_RANK, z: 0 }, cam).y).toBeCloseTo(PARTY_FEET, 6);
+  });
+
+  it('holds at every plausible row separation and field size', () => {
+    for (const vh of [300, 420, 560, 800]) {
+      for (const gap of [80, 140, 210, 300]) {
+        const enemyFeet = vh * 0.4;
+        const partyFeet = enemyFeet + gap;
+        const cam = arenaCamera({ viewport: { x: 1280, y: vh }, enemyFeet, partyFeet });
+        // Only meaningful while the solve is inside the zoom guard rails; the
+        // clamp deliberately gives up exactness rather than produce a board
+        // nobody can read (see MIN/MAX_ARENA_ZOOM).
+        if (cam.zoom <= MIN_ARENA_ZOOM || cam.zoom >= MAX_ARENA_ZOOM) continue;
+        expect(project({ x: 0, y: ENEMY_RANK, z: 0 }, cam).y).toBeCloseTo(enemyFeet, 6);
+        expect(project({ x: 0, y: PARTY_RANK, z: 0 }, cam).y).toBeCloseTo(partyFeet, 6);
+      }
+    }
+  });
+
+  it('centres the board on the field horizontally', () => {
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    expect(cam.centre.x).toBeCloseTo(ext.width / 2, 12);
+    expect(project({ x: ext.width / 2, y: 0, z: 0 }, cam).x).toBeCloseTo(FIELD.x / 2, 6);
+  });
+
+  it('survives a degenerate measurement instead of producing NaN', () => {
+    for (const anchors of [
+      { viewport: FIELD, enemyFeet: null, partyFeet: null },
+      { viewport: FIELD, enemyFeet: 200, partyFeet: 200 },
+      { viewport: FIELD, enemyFeet: 300, partyFeet: 100 },
+      { viewport: { x: 0, y: 0 }, enemyFeet: 0, partyFeet: 0 },
+    ]) {
+      const cam = arenaCamera(anchors);
+      expect(Number.isFinite(cam.zoom)).toBe(true);
+      expect(Number.isFinite(cam.centre.x)).toBe(true);
+      expect(Number.isFinite(cam.centre.y)).toBe(true);
+      expect(cam.zoom).toBeGreaterThanOrEqual(MIN_ARENA_ZOOM);
+      expect(cam.zoom).toBeLessThanOrEqual(MAX_ARENA_ZOOM);
+    }
+  });
+
+  it('keeps the play area a whole number of tiles wide', () => {
+    for (const vw of [640, 900, 1280, 1920]) {
+      const w = arenaWidth(vw, 93);
+      expect(Number.isInteger(w)).toBe(true);
+      expect(w).toBeGreaterThanOrEqual(6);
+    }
+  });
+});
+
+describe('the inverse: a piece stands in its own DOM box', () => {
+  it('round-trips the feet point back to the pixel it was measured at', () => {
+    const cam = camera();
+    for (const [cx, feetY] of [
+      [120, 236],
+      [520, 236],
+      [940, 398],
+      [300, 410],
+    ] as const) {
+      const p = placeFigure(figure({ cx, feetY }), cam);
+      const back = project({ x: p.at.x, y: p.at.y, z: 0 }, cam);
+      expect(back.x).toBeCloseTo(cx, 6);
+      expect(back.y).toBeCloseTo(feetY, 6);
+    }
+  });
+
+  it('draws the figure at the pixel size the DOM reserved for it', () => {
+    const cam = camera();
+    const sin = Math.sin(cam.tilt);
+    for (const [w, h] of [
+      [120, 120],
+      [200, 200],
+      [106, 132],
+    ] as const) {
+      const p = placeFigure(figure({ w, h }), cam);
+      // `buildVertexData` multiplies a STANDING quad by zoom and zoom*sin —
+      // these two lines are its exact inverses, which is the whole reason a
+      // measured box and a drawn piece can be the same object.
+      expect(p.width * cam.zoom).toBeCloseTo(w, 6);
+      expect(p.height * cam.zoom * sin).toBeCloseTo(h, 6);
+    }
+  });
+
+  it('gives a wider figure a wider plinth', () => {
+    const cam = camera();
+    const small = placeFigure(figure({ w: 90 }), cam);
+    const big = placeFigure(figure({ w: 240 }), cam);
+    expect(big.radius).toBeGreaterThan(small.radius);
+  });
+});
+
+describe('the candle rail is §8 item 9, as geometry', () => {
+  it('stands one candle per point of MAX vigor, not per point spent', () => {
+    expect(candlePositions({ x: 1, total: 4, lit: 1 })).toHaveLength(4);
+    expect(candlePositions({ x: 1, total: 0, lit: 0 })).toHaveLength(0);
+  });
+
+  it('fills from the NEAR end, matching .vigor-candles column-reverse', () => {
+    const spots = candlePositions({ x: 1, total: 5, lit: 5 });
+    for (let i = 1; i < spots.length; i++) expect(spots[i].y).toBeLessThan(spots[i - 1].y);
+    // Candle 0 is the last one to gutter out, and it is the nearest.
+    expect(spots[0].y).toBeGreaterThan(PARTY_RANK);
+    expect(spots[spots.length - 1].y).toBeLessThan(ENEMY_RANK);
+  });
+
+  it('puts a single candle between the ranks rather than at an end', () => {
+    const [only] = candlePositions({ x: 2, total: 1, lit: 1 });
+    expect(only.y).toBeGreaterThan(ENEMY_RANK);
+    expect(only.y).toBeLessThan(PARTY_RANK + 1);
+  });
+
+  it('lights the board from the burning ones only', () => {
+    const cam = camera();
+    const base = { camera: cam, time: 0, materials: allMaterials(), figures: [] as FigureBox[] };
+    const lit4 = buildBattleScene({ ...base, vigor: { lit: 4, total: 4 } });
+    const lit1 = buildBattleScene({ ...base, vigor: { lit: 1, total: 4 } });
+    const dark = buildBattleScene({ ...base, vigor: { lit: 0, total: 4 } });
+    expect(lit4.lights.length - lit1.lights.length).toBe(3);
+    expect(lit1.lights.length - dark.lights.length).toBe(1);
+  });
+
+  it('draws the wax whether or not it is burning — a snuffed candle is still there', () => {
+    const cam = camera();
+    const base = { camera: cam, time: 0, materials: allMaterials(), figures: [] as FigureBox[] };
+    const wax = (lit: number) =>
+      buildBattleScene({ ...base, vigor: { lit, total: 4 } }).sprites.filter((s) => s.textureId === MAT_CANDLE).length;
+    expect(wax(4)).toBe(4);
+    expect(wax(0)).toBe(4);
+  });
+});
+
+describe('vigor drives the arena lantern', () => {
+  it('is brightest at full vigor and dimmest at none', () => {
+    expect(lanternForVigor(4, 4)).toBeGreaterThan(lanternForVigor(2, 4));
+    expect(lanternForVigor(2, 4)).toBeGreaterThan(lanternForVigor(0, 4));
+  });
+
+  it('keeps a floor, unlike the DOM path, because the ambient here is a dungeon', () => {
+    // The departure is deliberate and documented on `lanternForVigor`: the DOM
+    // path can afford a genuinely zero light because LightLayer runs at ambient
+    // 0.52. Blacking the fight out at the moment a card has to be chosen is not
+    // the same feature on this path.
+    expect(lanternForVigor(0, 4)).toBeGreaterThan(0);
+    expect(lanternForVigor(0, 4)).toBeLessThan(lanternForVigor(4, 4) * 0.35);
+  });
+
+  it('treats a fight with no vigor system at all as fully lit', () => {
+    expect(lanternForVigor(0, 0)).toBeCloseTo(lanternForVigor(4, 4), 6);
+  });
+});
+
+describe('pieces', () => {
+  const cam = camera();
+  const build = (figures: FigureBox[], materials = allMaterials([monsterTextureId('duskhound')])) =>
+    buildBattleScene({ camera: cam, time: 0, materials, figures, vigor: { lit: 3, total: 4 } });
+
+  it('gives every combatant a plinth and a contact shadow, art or no art', () => {
+    const withArt = build([figure()]);
+    const withoutArt = build([figure({ textureId: null })]);
+    const bases = (s: typeof withArt) => s.sprites.filter((x) => x.textureId === 'base').length;
+    // `pieceBaseSprites` is shadow + side + top: two discs per piece either way.
+    expect(bases(withArt)).toBe(bases(withoutArt));
+    expect(bases(withArt)).toBe(2);
+    // A monster with no painting is a bare plinth — 41 of 92 of them are.
+    expect(withoutArt.sprites.some((s) => s.textureId === monsterTextureId('duskhound'))).toBe(false);
+    expect(withArt.sprites.some((s) => s.textureId === monsterTextureId('duskhound'))).toBe(true);
+  });
+
+  it('skips a figure whose texture has not arrived, and still stands its plinth', () => {
+    const scene = build([figure()], allMaterials());
+    expect(scene.sprites.some((s) => s.textureId === monsterTextureId('duskhound'))).toBe(false);
+    expect(scene.sprites.filter((s) => s.textureId === 'base')).toHaveLength(2);
+  });
+
+  it('stands the figure UP as a billboard, not flat on the board', () => {
+    const scene = build([figure()]);
+    const fig = scene.sprites.find((s) => s.textureId === monsterTextureId('duskhound'));
+    expect(fig?.billboard).toBe(true);
+  });
+
+  it('mirrors the near rank and leaves the far one alone', () => {
+    const scene = build([figure({ uid: 'a', flip: true }), figure({ uid: 'b' })]);
+    const figs = scene.sprites.filter((s) => s.textureId === monsterTextureId('duskhound'));
+    expect(figs[0].uv.u0).toBeGreaterThan(figs[0].uv.u1);
+    expect(figs[1].uv.u0).toBeLessThan(figs[1].uv.u1);
+  });
+
+  it('fades a felled unit rather than removing it, so the slot keeps its piece', () => {
+    const scene = build([figure({ felled: true })]);
+    const fig = scene.sprites.find((s) => s.textureId === monsterTextureId('duskhound'));
+    expect(fig?.tint?.[3]).toBeLessThan(1);
+  });
+
+  it('lifts the acting unit off the board', () => {
+    const still = build([figure()]);
+    const acting = build([figure({ acting: true })]);
+    const z = (s: typeof still) =>
+      s.sprites.find((x) => x.textureId === monsterTextureId('duskhound'))!.position.z;
+    expect(z(acting)).toBeGreaterThan(z(still));
+  });
+});
+
+describe('the board', () => {
+  it('lays a whole slab of floor tiles under the fight', () => {
+    const cam = camera();
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials(),
+      figures: [],
+      vigor: { lit: 2, total: 3 },
+    });
+    const ext = arenaExtent(cam);
+    expect(scene.sprites.filter((s) => s.textureId === MAT_ARENA)).toHaveLength(ext.width * ARENA_DEPTH);
+  });
+
+  it('falls back to a bare chalk floor off-gate, which is the DUEL case', () => {
+    // The duel adapter (`MultiplayerScreen.tsx`) reports `gateId: null` — a
+    // ring chalked in Everdusk is not in a gate — so there is no tile art to
+    // lay the board with. It must still be a board, not a hole: the same slab,
+    // the same seams, drawn in flat stone.
+    const cam = camera();
+    const materials = allMaterials();
+    materials.delete(MAT_ARENA);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials,
+      figures: [],
+      vigor: { lit: 2, total: 3 },
+    });
+    const ext = arenaExtent(cam);
+    const floor = scene.sprites.filter((s) => s.textureId === MAT_BLANK);
+    expect(floor).toHaveLength(ext.width * ARENA_DEPTH);
+    expect(floor[0].tint).toBeDefined();
+  });
+
+  it('stands the painted backdrop UP behind the board — upright, never a billboard', () => {
+    const cam = camera();
+    const opts = { camera: cam, time: 0, figures: [] as FigureBox[], vigor: { lit: 2, total: 3 } };
+    const scene = buildBattleScene({ ...opts, materials: allMaterials() });
+    const flat = scene.sprites.find((s) => s.textureId === MAT_BACKDROP);
+    expect(flat?.upright).toBe(true);
+    expect(flat?.billboard).toBeUndefined();
+    // Behind the far edge of the play area, or it is standing in the fight.
+    expect(flat!.position.y).toBeLessThan(0);
+  });
+
+  it('draws no backdrop at all when the fight has no painting', () => {
+    const cam = camera();
+    const materials = allMaterials();
+    materials.delete(MAT_BACKDROP);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials,
+      figures: [],
+      vigor: { lit: 2, total: 3 },
+    });
+    expect(scene.sprites.some((s) => s.textureId === MAT_BACKDROP)).toBe(false);
+  });
+
+  it('ships an EMPTY occluder grid, never a null one', () => {
+    // The bug this rejects cost an hour. `renderer.ts:331` gates lighting on
+    // `scene.occluders !== null`, so the honest-looking "an arena has no walls,
+    // send null" renders the whole fight UNLIT — flat albedo, no falloff — and
+    // reads as a lantern that is merely too bright.
+    const cam = camera();
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials(),
+      figures: [],
+      vigor: { lit: 1, total: 1 },
+    });
+    expect(scene.occluders).not.toBeNull();
+    expect(scene.occluders!.width).toBe(arenaExtent(cam).width);
+    expect(scene.occluders!.height).toBe(ARENA_DEPTH);
+    // Empty: cleared ground. Nothing on an arena blocks light.
+    expect(scene.occluders!.solid.every((v) => v === 0)).toBe(true);
+  });
+
+  it('is a pure function of its inputs, so a frame can be diffed', () => {
+    const opts = {
+      camera: camera(),
+      time: 1.75,
+      materials: allMaterials([monsterTextureId('duskhound')]),
+      figures: [figure(), figure({ uid: 'p1', side: 'ally' as const, feetY: PARTY_FEET, flip: true })],
+      vigor: { lit: 2, total: 4 },
+    };
+    const a = buildBattleScene(opts);
+    const b = buildBattleScene(opts);
+    expect(JSON.stringify(a.sprites)).toBe(JSON.stringify(b.sprites));
+    expect(JSON.stringify(a.lights)).toBe(JSON.stringify(b.lights));
+  });
+});
+
+describe('texture ids', () => {
+  it('namespaces heroes and monsters apart', () => {
+    expect(monsterTextureId('duskhound')).not.toBe(heroTextureId('duskhound'));
+    expect(heroTextureId('Knight')).toContain('Knight');
+  });
+});

@@ -2095,3 +2095,199 @@ By **eye**: the frames themselves — that the board reads as a board, that the
 pool reads as a lantern rather than as daylight, that the mushrooms read as
 scenery rather than as decoration, and that the DOM map with the flag off is the
 map that shipped.
+
+---
+
+## 21. The other half: the battlefield is on the board too (2026-07-26)
+
+§20 ended with a list headed **What is NOT ported**, and the first line of it
+was *"the battlefield. `BattleScreen` is entirely untouched."* It is touched.
+Load a real Hollow Gate fight with `?r=lantern` and the arena is drawn by the
+renderer: an inlaid stone slab in the gate's own tile art, the painted gate
+scene standing up at the back of it as a lit flat, every combatant a piece on a
+plinth with a contact shadow, and a rail of candles burning on the board's left
+edge whose count is the vigor you have left to spend.
+
+Everything that is text or a hit target is still DOM and still exactly where it
+was: nameplates, HP grooves, intent telegraphs, corner badges, damage popups,
+impact FX, the aim reticle, the whole hand of cards, and the aim line — which
+still runs from a `getBoundingClientRect` on a hand slot to a
+`getBoundingClientRect` on an enemy div, and now lands on a piece that is drawn
+there *because* it was placed from that rect.
+
+### 21.1 The map's trick does not apply, and its inverse does
+
+This was the first real decision and it is the one worth writing down.
+
+§20's whole affordability argument is that the board plane's projection is
+AFFINE, so the DOM can keep rendering a square lattice at a fixed pitch and ONE
+CSS transform carries the entire lattice onto the projected board. That works
+because the map HAS a lattice: ~300 identical cells at a known pitch.
+
+**A battlefield has no lattice.** `.bf-row` is a flex row whose unit widths come
+from `--bf-scale`, from `.bf-plate`'s `min-width`, from how long a monster's
+name is, and from how many escorts the pack rolled. There is no pitch to carry,
+and no single transform can express "these five boxes, wherever the flexbox put
+them".
+
+So the same affine map is used in the OTHER DIRECTION, which costs nothing
+because it is exactly invertible:
+
+- the DOM lays the fight out exactly as it always has;
+- the renderer MEASURES the two feet lines and solves for the one camera that
+  puts its two authored RANKS on them;
+- every figure's own `.bf-figure` box is then unprojected through that camera,
+  so a piece stands precisely where its box stands.
+
+Two anchors, two unknowns, one linear solve (`render/battleScene.ts`
+`arenaCamera`):
+
+    partyFeetPx - enemyFeetPx = (PARTY_RANK - ENEMY_RANK) * zoom * cos(tilt)
+    enemyFeetPx               = (ENEMY_RANK - cy) * zoom * cos(tilt) + vh/2
+
+Everything else — the slab, the frame, the rim, the table, the candles, the
+painted flat — is authored in tiles against that camera and lands where the
+solve puts it. Checked against `camera.project` itself rather than against a
+re-derivation of the same algebra: the ranks land on the measured feet lines to
+within 1e-6 px at four field heights and four row separations, and a figure's
+quad draws back to the exact pixel width and height the DOM reserved for it.
+
+**It closes §8 item 5 differently from the map, and deliberately.** The map
+PINNED `--cell` at 48 and took the ladder over, because there `--cell` sized
+nothing but the lattice. `--bf-scale` also sizes the plates, the badges and the
+text, all of which stay DOM and still have to fit four breakpoints — pinning it
+would overflow the fight on a short viewport, which is the exact failure the
+clamp exists to prevent. §8's real instruction is *"the TSX numbers are hints,
+not authority"*, and this obeys it completely: nothing in `battleScene.ts` reads
+a `size={150}` or a `--bf-scale`. It measures the resolved box.
+
+### 21.2 §8's traps, and which ones bit
+
+- **Item 6, `BattleView.backdrop` is a `ReactNode` — real, and it paid for
+  itself immediately.** It is `BattleScenery { painted: string | null; gateId:
+  GateId | null }` now, and BOTH adapters changed together as §8 required:
+  `useSoloBattleView` here and the duel adapter in `MultiplayerScreen.tsx`.
+  `BattleStage` builds the identical `<img className="painted-scene">` from it,
+  so the DOM path is unchanged — and the renderer, which previously could not
+  have known there was a painting at all, can now stand it up at the back of the
+  board and lay the floor in the gate's own stone. No `if (duel)` branch was
+  added: a duel simply reports `gateId: null` and gets a chalk floor, which is
+  what a ring in Everdusk is.
+- **Item 3, two nav registrations on world elements — a non-event, exactly as
+  §8 predicted.** The heal-aim stops on the hero and each ally are `navItem`
+  props on `.bf-unit` divs, and the port never touches those divs. Only the
+  `<img>` inside `.bf-figure` is hidden. `nav/geometry.ts` scores the same boxes
+  it always did.
+- **Item 4, `elementFromPoint(...).closest('[data-enemy-uid]')` — a non-event
+  for the same reason.** The canvas is `pointer-events: none` and sits UNDER the
+  units, so the probe never reaches it.
+- **Item 9, `--vigor-lume` — real, and it is now the design.** `lighting.css`
+  lights the arena by counting lit candles with a CSS `:has()` selector, a
+  HUD-reads-world path that exists nowhere in TypeScript. `buildBattleScene`
+  takes `vigor: { lit, total }` as an explicit input, stands that many candles
+  on the board, and makes each burning one a real `Light`. The `:has()` rules
+  and the `.candle` boxes are untouched and still run with the flag off.
+- **`visibility: hidden`, never `display: none`.** The hidden `<img>` is the
+  thing the renderer measures. Take it out of flow and `.bf-figure` collapses to
+  the nameplate's width, the row re-spaces, and the renderer faithfully draws
+  the fight at the wrong size.
+
+### 21.3 Three things that were wrong until they were measured
+
+**1. `occluders: null` does not mean "lit, with nothing blocking". It means NOT
+LIT.** `renderer.ts:331` reads
+
+    useLighting = opts.lit && lights.length > 0 && scene.occluders !== null
+
+An arena is cleared ground — no walls, and §15's pieces have no volume to
+occlude with — so `null` is the honest-looking answer, and it silently rendered
+the entire fight as flat albedo. A measured horizontal luminance profile across
+the field read **127, 125, 125, 121, 126, 122, 128, 120, 126**: no falloff
+anywhere. That is indistinguishable by eye from "the lantern is simply too
+bright", and an hour went into turning the lantern down before the profile was
+taken. The arena now ships an EMPTY grid — present, all zeroes, saying the true
+thing — and every ray marches to the light unobstructed.
+
+**2. The lantern's HEIGHT is a legibility dial, not a staging one.** `sprite.ts`
+already says why on `Sprite.billboard`: a piece's surface normal is the VIEW
+direction, so a light directly overhead arrives near-edge-on to it while the
+flat board underneath faces it square on. Hung at z = 2 the boar's column
+measured **92, 102, 80, 83** against a bare-board reference of **92, 91, 87,
+76** — a figure that is genuinely drawn and that you cannot see. At z = 1.15,
+down between the ranks, the same piece measures 1.31x the board beside it and
+the hero reads at 0.65x: bright against dark and dark against bright, both
+legible.
+
+**3. A dependence that is written down is not a dependence that is visible.**
+Vigor drove the lantern as `0.25 + 0.75 * ratio`, which reads as a strong link
+and is not one. The mean board luminance over a real fight moved from **87 at
+three candles to 85 at two** — a 2% change. AgX spends most of its range
+compressing highlights, so a quarter off the top is very nearly free. Bending
+the curve to `0.2 + 0.8 * ratio^1.4` and brightening the candles puts the loss
+where the eye still has resolution. Measured on the same fight and the same
+sample grid: **98 / 87 / 65** mean board luminance at three / two / one candles
+— a third of the room's light gone by the time the rail is down to one. Paul's
+"spend down to one candle and the room genuinely darkens" is now true as a
+number and not only as an intention.
+
+### 21.4 What landed
+
+- **`render/battleScene.ts`** — pure. The rank/feet solve, the figure
+  placement, the candle rail, the scene build. No GL, no DOM, no React.
+- **`render/battleMaterials.ts`** — the GL side. Procedural furniture up front
+  (plinth, shadows, frame, rim, table, flame, and a generated wax candle with
+  its own normals), painted art requested asynchronously. It deliberately does
+  NOT reuse the map's library: an arena needs no wall art and no object icons,
+  and it needs a backdrop that changes per fight, which is why `forget` exists.
+- **`render/LanternBattlefield.tsx`** — the canvas, the device, the frame loop.
+  It WRITES NOTHING to the DOM; it reads `.bf-figure` rects and draws.
+- **`render/lanternBattle.css`** — every rule scoped under `.lantern-battle`,
+  which does not exist with the flag off.
+- **`components/BattleScreen.tsx`** — the flag, the figure refs, the scenery
+  type, and `LightLayer` guarded off under the flag exactly as `FloorScreen`
+  guards it.
+- **30 new tests** (1244 total), `tsc -b` clean.
+
+### 21.5 What is NOT ported
+
+- **The board's frame, rim and table are off screen in the arena.** The camera's
+  depth is fixed by the row separation, which leaves about three tiles above the
+  enemy rank — enough for the painted flat OR for the frame and a strip of
+  table, not for both. The flat wins, because it is the only surface up there
+  carrying any art. The board-on-a-table read then comes from the plinths, the
+  seams and the flat's own base line.
+- **The candle rail is placed off `.bf-rail`'s right edge**, which is right at
+  the desktop layout and wrong in the narrow layout mode where the rail runs
+  across the TOP — the candles land in the middle of the board there. It needs
+  the rail's ORIENTATION, not just its edge.
+- **A hidden `<img>`'s CONTAINER box is what gets measured**, so a figure whose
+  art overflows its container (the hero's PNG is authored 1:1.25) draws at the
+  container's height rather than the image's. A few percent short.
+- **`ImpactEffect`, the flash classes and the damage popups are still DOM
+  overlays.** They are not lit and they do not cast. The felled fade and the
+  acting lift are the only two combat states the renderer knows about.
+- **The duel was not exercised live.** Both adapters changed together and the
+  types line up, but a fresh character cannot enter the ring (no beasts), so the
+  duel's own path is covered by a unit test on the off-gate chalk floor rather
+  than by a fight.
+- **No normal maps on the pieces here either.** Same as the map: §15.1's "single
+  biggest remaining win on the pieces" is still not wired up on either path.
+
+### 21.6 Verified by eye versus by measurement
+
+By **measurement**: the rank solve against `camera.project` at four field
+heights and four row separations, to within 1e-6 px; a figure's quad
+round-tripping to the pixel size the DOM reserved for it; the piece-versus-board
+contrast at both ranks (1.31x and 0.65x); the vigor ladder at 98 / 87 / 65 mean
+board luminance for three / two / one candles; 1244 tests; `tsc -b` clean; and
+with the flag OFF, a real fight showing `.battle-stage` carrying exactly its old
+class list, no `.lantern-arena`, no `__lanternBattle` on `window`, `LightLayer`'s
+canvas still present, `.stage-backdrop` still serving `art/backdrop_hollow.jpg`,
+the figure `<img>` still `visibility: visible`, the candle wax still `display:
+block`, and `--vigor-lume` still resolving to 0.11 off the `:has()` selector.
+
+By **eye**: the frames themselves — that the arena reads as a lit board and not
+as a floor, that the pieces stand on it rather than sit on it, that the candles
+read as the thing lighting the room, that spending vigor visibly puts the room
+out, and that the aim line still arcs from a card in the hand onto the monster
+it is pointed at.

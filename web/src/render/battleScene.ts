@@ -1,0 +1,606 @@
+// =========================================================================
+// THE ARENA — a fight, as a Scene.
+//
+// Second bridge file, same contract as `floorScene.ts`: it is the only kind of
+// module allowed to know about both worlds, and the whole of it is PURE. Boxes
+// and numbers in, sprites and lights out. No GL, no DOM, no React, no clock but
+// the `time` it is handed.
+//
+// -------------------------------------------------------------------------
+// THE DECISION THAT SHAPES THIS FILE: THE BOARD IS SOLVED, NOT LAID OUT.
+// -------------------------------------------------------------------------
+//
+// The map port (ENGINE_PLAN §20) rests on one trick: the board plane's
+// projection is AFFINE, so the DOM can keep rendering a square lattice at a
+// fixed pitch and ONE CSS transform carries the whole thing onto the projected
+// board. That works because the map HAS a lattice — 300 identical cells at a
+// known pitch.
+//
+// A battlefield has no lattice. `.bf-row` is a flex row of units whose widths
+// come from `--bf-scale`, the plate's `min-width`, the length of a monster's
+// name and how many escorts the pack rolled. There is no pitch to carry.
+//
+// So the same affine map is used in the OTHER DIRECTION. It is exactly
+// invertible (`camera.unproject`), which means:
+//
+//   * the DOM lays the fight out exactly as it always has — same rows, same
+//     gaps, same `--bf-scale` ladder, same plates, same badges;
+//   * the renderer MEASURES the two feet lines and solves for the one camera
+//     that puts its two authored RANKS on them;
+//   * every figure's own box is then unprojected through that camera, so a
+//     piece stands precisely where its DOM box stands.
+//
+// Two anchors, two unknowns, one linear solve:
+//
+//     partyFeetPx - enemyFeetPx = (PARTY_RANK - ENEMY_RANK) * zoom * cos(tilt)
+//     enemyFeetPx               = (ENEMY_RANK - cy) * zoom * cos(tilt) + vh/2
+//
+// which is `arenaCamera` below. Everything else — the slab, the frame, the rim,
+// the table it is sitting on, the candles, the backdrop standing behind it — is
+// authored in TILES against that camera and lands wherever the solve puts it.
+//
+// The payoff is the same as the map's and it is worth naming: `nav/` is
+// untouched, the two heal-aim registrations (§8 item 3) are untouched,
+// `document.elementFromPoint(...).closest('[data-enemy-uid]')` (§8 item 4) is
+// untouched, and the aim line — which is built from `getBoundingClientRect()`
+// of a hand slot and an enemy div — keeps aiming at exactly the thing that is
+// drawn, because the thing that is drawn was placed from that rect.
+//
+// -------------------------------------------------------------------------
+// AND IT IS WHERE §8 ITEM 9 STOPS BEING A CHEAT
+// -------------------------------------------------------------------------
+//
+// `lighting.css:762-815` lights the arena by counting lit candles in the HUD
+// with a CSS `:has()` selector — a HUD-reads-world data path that exists
+// nowhere in TypeScript. ENGINE_PLAN §1.2: "on a board, the candle rail is a
+// rail of candles sitting on the board, and of course it lights the board. The
+// cheat becomes the mechanism."
+//
+// So `vigor` is an explicit input here, `candleRail` turns it into real candles
+// standing on the board at real positions, and each burning one is a real
+// `Light`. Nothing reads the DOM to find out how bright the room is.
+// =========================================================================
+
+import { DEFAULT_TILT, unproject, type Camera, type Vec2, type Vec3 } from '../lantern/scene/camera';
+import { makeOccluderGrid, makeScene, type Light, type Material, type Scene } from '../lantern/scene/scene';
+import { LAYER_BOARD, type Sprite, type UVRect } from '../lantern/scene/sprite';
+import { contactShadowSprite, pieceBaseSprites } from '../lantern/scene/piece';
+import { boardSlabSprites } from '../lantern/scene/board';
+import { emitterLight, flicker, glowLightPosition } from '../lantern/scene/emitters';
+
+// -------------------------------------------------------------------------
+// MATERIAL IDS — stated once so the builder and the loader cannot disagree
+// -------------------------------------------------------------------------
+
+export const MAT_ARENA = 'arena';
+export const MAT_BACKDROP = 'backdrop';
+export const MAT_CANDLE = 'candle';
+export const MAT_BLANK = 'bf-blank';
+
+export function monsterTextureId(speciesId: string): string {
+  return `monster:${speciesId}`;
+}
+export function heroTextureId(className: string): string {
+  return `hero:${className}`;
+}
+
+// -------------------------------------------------------------------------
+// THE AUTHORED BOARD
+// -------------------------------------------------------------------------
+
+/**
+ * Where the two ranks stand, in tiles from the board's far edge.
+ *
+ * These are the only two authored numbers in the whole layout, and everything
+ * else is measured against them. Their DIFFERENCE is what sets the zoom (see
+ * the header), so it is the number that decides how big a piece draws relative
+ * to the gap between the lines: further apart means a smaller zoom means
+ * smaller pieces on a deeper board.
+ *
+ * MEASURED, not guessed. At 1280x860 the battlefield box is 446px tall and the
+ * two feet lines come in 220px apart, so 3 tiles of separation puts the zoom
+ * near 128px a tile — which leaves 3.05 tiles of board above the enemy rank.
+ * That is the number that matters, because it is the room the painted flat and
+ * the far end of the board have to fit into. The first cut used 2.8 and there
+ * was nothing above the enemies but floor running off the top of frame.
+ */
+export const ENEMY_RANK = 1.35;
+export const PARTY_RANK = 4.35;
+
+/** Play area depth in tiles. The near rows run off the bottom of frame. */
+export const ARENA_DEPTH = 6;
+/** Frame width around the play area, in tiles. */
+export const ARENA_BORDER = 1.2;
+/** Slab thickness — what the rim shows. Thicker than the map's: it is closer. */
+export const ARENA_THICKNESS = 0.45;
+
+/**
+ * Zoom guard rails.
+ *
+ * The solve divides by a measured pixel distance, so a mid-transition layout
+ * (a row that has not been laid out yet, a stage animating in) can hand it a
+ * near-zero separation. Clamping means the worst case is a badly-framed board
+ * for one frame rather than a division that produces Infinity and a scene full
+ * of NaN vertices, which is silent and looks like a dead canvas.
+ */
+export const MIN_ARENA_ZOOM = 26;
+export const MAX_ARENA_ZOOM = 320;
+
+/** Plinth radius as a fraction of the figure's measured width. */
+export const PLINTH_FRACTION = 0.32;
+
+/** How tall the painted flat stands, in tiles. Tall enough to fill the gap
+ *  between the board's far edge and the top of frame at every viewport. */
+export const BACKDROP_TILES = 2.6;
+
+// -------------------------------------------------------------------------
+// THE SOLVE
+// -------------------------------------------------------------------------
+
+/** What the component measured off the live battlefield, in CSS px. */
+export interface FieldAnchors {
+  /** The `.battlefield` box, in CSS px. */
+  viewport: Vec2;
+  /** Feet line of the enemy row, px from the field's top edge. Null = guess. */
+  enemyFeet: number | null;
+  partyFeet: number | null;
+  tilt?: number;
+}
+
+export function clampArenaZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return MIN_ARENA_ZOOM;
+  return Math.min(MAX_ARENA_ZOOM, Math.max(MIN_ARENA_ZOOM, zoom));
+}
+
+/**
+ * How wide the play area is, in whole tiles.
+ *
+ * Whole, because the floor is drawn as unit tiles with per-tile UV windowing
+ * exactly like the map's — a fractional last column would have to be either
+ * clipped (the sprite format cannot) or stretched (visibly wrong against its
+ * neighbour). Rounding to the viewport means the slab reaches both side edges
+ * and the vertical frame is just off screen, which is what stops the arena
+ * reading as a rug in the middle of a table.
+ */
+export function arenaWidth(viewportX: number, zoom: number): number {
+  return Math.max(6, Math.min(48, Math.round(viewportX / zoom)));
+}
+
+/**
+ * The one camera that puts the authored ranks on the measured feet lines.
+ *
+ * Pure, and the reason it is pure is that it is the only place the two
+ * coordinate systems meet — if this is right, every piece is right, and if it
+ * is wrong every piece is wrong the same way. That is a property worth being
+ * able to unit-test without a browser.
+ */
+export function arenaCamera(a: FieldAnchors): Camera {
+  const tilt = a.tilt ?? DEFAULT_TILT;
+  const cos = Math.max(1e-3, Math.cos(tilt));
+  const vw = Math.max(1, a.viewport.x);
+  const vh = Math.max(1, a.viewport.y);
+  // The fallbacks are where the rows sit on an unstyled first paint. They only
+  // ever survive one frame, and a plausible board beats a degenerate one.
+  const enemyFeet = a.enemyFeet ?? vh * 0.44;
+  const partyFeet = a.partyFeet ?? vh * 0.9;
+  const sepPx = partyFeet - enemyFeet;
+  const sepTiles = PARTY_RANK - ENEMY_RANK;
+  const depthPerTile = sepPx > 8 ? sepPx / sepTiles : (vh * 0.46) / sepTiles;
+  const zoom = clampArenaZoom(depthPerTile / cos);
+  const cy = ENEMY_RANK - (enemyFeet - vh / 2) / (zoom * cos);
+  const width = arenaWidth(vw, zoom);
+  return { centre: { x: width / 2, y: cy }, zoom, tilt, viewport: { x: vw, y: vh } };
+}
+
+export function arenaExtent(cam: Camera): { width: number; height: number; border: number } {
+  return { width: arenaWidth(cam.viewport.x, cam.zoom), height: ARENA_DEPTH, border: ARENA_BORDER };
+}
+
+// -------------------------------------------------------------------------
+// FIGURES
+// -------------------------------------------------------------------------
+
+/**
+ * One combatant, as its DOM art box plus what to paint in it.
+ *
+ * The box is measured off `.bf-figure` — NOT computed from the `size={150}`
+ * props in the TSX. ENGINE_PLAN §8 item 5: "`--bf-scale` is the real source of
+ * truth for scale, and `battle.css` `!important`s over the components' inline
+ * sizes. The TSX numbers are hints, not authority." Measuring the resolved box
+ * is how this file refuses to believe the hints.
+ */
+export interface FigureBox {
+  uid: string;
+  side: 'enemy' | 'ally';
+  /** Centre of the art box, px from the field's left edge. */
+  cx: number;
+  /** The feet — the box's bottom edge, px from the field's top edge. */
+  feetY: number;
+  /** Art box size in CSS px. */
+  w: number;
+  h: number;
+  /** Painted art, or null for a bare plinth (41 of 92 monsters have none). */
+  textureId: string | null;
+  /** Dead, spared, tamed away — faded rather than removed (`.felled`). */
+  felled?: boolean;
+  /** Its action is resolving right now. Lifts off the board a little. */
+  acting?: boolean;
+  /** Mirror the art. Allies face right on the DOM path; here they face up-board. */
+  flip?: boolean;
+}
+
+export interface FigurePlacement {
+  uid: string;
+  /** Where the piece stands, in tiles. */
+  at: Vec2;
+  /** Quad size in tiles. */
+  width: number;
+  height: number;
+  /** Plinth radius in tiles. */
+  radius: number;
+}
+
+/**
+ * A measured art box, as a piece standing on the board.
+ *
+ * `width` divides by `zoom` and `height` by `zoom * sin(tilt)` because that is
+ * exactly what `buildVertexData` will multiply them back by for a standing
+ * quad — the two lines are inverses on purpose, so a figure draws at the pixel
+ * size the DOM reserved for it whatever the tilt is.
+ */
+export function placeFigure(f: FigureBox, cam: Camera): FigurePlacement {
+  const sin = Math.max(1e-3, Math.sin(cam.tilt));
+  const at = unproject({ x: f.cx, y: f.feetY }, cam, 0);
+  const width = Math.max(0.05, f.w / cam.zoom);
+  return {
+    uid: f.uid,
+    at,
+    width,
+    height: Math.max(0.05, f.h / (cam.zoom * sin)),
+    radius: Math.max(0.16, width * PLINTH_FRACTION),
+  };
+}
+
+// -------------------------------------------------------------------------
+// THE CANDLE RAIL — §8 item 9, as geometry
+// -------------------------------------------------------------------------
+
+export interface CandleRail {
+  /** Board x the rail stands on. Measured from the DOM rail's right edge. */
+  x: number;
+  total: number;
+  lit: number;
+}
+
+/**
+ * Where the candles stand, bottom-to-top.
+ *
+ * Index 0 is the NEAREST candle, matching `.vigor-candles`' `column-reverse`:
+ * the DOM rail snuffs the top one first, so a board rail that filled from the
+ * far edge would gutter at the wrong end and the two readouts would disagree
+ * about which candle just went out.
+ */
+export function candlePositions(rail: CandleRail): Vec2[] {
+  const n = Math.max(0, Math.floor(rail.total));
+  if (n === 0) return [];
+  const near = PARTY_RANK + 0.55;
+  const far = ENEMY_RANK - 0.75;
+  if (n === 1) return [{ x: rail.x, y: (near + far) / 2 }];
+  const step = (near - far) / (n - 1);
+  const out: Vec2[] = [];
+  for (let i = 0; i < n; i++) out.push({ x: rail.x, y: near - step * i });
+  return out;
+}
+
+/** How tall a candle stands, in tiles. Wax plus a finger of flame. */
+export const CANDLE_HEIGHT = 0.62;
+export const CANDLE_WIDTH = 0.2;
+
+// -------------------------------------------------------------------------
+// THE BUILD
+// -------------------------------------------------------------------------
+
+export interface BattleSceneOptions {
+  camera: Camera;
+  /** Seconds. Drives flicker; a fixed value gives a fixed frame. */
+  time: number;
+  /** Only ids present here are drawn — an unloaded texture is silently skipped. */
+  materials: Map<string, Material>;
+  figures: readonly FigureBox[];
+  /** The explicit uniform that replaces `lighting.css`'s `:has()` count. */
+  vigor: { lit: number; total: number };
+  /** Board x for the candle rail. Omitted, it hugs the play area's left edge. */
+  candleX?: number;
+  /** Draw the painted backdrop standing behind the board. */
+  backdrop?: boolean;
+  ambient?: number;
+  roomLamp?: number;
+  lanternIntensity?: number;
+}
+
+const FULL_UV: UVRect = { u0: 0, v0: 0, u1: 1, v1: 1 };
+const FLIP_UV: UVRect = { u0: 1, v0: 0, u1: 0, v1: 1 };
+
+/** Window the shared tile texture per cell so neighbours do not visibly repeat. */
+function cellUv(x: number, y: number): UVRect {
+  const u = ((x % 4) + 4) % 4;
+  const v = ((y % 4) + 4) % 4;
+  return { u0: u / 4, v0: v / 4, u1: (u + 1) / 4, v1: (v + 1) / 4 };
+}
+
+/**
+ * The arena lantern's brightness, from vigor.
+ *
+ * `BattleScreen`'s own comment is the spec: "the source hangs over the arena
+ * and the candles go back to being a count of how much fuel is left. Vigor
+ * still drives INTENSITY, so spend down to one candle and the room genuinely
+ * darkens around you."
+ *
+ * ONE DELIBERATE DEPARTURE, stated rather than quietly tuned. The DOM path
+ * uses `0.78 * ratio` with no floor, on Paul's instruction that "out means
+ * out" — and it gets away with a genuinely zero light because `LightLayer`
+ * runs at `ambient 0.52`, which is most of a lit room. This path runs at the
+ * dungeon's ambient, so the same zero would black the fight out entirely at
+ * the exact moment the player has to choose a card. The CANDLES still go fully
+ * out — that is the rail Paul was talking about — and the lantern bottoms out
+ * at a quarter rather than at nothing.
+ *
+ * AND THE CURVE IS BENT, which took a measurement to justify. A straight
+ * `0.25 + 0.75 * ratio` looks like a strong dependence written down and is not
+ * one on screen: the mean board luminance over a real fight moved from 87 at
+ * three candles to 85 at two — a 2% change, which is nothing. AgX spends most
+ * of its range compressing highlights, so a 25% cut in radiance near the top of
+ * the curve is very nearly invisible. Raising `ratio` to a power puts the loss
+ * where the eye still has resolution, and the same spend now costs real light.
+ */
+/**
+ * How high the party's lantern hangs over the ring, and how far it carries.
+ *
+ * THE HEIGHT IS A LEGIBILITY DIAL, not a staging one, and `sprite.ts` says why
+ * on `Sprite.billboard`: a piece's surface normal is the VIEW direction, so a
+ * light directly overhead arrives near-edge-on to it and contributes almost
+ * nothing, while the flat board underneath it is facing that light square on.
+ * At z = 2 the measured result was a lit floor with pieces the same tone as it
+ * — the boar's column read 92, 102, 80, 83 against a bare-board reference of
+ * 92, 91, 87, 76, which is a figure you cannot see. Bringing the flame down
+ * between the ranks tips the ratio the other way: less cosine on the ground,
+ * much more on the standing art, and the pieces come off the board.
+ */
+export const LANTERN_HEIGHT = 1.15;
+export const LANTERN_REACH = 5.6;
+
+export function lanternForVigor(energy: number, maxEnergy: number, peak = 6.5): number {
+  const ratio = maxEnergy > 0 ? Math.max(0, Math.min(1, energy / maxEnergy)) : 1;
+  return peak * (0.2 + 0.8 * Math.pow(ratio, 1.4));
+}
+
+/** One frame of a fight, as a Scene. Rebuilt from state, never mutated. */
+export function buildBattleScene(o: BattleSceneOptions): Scene {
+  const cam = o.camera;
+  const has = (id: string) => o.materials.has(id);
+  const sprites: Sprite[] = [];
+  const lights: Light[] = [];
+  const extent = arenaExtent(cam);
+
+  // --- the slab ----------------------------------------------------------
+  sprites.push(
+    ...boardSlabSprites(
+      {
+        width: extent.width,
+        height: extent.height,
+        border: extent.border,
+        thickness: ARENA_THICKNESS,
+        frameTextureId: 'frame',
+        rimTextureId: 'rim',
+        tableTextureId: 'table',
+        shadowTextureId: 'blockshadow',
+        tableGrain: 3.2,
+      },
+      cam,
+    ),
+  );
+
+  // --- the floor ---------------------------------------------------------
+  // A plain inlaid field. No occluder grid and no wall blocks: an arena is the
+  // cleared ground a fight happens on, and §15's pieces have no volume to
+  // occlude with anyway.
+  const floorId = has(MAT_ARENA) ? MAT_ARENA : MAT_BLANK;
+  for (let y = 0; y < extent.height; y++) {
+    for (let x = 0; x < extent.width; x++) {
+      sprites.push({
+        position: { x, y, z: 0 },
+        size: { x: 1, y: 1 },
+        pivot: { x: 0, y: 0 },
+        uv: floorId === MAT_ARENA ? cellUv(x, y) : FULL_UV,
+        textureId: floorId,
+        tint: floorId === MAT_ARENA ? undefined : [0.28, 0.26, 0.3, 1],
+        layer: LAYER_BOARD,
+      });
+    }
+  }
+
+  // --- the painted backdrop, STANDING UP ---------------------------------
+  // §8 item 6 is what makes this possible: while `BattleView.backdrop` was a
+  // `ReactNode` the renderer could not have known there was an image, let
+  // alone which one. As data it is a texture, and a texture can be a painted
+  // flat standing at the back of the board — which is what a diorama is, and
+  // is a better answer than the DOM `<img>` it replaces because it is LIT.
+  //
+  // `upright`, not `billboard`: a backdrop is a fixed vertical plane whose
+  // normal points down-board at the viewer. A billboard would swing with the
+  // camera, which is exactly what scenery must not do.
+  //
+  // IT STANDS ON THE BOARD'S FAR EDGE, not behind the frame, and that is a
+  // framing decision rather than a detail. The camera's depth is set by the
+  // row separation (see `arenaCamera`), which leaves about three tiles of view
+  // above the enemy rank — enough for the flat OR for the frame and a strip of
+  // table, not for both. A flat wins: it is the thing that says "diorama", it
+  // is the only surface up there carrying any art, and the board's own edge is
+  // then its base line, which is exactly how a scenery flat sits on a board.
+  if (o.backdrop !== false && has(MAT_BACKDROP)) {
+    sprites.push({
+      position: { x: extent.width / 2, y: -0.05, z: 0 },
+      size: { x: extent.width + extent.border * 2, y: BACKDROP_TILES },
+      pivot: { x: 0.5, y: 1 },
+      upright: true,
+      uv: FULL_UV,
+      textureId: MAT_BACKDROP,
+      tint: [0.82, 0.82, 0.9, 1],
+    });
+  }
+
+  // --- the pieces --------------------------------------------------------
+  for (const f of o.figures) {
+    const p = placeFigure(f, cam);
+    const lift = f.acting ? 0.13 : 0;
+    const felled = !!f.felled;
+    const baseTint = felled
+      ? ([0.32, 0.32, 0.36, 0.5] as const)
+      : ([1, 1, 1, 1] as const);
+    sprites.push(
+      ...pieceBaseSprites(p.at, 'base', 'shadow', {
+        radius: p.radius,
+        thickness: 0.1,
+        tint: [baseTint[0], baseTint[1], baseTint[2], baseTint[3]],
+        shadow: { strength: felled ? 0.3 : 0.8, height: lift },
+      }),
+    );
+    if (f.textureId && has(f.textureId)) {
+      sprites.push({
+        position: { x: p.at.x, y: p.at.y, z: 0.1 + lift },
+        size: { x: p.width, y: p.height },
+        pivot: { x: 0.5, y: 1 },
+        billboard: true,
+        uv: f.flip ? FLIP_UV : FULL_UV,
+        textureId: f.textureId,
+        tint: felled ? [0.42, 0.42, 0.46, 0.42] : undefined,
+      });
+    }
+  }
+
+  // --- the candles (§8 item 9) -------------------------------------------
+  const rail: CandleRail = {
+    x: o.candleX ?? 0.7,
+    total: o.vigor.total,
+    lit: o.vigor.lit,
+  };
+  const spots = candlePositions(rail);
+  for (let i = 0; i < spots.length; i++) {
+    const spot = spots[i];
+    const burning = i < rail.lit;
+    sprites.push(
+      contactShadowSprite(spot, 'shadow', { radius: CANDLE_WIDTH * 1.5, strength: 0.5, height: 0 }),
+    );
+    if (has(MAT_CANDLE)) {
+      sprites.push({
+        position: { x: spot.x, y: spot.y, z: 0 },
+        size: { x: CANDLE_WIDTH, y: CANDLE_HEIGHT },
+        pivot: { x: 0.5, y: 1 },
+        upright: true,
+        uv: FULL_UV,
+        textureId: MAT_CANDLE,
+        tint: burning ? undefined : [0.55, 0.53, 0.5, 1],
+      });
+    }
+    if (!burning) continue;
+    const centre: Vec3 = { x: spot.x, y: spot.y, z: CANDLE_HEIGHT + 0.06 };
+    const size = 0.19;
+    if (has('flame')) {
+      const wob = flicker(i * 2.7, o.time, 0.1);
+      sprites.push({
+        position: { x: centre.x, y: centre.y - 0.02, z: centre.z },
+        size: { x: size * wob, y: size * (2 - wob) },
+        pivot: { x: 0.5, y: 1 },
+        billboard: true,
+        uv: FULL_UV,
+        textureId: 'flame',
+      });
+    }
+    lights.push(
+      emitterLight(glowLightPosition(centre, size), {
+        colour: [1, 0.58, 0.24],
+        // Brighter and shorter than a dungeon sconce's 1.25 over 2.4 tiles.
+        // These are not scenery at the end of a corridor — they are the vigor
+        // readout, and losing one has to be worth noticing.
+        intensity: 1.9,
+        reach: 3.6,
+        radius: 0.09,
+        flicker: 0.18,
+        time: o.time,
+        seed: i * 1.9 + 0.4,
+      }),
+    );
+  }
+
+  // --- the light ---------------------------------------------------------
+  // THE LANTERN THE PARTY CARRIED IN. Hung in the gap BETWEEN the two ranks,
+  // for the reason `BattleScreen` already recorded against the DOM path: at
+  // the top of the stage the enemies came back blown out and the hero was
+  // still in the dark, which is the original complaint pointed the other way.
+  //
+  // THE HEIGHT AND THE REACH ARE THE WHOLE LOOK, and both were wrong on the
+  // first pass in the same direction. Hung at z = 3.1 with a reach that grew
+  // with the board, every tile was within a factor of 1.3 of every other tile's
+  // distance to the flame, so the arena came out at one uniform brightness —
+  // the "flat bright disc" `lighting.css` already names as the failure a
+  // falloff exists to prevent, arrived at again from the other side. Dropping
+  // it to two tiles up and FIXING the reach independently of the board's width
+  // is what puts the corners in the dark and the fight in a pool.
+  const midRank = (ENEMY_RANK + PARTY_RANK) / 2;
+  lights.push({
+    position: { x: extent.width / 2, y: midRank, z: LANTERN_HEIGHT },
+    colour: [1, 0.66, 0.33],
+    intensity: o.lanternIntensity ?? lanternForVigor(o.vigor.lit, o.vigor.total),
+    radius: 0.22,
+    reach: LANTERN_REACH,
+  });
+
+  // THE ROOM the board is sitting in (§15.1) — cool, raking, not part of the
+  // fiction. Here it does more work than it does on the map: an arena has no
+  // walls to stop it, so it is what keeps the far frame and the rim readable
+  // when the vigor rail has burned down to nothing.
+  const roomLamp = o.roomLamp ?? 0.14;
+  if (roomLamp > 0) {
+    lights.push({
+      position: { x: -6, y: extent.height + 9, z: 16 },
+      colour: [0.6, 0.68, 1],
+      intensity: roomLamp,
+      radius: 1.4,
+      reach: Math.max(80, extent.width * 5),
+      castsShadow: false,
+    });
+  }
+
+  return makeScene(cam, {
+    sprites,
+    materials: o.materials,
+    // AN EMPTY GRID, AND IT IS NOT A FORMALITY.
+    //
+    // An arena is cleared ground: §15's pieces have no volume to occlude with,
+    // there are no wall blocks, and nothing on this board casts a cast shadow.
+    // The obvious expression of that is `occluders: null`, and it is WRONG —
+    // `renderer.ts:331` reads
+    //
+    //     useLighting = opts.lit && lights.length > 0 && scene.occluders !== null
+    //
+    // so a scene with no occluder grid is not "lit with nothing blocking", it
+    // is NOT LIT AT ALL. The whole board came back at one flat albedo: a
+    // measured horizontal profile across the field read 127, 125, 125, 121,
+    // 126, 122, 128 — no falloff anywhere, which is exactly what an unlit
+    // render looks like and is very easy to mistake for a light that is simply
+    // too bright. An hour went into turning the lantern down.
+    //
+    // So the grid is present and empty. It costs one `Uint8Array` of
+    // width*height zeroes, it says the true thing (there is a board, nothing on
+    // it blocks light), and every ray marches to the light unobstructed.
+    occluders: makeOccluderGrid(extent.width, extent.height),
+    occluderHeight: 1,
+    lights,
+    time: o.time,
+    // A hair over the map's 0.06 — `lighting.css` is right that a stone room
+    // bounces and is not a moor at night — but only a hair. The first pass ran
+    // 0.13 with a 0.5 room lamp and the two together lit the whole arena to a
+    // flat wash that no amount of lantern falloff could carve back out.
+    ambient: o.ambient ?? 0.07,
+  });
+}

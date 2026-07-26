@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LightLayer } from './LightLayer';
 import type { GameAction, GameState } from '../engine/game';
 import type { CardDef, CardInstance, FxEvent, GateId, Intent, MonsterRarity } from '../engine/types';
@@ -12,6 +12,8 @@ import { ELEMENT_ICON } from '../art/elementIcons';
 import { familyWeakness } from '../engine/data/species';
 import { BattleBackdrop, CardBack } from '../art/backdrops';
 import { PAINTED_BACKDROPS } from '../art/painted';
+import { PAINTED_HEROES, PAINTED_MONSTERS } from '../art/paintedCharacters';
+import { TILE_TEXTURES } from '../art/iconArt';
 import { CLASS_LINE_STYLE, buildTargetLinePath, raceCursor } from '../art/classCursors';
 import { ImpactEffect, type ImpactKind } from '../art/impactFx';
 import { CardView } from './CardView';
@@ -21,6 +23,9 @@ import { Icon } from './Icon';
 import { play as sfx, type SfxName } from '../platform/sfx';
 import { useNavScope, useNavInputMode, useRefocusOn, navItem, focusFirstIn, getInputMode } from '../nav';
 import { DrillCoach } from './DrillCoach';
+import { renderDebug, renderMode } from '../render/flag';
+import { LanternBattlefield, type BattleFigureRef } from '../render/LanternBattlefield';
+import { heroTextureId, monsterTextureId } from '../render/battleScene';
 
 // ===========================================================================
 // THE ONE BATTLEFIELD.
@@ -44,6 +49,32 @@ import { DrillCoach } from './DrillCoach';
 // no single-player counterpart at all (the round line, the rival's face-down
 // hand).
 // ===========================================================================
+
+/**
+ * The scene behind the fight, as DATA.
+ *
+ * It used to be a `ReactNode` — the view model handed the renderer a finished
+ * `<img>` — and ENGINE_PLAN §8 item 6 called that out as the thing that had to
+ * change before the battlefield could be drawn by anything but the DOM: "must
+ * become data (a texture id), and BOTH adapters have to change together."
+ *
+ * A `ReactNode` is opaque. `BattleStage` could render it and could learn
+ * nothing from it, so a GPU path had no way to know there was a painting at
+ * all, let alone which file it was. As two strings the SAME element is still
+ * built here (byte for byte — see the render below) and the renderer can also
+ * stand the painting up at the back of the board as a lit flat, and dress the
+ * arena floor in the gate's own stone.
+ *
+ * Both adapters produce it: `useSoloBattleView` in this file, and the duel
+ * adapter in `MultiplayerScreen.tsx`. Neither `BattleStage` nor anything under
+ * it asks which mode it is in, which is the invariant at the top of this file.
+ */
+export interface BattleScenery {
+  /** A painted scene served from /public/art, or null for the procedural one. */
+  painted: string | null;
+  /** Which gate the fight is in. Null off-gate — a duel is chalked in town. */
+  gateId: GateId | null;
+}
 
 /** The face of the opposition, in the top portrait chip. */
 export type BattlePortrait =
@@ -87,7 +118,7 @@ export interface BattleView {
   /** Remount key for the hand fan, so a new turn re-deals it. */
   handKey: number;
   /** The painted scene behind the fight, or null for the bare stage. */
-  backdrop: ReactNode | null;
+  backdrop: BattleScenery | null;
   portrait: BattlePortrait | null;
   /** Line across the top of the stage (the rival's name, a tamer's whistle). */
   banner: string | null;
@@ -246,11 +277,10 @@ function useSoloBattleView(state: GameState, dispatch: (a: GameAction) => void):
       discardPile: battle.discardPile,
       exhaustPile: battle.exhaustPile,
       handKey: battle.turn ?? battle.drawPile.length + battle.discardPile.length,
-      backdrop: gateId
-        ? PAINTED_BACKDROPS[gateId]
-          ? <img className="painted-scene" src={PAINTED_BACKDROPS[gateId]} alt="" />
-          : <BattleBackdrop gateId={gateId} />
-        : null,
+      // Exactly the old expression, one step earlier: the same two branches on
+      // the same `PAINTED_BACKDROPS` lookup, deferred from "which element" to
+      // "which file". `BattleStage` builds the identical element from it.
+      backdrop: gateId ? { painted: PAINTED_BACKDROPS[gateId] ?? null, gateId } : null,
       portrait: leadEnemy ? { kind: 'beast', unit: leadEnemy, boss: !!boss } : null,
       banner: battle.tamerName ? `⚔️ ${battle.tamerName} — a rival's beasts answer the whistle` : null,
       roundLabel: null,
@@ -372,6 +402,30 @@ export function BattleStage({ view }: { view: BattleView | null }) {
   const enemyRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const slotRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const stageRef = useRef<HTMLDivElement>(null);
+
+  // THE FLAG (ENGINE_PLAN §4). `?r=lantern` puts the GPU renderer underneath
+  // the battlefield; absent, everything below is byte-for-byte the fight that
+  // has always shipped. Read once per render — a query string cannot change
+  // under us — and every use of it is a guard, never a rewrite.
+  const lantern = renderMode() === 'lantern';
+  const lanternDebug = lantern && renderDebug();
+  /**
+   * The `.bf-figure` art boxes, by uid.
+   *
+   * Populated on every path, flag or no flag, because a ref callback writes
+   * nothing to the DOM and a branch here would be a second place for the two
+   * paths to drift. `render/battleScene.ts` measures these boxes and stands a
+   * lit piece in each one; with the flag off nobody reads the map.
+   */
+  const figureRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const railRef = useRef<HTMLElement>(null);
+  const figureRef = useCallback(
+    (uid: string) => (el: HTMLDivElement | null) => {
+      if (el) figureRefs.current.set(uid, el);
+      else figureRefs.current.delete(uid);
+    },
+    [],
+  );
   // Fixed slot order for the two rows — see UnitSlotSnapshot above. BattleStage
   // mounts fresh per encounter (the entering-flash effect above says so), so
   // these start empty for every fight; uids are appended the first time seen
@@ -744,6 +798,50 @@ export function BattleStage({ view }: { view: BattleView | null }) {
     snap: unitSnapshots.current.get(uid)!,
   }));
 
+  /**
+   * The roster, for the renderer — WHO and WHAT PAINTING, never where.
+   *
+   * Where is measured off the live boxes in the frame loop, which is the whole
+   * arrangement (see `render/battleScene.ts`). This list carries only what the
+   * DOM cannot be asked for: the material id and the file behind it.
+   *
+   * It is the same slot order the rows render, dead units included, because a
+   * felled unit stays in its slot as a faded gap and its piece should too —
+   * the board would otherwise close ranks while the nameplates did not.
+   */
+  const lanternFigures: BattleFigureRef[] = lantern
+    ? [
+        ...enemySlots.map(({ uid, live, snap }) => ({
+          uid,
+          side: 'enemy' as const,
+          textureId: monsterTextureId(snap.speciesId),
+          artUrl: PAINTED_MONSTERS[snap.speciesId] ?? null,
+          felled: !live || !live.isAlive(),
+          acting: actingUid === uid,
+        })),
+        {
+          uid: 'hero',
+          side: 'ally' as const,
+          textureId: heroTextureId(hero.className),
+          artUrl: PAINTED_HEROES[hero.className] ?? null,
+          felled: hero.hp <= 0,
+          acting: actingUid === 'hero',
+        },
+        ...partySlots.map(({ uid, live, snap }) => ({
+          uid,
+          side: 'ally' as const,
+          textureId: monsterTextureId(snap.speciesId),
+          artUrl: PAINTED_MONSTERS[snap.speciesId] ?? null,
+          felled: !live || !live.isAlive(),
+          acting: actingUid === uid,
+          // The near rank turns to face the far one, exactly as the DOM path's
+          // `facing="right"` does. The hero's painting is authored facing the
+          // camera and is not flipped there either.
+          flip: true,
+        })),
+      ]
+    : [];
+
   // The rail chips read as "how is my SIDE doing" / "how is the OPPOSING side
   // doing" — a single lead unit's sliver used to stand in for the whole squad,
   // so a fresh boss at full HP could sit over a chip that looked untouched
@@ -844,7 +942,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
 
   return (
     <div
-      className={`panel battle-stage ${view.variant === 'duel' ? 'bf-duel' : ''} ${shaking ? 'stage-shake' : ''} ${entering ? 'stage-entering' : ''}`}
+      className={`panel battle-stage ${view.variant === 'duel' ? 'bf-duel' : ''} ${shaking ? 'stage-shake' : ''} ${entering ? 'stage-entering' : ''}${lantern ? ' lantern-battle' : ''}`}
       ref={stageRef}
       style={{ cursor: raceCursor(hero.race) }}
       onMouseMove={(e) => {
@@ -888,7 +986,17 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           left. Vigor still drives INTENSITY, so the thing Paul liked survives
           intact: spend down to one candle and the room genuinely darkens
           around you, and the shadows the fighters throw lengthen as it does.
-          Only now they are lit well enough to throw one. */}
+          Only now they are lit well enough to throw one.
+
+          NOT RENDERED UNDER `?r=lantern`, and for the same reason FloorScreen
+          drops it there (ENGINE_PLAN §8 item 1): it measures its occluders, its
+          anchor and its responders out of live DOM, and the figures it would
+          measure are `visibility: hidden` boxes with a lit piece drawn where
+          they stand. Nothing is deleted — the component, its tests and every
+          `lightresponse.css` rule stay, and those rules degrade to nothing on
+          their own because each is a function of `var(--lit, 0)` and nobody is
+          writing it. */}
+      {!lantern && (
       <LightLayer
         occluderSelector=".battle-stage .bf-figure"
         /* Set down BETWEEN the two rows, not above them. Hung at the top of
@@ -937,6 +1045,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         murkStrength={0.2}
         version={`${view.energy}/${view.maxEnergy}:${view.enemies.length}`}
       />
+      )}
 
       {/* v19: the iris wipe that used to sit here is gone. App.tsx's "Seal"
           encounter transition (obsidian blades peeling back, z-index 88) now
@@ -965,7 +1074,20 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           />
         </svg>
       )}
-      {view.backdrop && <div className="stage-backdrop">{view.backdrop}</div>}
+      {/* The SAME element the view model used to hand over ready-made, built
+          one step later from the two strings that replaced it. A painted gate
+          gets its painting; a gate without one gets the procedural scene; and
+          `lanternBattle.css` hides the whole thing under the flag, where the
+          painting stands up at the back of the board as a lit flat instead. */}
+      {view.backdrop && (
+        <div className="stage-backdrop">
+          {view.backdrop.painted ? (
+            <img className="painted-scene" src={view.backdrop.painted} alt="" />
+          ) : view.backdrop.gateId ? (
+            <BattleBackdrop gateId={view.backdrop.gateId} />
+          ) : null}
+        </div>
+      )}
       {view.banner && (
         <div className="tamer-banner">
           {view.banner}
@@ -981,6 +1103,26 @@ export function BattleStage({ view }: { view: BattleView | null }) {
            Each combatant is a battlefield unit — figure, corner badges, nameplate,
            HP groove — replacing the old ff-box strip entirely. ===== */}
       <div className={`battlefield ${view.variant === 'duel' ? 'bf-duel' : ''}`}>
+        {/* THE RENDERER, underneath everything. It draws the slab, the frame,
+            the rim, the table it stands on, the painted flat behind it, every
+            combatant as a piece on a plinth with a contact shadow, and the
+            candle rail as candles that actually light the board. The DOM above
+            it keeps every plate, badge, intent, reticle, popup, `title`,
+            `data-enemy-uid` and `data-nav-item` it ever had — including the two
+            heal-aim registrations ENGINE_PLAN §8 item 3 warned about, which
+            work unchanged because their elements were never touched. */}
+        {lantern && (
+          <LanternBattlefield
+            figureRefs={figureRefs}
+            figures={lanternFigures}
+            railRef={railRef}
+            energy={view.energy}
+            maxEnergy={view.maxEnergy}
+            arenaUrl={(view.backdrop?.gateId && TILE_TEXTURES[view.backdrop.gateId]?.ground) || null}
+            backdropUrl={view.backdrop?.painted ?? null}
+            debug={lanternDebug}
+          />
+        )}
         {/* ===== THE LEFT RAIL — one object, not three stacked ones =====
             Paul: "I want the Enemy Portrait in the top left and the player
             portrait in the bottom left. They can merge with the Candle Bar on
@@ -1000,7 +1142,11 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             face sits in the bottom-left corner however many candles the run
             has. The texture, the frame and the filigree belong to the rail;
             the chips sit IN it, not on it. See battle.css §rail. */}
-        <aside className="bf-rail" aria-label="Combatants and vigor">
+        {/* `railRef` is on the WHOLE rail, not on `.vigor-rail` inside it. The
+            board's candles stand just clear of its right edge, and measured off
+            the inner element they came out at board x ~0.8 — underneath the
+            rail's own opaque plate, drawn and invisible. */}
+        <aside className="bf-rail" aria-label="Combatants and vigor" ref={railRef}>
           <div className="bf-rail-cap bf-rail-top">
 
           {/* Enemy portrait chip, top-center. Boss fights fold the boss bar in
@@ -1142,7 +1288,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             if (!enemy) {
               return (
                 <div key={uid} className="bf-unit enemy-slot felled bf-slot-empty" aria-hidden="true">
-                  <div className="bf-figure lit-fig">
+                  <div className="bf-figure lit-fig" ref={figureRef(uid)}>
                     <MonsterImage speciesId={snap.speciesId} size={snap.isBoss ? 250 : 150} rarity={snap.rarity} boss={snap.isBoss} />
                   </div>
                   <div className="bf-plate">
@@ -1219,7 +1365,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                     )}
                   </div>
                 )}
-                <div className="bf-figure lit-fig">
+                <div className="bf-figure lit-fig" ref={figureRef(enemy.uid)}>
                   <MonsterImage speciesId={enemy.speciesId} size={enemy.isBoss ? 250 : 150} rarity={enemy.rarity} boss={enemy.isBoss} />
                   {block > 0 && <span className="bf-badge badge-block">🛡 {block}</span>}
                   <span className="bf-badge badge-lv">Lv{enemy.level}</span>
@@ -1294,7 +1440,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             onClick={() => allyAimable && !locked && playSelected('hero')}
             title={allyAimable ? 'Aim the mending here' : undefined}
           >
-            <div className="bf-figure lit-fig">
+            <div className="bf-figure lit-fig" ref={figureRef('hero')}>
               <HeroImage className={hero.className} size={132} />
               {view.heroBlock > 0 && <span className="bf-badge badge-block">🛡 {view.heroBlock}</span>}
               {(hero.statusEffects.length > 0 || hero.activeMods.length > 0) && (
@@ -1343,7 +1489,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             if (!m) {
               return (
                 <div key={uid} className="bf-unit combatant-figure ally-fig felled bf-slot-empty" aria-hidden="true">
-                  <div className="bf-figure lit-fig">
+                  <div className="bf-figure lit-fig" ref={figureRef(uid)}>
                     <MonsterImage speciesId={snap.speciesId} size={124} facing="right" />
                     <span className="ko-label">FALLEN</span>
                   </div>
@@ -1374,7 +1520,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
                       : undefined
                 }
               >
-                <div className="bf-figure lit-fig">
+                <div className="bf-figure lit-fig" ref={figureRef(m.uid)}>
                   <MonsterImage speciesId={m.speciesId} size={124} facing="right" />
                   {!m.isAlive() && <span className="ko-label">FALLEN</span>}
                   {renderPopups(m.uid)}
