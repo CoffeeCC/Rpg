@@ -153,17 +153,50 @@ export function clampArenaZoom(zoom: number): number {
 }
 
 /**
+ * How many whole tiles of play area the frame costs, each side.
+ *
+ * TWO, and it is forced by something outside this file: `.bf-rail` is an
+ * OPAQUE HUD panel that overlaps the left of the canvas, about 190 device px
+ * of it. The candle rail has to clear that plate or it is drawn and invisible,
+ * which is the exact failure the first attempt hit from the other direction.
+ * Measured at 1280x820: an inset of 1 puts the rail at screen x 62.6, behind
+ * the plate; an inset of 2 puts it at 174 and it reads.
+ *
+ * IT IS NOT FREE, and the cost is recorded here rather than discovered later.
+ * The field drops from 10 tiles to 6 at this viewport, and figures are placed
+ * by UNPROJECTING their DOM boxes — the DOM row keeps its full width whatever
+ * the board does, so the canvas edges now sit at board x -2.14 and 8.14. A
+ * single enemy is centred and fine; a wide enough enemy row would stand its
+ * outer pieces on the frame. The real fix is for the canvas to stop extending
+ * under the opaque rail, at which point this can drop back to 1.
+ */
+export const FRAME_INSET_TILES = Math.ceil(ARENA_BORDER);
+
+/**
  * How wide the play area is, in whole tiles.
  *
  * Whole, because the floor is drawn as unit tiles with per-tile UV windowing
  * exactly like the map's — a fractional last column would have to be either
  * clipped (the sprite format cannot) or stretched (visibly wrong against its
- * neighbour). Rounding to the viewport means the slab reaches both side edges
- * and the vertical frame is just off screen, which is what stops the arena
- * reading as a rug in the middle of a table.
+ * neighbour).
+ *
+ * IT USED TO ROUND STRAIGHT TO THE VIEWPORT, on the argument that a slab
+ * reaching both side edges "stops the arena reading as a rug in the middle of a
+ * table". That is a real risk and the note is kept because it is the thing to
+ * watch. But it also pushed the frame, rim and table off screen, which cost
+ * more than it bought: with no visible edge the fight is a texture that happens
+ * to fill the panel, and §11's whole claim is that this is an OBJECT. Paul's
+ * standing direction in §16 — buttons and menus "physically a part of the Board
+ * Border, like attached to the sides of it" — needs a border to attach to, and
+ * the candle rail is the first thing to hang on it.
+ *
+ * So the play area gives back `FRAME_INSET_TILES` a side and the frame comes
+ * into view. Checked by eye at 1280x820 rather than reasoned about: the board
+ * reads as a slab with an edge, not as a rug.
  */
 export function arenaWidth(viewportX: number, zoom: number): number {
-  return Math.max(6, Math.min(48, Math.round(viewportX / zoom)));
+  const fill = Math.round(viewportX / zoom);
+  return Math.max(6, Math.min(48, fill - FRAME_INSET_TILES * 2));
 }
 
 /**
@@ -266,11 +299,39 @@ export function placeFigure(f: FigureBox, cam: Camera): FigurePlacement {
 // -------------------------------------------------------------------------
 
 export interface CandleRail {
-  /** Board x the rail stands on. Measured from the DOM rail's right edge. */
+  /** Board x the rail stands on. Authored in board space — see `CANDLE_FRAME_X`. */
   x: number;
   total: number;
   lit: number;
 }
+
+/**
+ * WHERE THE RAIL LIVES: on the FRAME, not on the field.
+ *
+ * It used to stand inside the play area at x = 0.7, at a position measured off
+ * the DOM `.vigor-rail`'s right edge — so the board rail tracked the HUD rail
+ * and the two sat beside each other. Paul, looking at the first frame: "it
+ * looks like we have 2 vigor candle sections?" They were, because the geometry
+ * was being aimed at the very widget it was supposed to replace.
+ *
+ * Two things were wrong with that and only one of them was visual:
+ *
+ * 1. Candles standing between the combatants are ON the field, and §15 says
+ *    what stands on the field is a PIECE. Scenery among the pieces reads as
+ *    something you could move or attack.
+ * 2. Taking the position from a DOM measurement made the board's furniture a
+ *    function of HUD layout — so the narrow breakpoint, which moves the rail,
+ *    also moved the candles. Board furniture must not depend on where a widget
+ *    happened to land.
+ *
+ * Both go away by authoring it: the rail sits in the middle of the LEFT FRAME
+ * BAND, the same band the buttons are meant to attach to. That is Paul's
+ * standing direction from §16 — "the Menus and buttons should be physically a
+ * part of the Board Border, like attached to the sides of it" — and a candle
+ * bracket on the rim is exactly that. It also lights the field from OUTSIDE
+ * the field, which is what a rim light should do.
+ */
+export const CANDLE_FRAME_X = -ARENA_BORDER / 2;
 
 /**
  * Where the candles stand, bottom-to-top.
@@ -278,7 +339,10 @@ export interface CandleRail {
  * Index 0 is the NEAREST candle, matching `.vigor-candles`' `column-reverse`:
  * the DOM rail snuffs the top one first, so a board rail that filled from the
  * far edge would gutter at the wrong end and the two readouts would disagree
- * about which candle just went out.
+ * about which candle just went out. That ordering still matters even though the
+ * DOM candles are no longer drawn — `lighting.css`'s `:has(.candle.lit)` count
+ * is still live off the same elements, and the numeric readout beside them is
+ * still DOM text.
  */
 export function candlePositions(rail: CandleRail): Vec2[] {
   const n = Math.max(0, Math.floor(rail.total));
@@ -309,7 +373,11 @@ export interface BattleSceneOptions {
   figures: readonly FigureBox[];
   /** The explicit uniform that replaces `lighting.css`'s `:has()` count. */
   vigor: { lit: number; total: number };
-  /** Board x for the candle rail. Omitted, it hugs the play area's left edge. */
+  /**
+   * Board x for the candle rail. Omitted — and it should be — the rail sits on
+   * the left frame band. See `CANDLE_FRAME_X` for why this is no longer taken
+   * from a DOM measurement.
+   */
   candleX?: number;
   /** Draw the painted backdrop standing behind the board. */
   backdrop?: boolean;
@@ -480,7 +548,7 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
 
   // --- the candles (§8 item 9) -------------------------------------------
   const rail: CandleRail = {
-    x: o.candleX ?? 0.7,
+    x: o.candleX ?? CANDLE_FRAME_X,
     total: o.vigor.total,
     lit: o.vigor.lit,
   };

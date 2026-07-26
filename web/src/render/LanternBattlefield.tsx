@@ -87,8 +87,6 @@ export interface LanternBattlefieldProps {
    */
   figureRefs: React.RefObject<Map<string, HTMLElement>>;
   figures: readonly BattleFigureRef[];
-  /** The element whose right edge the candle rail stands beside. */
-  railRef?: React.RefObject<HTMLElement | null>;
   /** §8 item 9's explicit uniform: how much of the rail is still burning. */
   energy: number;
   maxEnergy: number;
@@ -102,7 +100,6 @@ export interface LanternBattlefieldProps {
 export function LanternBattlefield({
   figureRefs,
   figures,
-  railRef,
   energy,
   maxEnergy,
   arenaUrl,
@@ -166,7 +163,7 @@ export function LanternBattlefield({
      * to a single layout pass instead of a read/write thrash — and there are
      * about ten boxes, not three hundred.
      */
-    function measure(scale: number): { anchors: FieldAnchors; boxes: FigureBox[]; candleX: number | null } {
+    function measure(scale: number): { anchors: FieldAnchors; boxes: FigureBox[] } {
       const hostRect = host!.getBoundingClientRect();
       const boxes: FigureBox[] = [];
       let enemyFeet: number | null = null;
@@ -195,12 +192,11 @@ export function LanternBattlefield({
         if (f.side === 'enemy') enemyFeet = enemyFeet === null ? feetY : Math.max(enemyFeet, feetY);
         else partyFeet = partyFeet === null ? feetY : Math.max(partyFeet, feetY);
       }
-      let candlePx: number | null = null;
-      const rail = railRef?.current;
-      if (rail) {
-        const rr = rail.getBoundingClientRect();
-        if (rr.width > 2) candlePx = (rr.right - hostRect.left + 26) * scale;
-      }
+      // THE CANDLE RAIL IS NOT MEASURED. It used to be pinned to the DOM
+      // `.vigor-rail`'s right edge, which put the board's candles next to the
+      // HUD's candles and read as two rails — and made board furniture a
+      // function of HUD layout, so the narrow breakpoint moved them. It is
+      // authored against the frame now: `battleScene.CANDLE_FRAME_X`.
       return {
         anchors: {
           viewport: { x: hostRect.width * scale, y: hostRect.height * scale },
@@ -208,7 +204,6 @@ export function LanternBattlefield({
           partyFeet,
         },
         boxes,
-        candleX: candlePx,
       };
     }
 
@@ -226,7 +221,7 @@ export function LanternBattlefield({
       // conversion and the class of bug that comes with it.
       const scale = dev.width / cssW;
 
-      const { anchors, boxes, candleX } = measure(scale);
+      const { anchors, boxes } = measure(scale);
       const cam = arenaCamera(anchors);
       camRef.current = cam;
 
@@ -236,10 +231,6 @@ export function LanternBattlefield({
         materials: lib.materials,
         figures: boxes,
         vigor: vigorRef.current,
-        candleX:
-          candleX === null
-            ? undefined
-            : (candleX - cam.viewport.x / 2) / cam.zoom + cam.centre.x,
       });
       return renderer.render(scene, LOOK);
     }

@@ -418,7 +418,6 @@ export function BattleStage({ view }: { view: BattleView | null }) {
    * lit piece in each one; with the flag off nobody reads the map.
    */
   const figureRefs = useRef<Map<string, HTMLElement>>(new Map());
-  const railRef = useRef<HTMLElement>(null);
   const figureRef = useCallback(
     (uid: string) => (el: HTMLDivElement | null) => {
       if (el) figureRefs.current.set(uid, el);
@@ -1115,7 +1114,6 @@ export function BattleStage({ view }: { view: BattleView | null }) {
           <LanternBattlefield
             figureRefs={figureRefs}
             figures={lanternFigures}
-            railRef={railRef}
             energy={view.energy}
             maxEnergy={view.maxEnergy}
             arenaUrl={(view.backdrop?.gateId && TILE_TEXTURES[view.backdrop.gateId]?.ground) || null}
@@ -1142,11 +1140,12 @@ export function BattleStage({ view }: { view: BattleView | null }) {
             face sits in the bottom-left corner however many candles the run
             has. The texture, the frame and the filigree belong to the rail;
             the chips sit IN it, not on it. See battle.css §rail. */}
-        {/* `railRef` is on the WHOLE rail, not on `.vigor-rail` inside it. The
-            board's candles stand just clear of its right edge, and measured off
-            the inner element they came out at board x ~0.8 — underneath the
-            rail's own opaque plate, drawn and invisible. */}
-        <aside className="bf-rail" aria-label="Combatants and vigor" ref={railRef}>
+        {/* The board's candles are NOT positioned from this element any more.
+            Pinning them to its right edge put a board rail beside the HUD rail
+            and read as two — see `battleScene.CANDLE_FRAME_X`. They are
+            authored onto the left frame band, and `.vigor-candles` is hidden
+            with the flag on so only one rail is ever drawn. */}
+        <aside className="bf-rail" aria-label="Combatants and vigor">
           <div className="bf-rail-cap bf-rail-top">
 
           {/* Enemy portrait chip, top-center. Boss fights fold the boss bar in

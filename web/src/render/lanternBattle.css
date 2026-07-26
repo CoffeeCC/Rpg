@@ -83,11 +83,22 @@
 
 /* The candles. ENGINE_PLAN §1.2: "on a board, the candle rail is a rail of
    candles sitting on the board, and of course it lights the board." They stand
-   on the board now, beside the rail, and each burning one is a real `Light`.
-   The `.candle` BOX survives at its full 26x46 so the rail keeps its height and
-   `lighting.css`'s `:has(.candle.lit)` selectors still have something to match
-   — nothing is deleted, exactly as §4 requires. */
-.lantern-battle .candle > * {
+   on the board's LEFT FRAME BAND now (`battleScene.CANDLE_FRAME_X`), and each
+   burning one is a real `Light`.
+
+   THE WHOLE COLUMN GOES, not just the wax inside it. Hiding only `.candle > *`
+   left the 26x46 boxes holding their space, so the HUD rail stayed exactly
+   where it was — an empty but full-height column sitting beside the board's
+   own candles. Paul, on the first frame: "it looks like we have 2 vigor candle
+   sections?" There were two, and this is the one that should not be drawn.
+
+   `display: none` rather than deletion, for two reasons that both matter:
+   selectors still match display-none elements, so `lighting.css`'s
+   `:has(.candle.lit)` count and the `--vigor-lume` it sets are untouched and
+   the FLAG-OFF path is bit-identical; and nothing is removed from the DOM, as
+   §4 requires. The `.vigor-count` / `.vigor-word` readout beside it is left
+   alone on purpose — §1.2 gives TEXT to the DOM, and "3/3" is text. */
+.lantern-battle .vigor-candles {
   display: none !important;
 }
 

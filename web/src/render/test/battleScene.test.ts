@@ -26,6 +26,7 @@ import { project, type Camera } from '../../lantern/scene/camera';
 import type { Material } from '../../lantern/scene/scene';
 import {
   ARENA_DEPTH,
+  CANDLE_FRAME_X,
   ENEMY_RANK,
   MAT_ARENA,
   MAT_BACKDROP,
@@ -223,6 +224,48 @@ describe('the candle rail is §8 item 9, as geometry', () => {
       buildBattleScene({ ...base, vigor: { lit, total: 4 } }).sprites.filter((s) => s.textureId === MAT_CANDLE).length;
     expect(wax(4)).toBe(4);
     expect(wax(0)).toBe(4);
+  });
+
+  it('stands on the FRAME, clear of the play area entirely', () => {
+    // The rail used to default to board x = 0.7 — inside the field, beside
+    // where the DOM `.vigor-rail` happened to be, which is what made it read
+    // as a second rail. This asserts the frame band specifically, so a drift
+    // back onto the field fails rather than merely looking wrong.
+    const cam = camera();
+    const ext = arenaExtent(cam);
+    const scene = buildBattleScene({
+      camera: cam,
+      time: 0,
+      materials: allMaterials(),
+      figures: [] as FigureBox[],
+      vigor: { lit: 3, total: 4 },
+    });
+    const wax = scene.sprites.filter((s) => s.textureId === MAT_CANDLE);
+    expect(wax.length).toBe(4);
+    for (const s of wax) {
+      // Outside the play area on the left...
+      expect(s.position.x).toBeLessThan(0);
+      // ...and on the frame band, not floating off past the rim onto the table.
+      expect(s.position.x).toBeGreaterThan(-ext.border);
+    }
+    expect(CANDLE_FRAME_X).toBeLessThan(0);
+  });
+
+  it('does not move when the HUD moves — board furniture is authored, not measured', () => {
+    // The old rail took its x from `.vigor-rail`'s measured right edge, so the
+    // narrow breakpoint (which relocates that widget) also relocated the
+    // candles. Two very different viewports must now place them identically.
+    const wide = arenaCamera({ viewport: { x: 1600, y: 900 }, enemyFeet: 396, partyFeet: 810 });
+    const narrow = arenaCamera({ viewport: { x: 620, y: 900 }, enemyFeet: 396, partyFeet: 810 });
+    const build = (cam: Camera) =>
+      buildBattleScene({
+        camera: cam,
+        time: 0,
+        materials: allMaterials(),
+        figures: [] as FigureBox[],
+        vigor: { lit: 2, total: 3 },
+      }).sprites.filter((s) => s.textureId === MAT_CANDLE).map((s) => s.position.x);
+    expect(build(wide)).toEqual(build(narrow));
   });
 });
 
