@@ -14,12 +14,25 @@
    mounted behind that blackout and revealed as the blades peel
    away — so the player never sees a raw screen swap.
 
-   Timing contract with App.tsx:
+   Timing contract with App.tsx (all x --tx-scale, see below):
      TX_COVER_MS  = 460   (cover phase — the world is still up)
      TX_REVEAL_MS = 560   (reveal phase — battle is mounted)
-     TX_RETURN_MS = 720   (battle -> world, reveal only)
+     TX_RETURN_MS = 720   (battle -> world, reveal only; NOT scaled — the way
+                           OUT of a fight is not the thing being savoured)
    Reduced motion collapses all of it to a short dissolve.
    ========================================================= */
+
+/* ONE KNOB FOR THE WHOLE CUT.
+   Paul: "can you slow down the transition to battle animation by like 1
+   second." Every duration and stagger below is the original number multiplied
+   by this, so the choreography is preserved exactly and only the pace changes
+   — the blades still land as the veil seals, the embers still finish inside
+   the reveal. Changing eight separate numbers by hand is how those hard-won
+   relationships get lost.
+   2 turns a 1020ms cut into a 2040ms one. App.tsx's TX_SCALE must match. */
+:root {
+  --tx-scale: 2;
+}
 
 .tx-layer {
   position: fixed;
@@ -37,7 +50,7 @@
 
 /* --- The camera seizes and pushes in (Chrono Trigger) --------------------- */
 .tx-seize {
-  animation: txSeize 460ms cubic-bezier(0.2, 0.66, 0.3, 1) both;
+  animation: txSeize calc(460ms * var(--tx-scale)) cubic-bezier(0.2, 0.66, 0.3, 1) both;
   transform-origin: 50% 46%;
   will-change: transform, filter;
 }
@@ -75,7 +88,7 @@
 }
 
 .tx-cover .tx-flash {
-  animation: txFlash 420ms ease-out both;
+  animation: txFlash calc(420ms * var(--tx-scale)) ease-out both;
 }
 
 @keyframes txFlash {
@@ -108,7 +121,7 @@
 }
 
 .tx-cover .tx-swirl {
-  animation: txSwirl 500ms cubic-bezier(0.35, 0, 0.2, 1) both;
+  animation: txSwirl calc(500ms * var(--tx-scale)) cubic-bezier(0.35, 0, 0.2, 1) both;
 }
 
 @keyframes txSwirl {
@@ -169,8 +182,8 @@
 .tx-cover .tx-blade {
   /* Last blade lands at 40 + 13*11 + 300 = 483ms, just as the veil seals at
      470ms — the blades read as the thing that closed the screen. */
-  animation: txBladeIn 300ms cubic-bezier(0.62, 0.02, 0.36, 1) both;
-  animation-delay: calc(var(--i, 0) * 11ms + 40ms);
+  animation: txBladeIn calc(300ms * var(--tx-scale)) cubic-bezier(0.62, 0.02, 0.36, 1) both;
+  animation-delay: calc((var(--i, 0) * 11ms + 40ms) * var(--tx-scale));
 }
 
 @keyframes txBladeIn {
@@ -179,8 +192,8 @@
 }
 
 .tx-reveal .tx-blade {
-  animation: txBladeOut 340ms cubic-bezier(0.32, 0, 0.24, 1) both;
-  animation-delay: calc((13 - var(--i, 0)) * 13ms);
+  animation: txBladeOut calc(340ms * var(--tx-scale)) cubic-bezier(0.32, 0, 0.24, 1) both;
+  animation-delay: calc((13 - var(--i, 0)) * 13ms * var(--tx-scale));
 }
 
 @keyframes txBladeOut {
@@ -200,7 +213,7 @@
 }
 
 .tx-cover .tx-veil {
-  animation: txVeilIn 240ms ease-in 230ms both;
+  animation: txVeilIn calc(240ms * var(--tx-scale)) ease-in calc(230ms * var(--tx-scale)) both;
 }
 
 @keyframes txVeilIn {
@@ -209,7 +222,7 @@
 }
 
 .tx-reveal .tx-veil {
-  animation: txVeilOut 420ms ease-out both;
+  animation: txVeilOut calc(420ms * var(--tx-scale)) ease-out both;
 }
 
 @keyframes txVeilOut {
@@ -233,7 +246,7 @@
 
 /* 540ms so the embers finish inside the 560ms reveal instead of being cut. */
 .tx-reveal .tx-embers {
-  animation: txEmbers 540ms ease-out both;
+  animation: txEmbers calc(540ms * var(--tx-scale)) ease-out both;
 }
 
 @keyframes txEmbers {

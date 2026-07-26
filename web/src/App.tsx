@@ -42,8 +42,21 @@ import { setMusicContext, setMusicMuted, isMusicMuted } from './platform/music';
 type Banner = { text: string; kind: 'victory' | 'death' | 'tamed' } | null;
 
 /** v19 encounter transition — durations must match the contract in transition.css. */
-const TX_COVER_MS = 460;
-const TX_REVEAL_MS = 560;
+/**
+ * How much slower than the original cut. MUST equal `--tx-scale` in
+ * transition.css, which multiplies every duration and stagger over there.
+ *
+ * Paul: "can you slow down the transition to battle animation by like 1
+ * second." 2 takes the cover+reveal from 1020ms to 2040ms. Scaling rather than
+ * adding a flat second matters: the choreography is a set of relationships
+ * (the last blade lands exactly as the veil seals, the embers finish just
+ * inside the reveal), and padding one phase would break them while stretching
+ * both keeps them.
+ */
+const TX_SCALE = 2;
+const TX_COVER_MS = 460 * TX_SCALE;
+const TX_REVEAL_MS = 560 * TX_SCALE;
+/** The way OUT of a fight is not the thing being savoured. Unscaled. */
 const TX_RETURN_MS = 720;
 /** Obsidian blades that stab the screen shut. Index feeds the CSS stagger. */
 const TX_BLADES = Array.from({ length: 14 }, (_, i) => i);
