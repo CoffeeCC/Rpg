@@ -376,21 +376,41 @@ describe('the procedural pixels', () => {
     expect(alphaAt(px, size, 0.78, 0.85)).toBe(0);
   });
 
-  it('a wisp is a tight core inside a wide halo, not one fuzzy ball', () => {
+  /**
+   * A wisp is a POINT with a fringe, not a ball of fog. ENGINE_PLAN §18.1
+   * item 3, and this test used to assert the defect: it required a halo that
+   * was still visibly on at three quarters of the sprite's radius, which is a
+   * description of the "large diffuse green wash" the plan complains about.
+   *
+   * The number that matters is the alpha at HALF the radius, because that is
+   * where a halo stops being a fringe on a light and starts being weather. The
+   * old profile carried 49/255 there — a fifth of full opacity spread over the
+   * whole quad. This one carries 3/255. The thresholds below reject the old
+   * profile outright rather than merely permitting the new one.
+   */
+  it('a wisp is a point with a fringe, not a ball of fog', () => {
     const size = 96;
     const px = wispPixels(size);
     const c = Math.floor(size / 2);
     const at = (r: number) => px[(c * size + Math.round(c + r * c)) * 4 + 3];
     const core = at(0);
-    const mid = at(0.35);
-    const rim = at(0.75);
     expect(core).toBeGreaterThan(200);
-    expect(mid).toBeLessThan(core * 0.6);
-    expect(rim).toBeLessThan(mid);
-    expect(rim).toBeGreaterThan(0);
-    // The core is whiter than the halo, which is what lets the bloom threshold
-    // catch the centre and not the whole sprite.
+
+    // STILL TWO GAUSSIANS. A single falloff is a fuzzy ball with no centre, so
+    // there has to be a band that is neither saturated nor gone.
+    const inner = at(0.25);
+    expect(inner).toBeLessThan(core * 0.5);
+    expect(inner).toBeGreaterThan(10);
+
+    // AND THE FRINGE IS TIGHT. 49/255 is what the old halo put here.
+    expect(at(0.5)).toBeLessThan(12);
+    expect(at(0.75)).toBeLessThan(3);
+    expect(at(0.5)).toBeLessThan(inner);
+
+    // The core is whiter than the fringe, which is what lets the bloom
+    // threshold catch the centre and not the whole sprite — and it is the
+    // difference between reading as a lamp and reading as green mist.
     const rgbAt = (r: number) => px[(c * size + Math.round(c + r * c)) * 4];
-    expect(rgbAt(0)).toBeGreaterThan(rgbAt(0.5));
+    expect(rgbAt(0)).toBeGreaterThan(rgbAt(0.4));
   });
 });

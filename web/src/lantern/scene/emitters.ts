@@ -204,18 +204,29 @@ export function sconceEmitter(at: Vec2, o: SconceOptions = {}): Emitter {
   return {
     light: emitterLight(glowLightPosition(centre, size), {
       colour: [1, 0.56, 0.22],
-      // The brightest of the three and still a seventh of the lantern. A
-      // sconce has a job the others do not — it says the corridor continues —
-      // so it gets the most reach in this file, and that is still 2.4 tiles.
+      // The brightest of the three and now a ninth of the lantern. A sconce has
+      // a job the others do not — it says the corridor continues — so it keeps
+      // the most reach in this file, and that is still 2.2 tiles.
       //
-      // MEASURED, not eyeballed. The first pass ran 1.6 over 2.8 tiles and
-      // read fine alone; put one on every wall face that has one and the mean
-      // luminance of the board interior went up 15% and the darkness was gone.
-      // A sconce is only faint relative to the lantern — a dozen of them are
-      // not faint relative to each other, and the density they are placed at
-      // is as much a part of "very tiny" as the intensity is.
-      intensity: 1.25,
-      reach: 2.4,
+      // MEASURED, not eyeballed, and twice. The first pass ran 1.6 over 2.8
+      // tiles and read fine alone; put one on every wall face that has one and
+      // the mean luminance of the board interior went up 15% and the darkness
+      // was gone. 1.25 over 2.4 was the answer to that, and on a real floor it
+      // was still worth 1.5% of the board's mean PER SCONCE — five times a
+      // mushroom. A sconce is only faint relative to the lantern; a dozen of
+      // them are not faint relative to each other, and the density they are
+      // placed at is as much a part of "very tiny" as the intensity is.
+      //
+      // 0.55 over 2.0, with the flame's own `emissiveStrength` raised so the
+      // fire still reads as fire. What a sconce is FOR is being seen from down
+      // the corridor, and that is the sprite's job, not the light's.
+      //
+      // The number that settled it, from the decomposition below: at 0.85 a
+      // sconce's LIGHT alone was still worth 0.93% of the board's mean each,
+      // four times a mushroom's and three times a wisp's, and a sconce is the
+      // emitter a corridor has many of.
+      intensity: 0.55,
+      reach: 2.0,
       radius: 0.1,
       flicker: 0.16,
       ...o,
@@ -246,13 +257,19 @@ export function mushroomEmitter(at: Vec2, o: EmitterOptions = {}): Emitter {
   return {
     light: emitterLight(glowLightPosition(centre, size), {
       colour: [0.34, 1, 0.55],
-      // VERY TINY, taken literally. Half a tile of usable reach and a twentieth
-      // of the lantern's intensity: it does not light the floor it stands on
-      // so much as sit in the dark being green. Turn either number up and it
-      // stops being a whisper and starts competing, which §12.2 says is the
-      // one thing an emitter must not do.
-      intensity: 0.5,
-      reach: 1.5,
+      // VERY TINY, taken literally. Half a tile of usable reach and a
+      // thirtieth of the lantern's intensity: it does not light the floor it
+      // stands on so much as sit in the dark being green. Turn either number up
+      // and it stops being a whisper and starts competing, which §12.2 says is
+      // the one thing an emitter must not do.
+      //
+      // The cheapest of the three by a wide margin — eight of them were worth
+      // 0.31% of the board's mean EACH against a sconce's 1.5% — so it is
+      // trimmed rather than cut, and the trim buys headroom for the density to
+      // stay where it is. Mushrooms are the emitter this art direction can
+      // afford to have a lot of.
+      intensity: 0.3,
+      reach: 1.4,
       radius: 0.12,
       flicker: 0.05,
       ...o,
@@ -347,16 +364,29 @@ export function wispEmitter(path: WispPath, t: number, o: EmitterOptions = {}): 
       // the payoff for letting them leave; a floating dot with no relationship
       // to what it is over would be worse than keeping them fenced in.
       //
-      // MEASURED. The first pass ran 0.7 over 1.9 tiles, and the numbers said
-      // what the eye could not: the core read at 100/255 against a 3.5
-      // background, and the ring of table around it read 3.9 against 3.6. A
-      // bright dot lighting nothing. The board is half a tile PROUD of the
-      // table, so a wisp at 0.9 above the board is 1.4 above the wood — and
-      // 1.4 out of a 1.9-tile reach is where the falloff window has already
-      // eaten four fifths of it. Reach is what decides whether a light lands
-      // at all, and it is not the same dial as intensity.
-      intensity: 0.95,
-      reach: 3.2,
+      // MEASURED TWICE, in opposite directions, and both measurements stand.
+      //
+      // The first pass ran 0.7 over 1.9 tiles and the numbers said what the eye
+      // could not: the core read at 100/255 against a 3.5 background and the
+      // ring of table around it read 3.9 against 3.6 — a bright dot lighting
+      // nothing. The board is half a tile PROUD of the table, so a wisp at 0.9
+      // above the board is 1.4 above the wood, and 1.4 out of a 1.9-tile reach
+      // is where the falloff window has already eaten four fifths of it. Reach
+      // decides whether a light LANDS; it is not the same dial as intensity.
+      //
+      // Then 0.95 over 3.2 went the other way. Five of them on a real Hollow
+      // Gate floor were raising the board's mean luminance by 8.6% ON THEIR
+      // OWN — more than the sconces and the mushrooms combined, and more than
+      // half of the 15.5% collective lift §18.1 item 2 objects to. A wisp had
+      // become the brightest thing in this file, which is exactly backwards.
+      //
+      // So the reach keeps its job and the intensity gives up its second one.
+      // 2.7 tiles still clears the 1.4-tile drop to the table with room to
+      // spare, and 0.42 is a third of what it was. The sprite does not go with
+      // it: `Material.emissiveStrength` is what makes a wisp VISIBLE, and it
+      // went UP to compensate — which is the whole reason that field exists.
+      intensity: 0.42,
+      reach: 2.7,
       radius: 0.16,
       seed: path.seed,
       time: t,
@@ -572,13 +602,34 @@ export function mushroomPixels(size = 96): Uint8Array {
 }
 
 /**
- * A wisp: a soft radial core with a wide halo, as RGBA8.
+ * THE WISP PROFILE, and the three numbers that decide whether it is a light or
+ * a patch of fog. ENGINE_PLAN §18.1 item 3: they read as "large diffuse green
+ * washes rather than as tiny drifting motes", and Paul asked for "very tiny"
+ * twice.
  *
- * TWO gaussians, not one. A single falloff gives a fuzzy ball with no centre;
- * a tight core inside a broad, faint halo is what reads as a small very bright
- * thing seen through air — and it is the profile the bloom chain is happiest
- * with, because the core clears the threshold and the halo does not, so the
- * glow grows out of the sprite instead of doubling it.
+ * The fix runs the opposite way to the instinct. Making the sprite dimmer only
+ * makes a dimmer fog; what reads as a LIGHT is the RATIO between a hot centre
+ * and the glow around it. The eye judges "small and bright" from that contrast,
+ * not from absolute brightness — so the halo shrinks hard, its weight comes
+ * down, and the core is left to saturate.
+ *
+ * Concretely, at half the quad's radius the old profile still carried alpha
+ * 0.19 (that is the fog: a fifth of full opacity, spread over the whole
+ * sprite); this one carries 0.010, nineteen times less. The visible disc is
+ * confined to about a third of the quad instead of two thirds, and what is
+ * left is a point with a fringe.
+ *
+ * TWO gaussians rather than one is still the shape: a single falloff gives a
+ * fuzzy ball with no centre. It is also the profile the bloom chain is
+ * happiest with, because the core clears the threshold and the halo does not,
+ * so the glow grows out of the sprite instead of doubling it.
+ */
+const WISP_CORE = 34;
+const WISP_HALO = 13;
+const WISP_HALO_WEIGHT = 0.25;
+
+/**
+ * A wisp: a hot radial core with a tight fringe, as RGBA8.
  */
 export function wispPixels(size = 96): Uint8Array {
   const px = new Uint8Array(size * size * 4);
@@ -588,16 +639,20 @@ export function wispPixels(size = 96): Uint8Array {
       const dx = (x - c) / c;
       const dy = (y - c) / c;
       const d = Math.sqrt(dx * dx + dy * dy);
-      const core = Math.exp(-d * d * 26);
-      const halo = Math.exp(-d * d * 4.2);
+      const core = Math.exp(-d * d * WISP_CORE);
+      const halo = Math.exp(-d * d * WISP_HALO);
       // Cut to exactly zero at the rim, so a square sprite has no visible
       // corner where the halo is still faintly on.
       const edge = 1 - smoothstep(0.82, 1, d);
-      const a = clamp01((core + halo * 0.55) * edge);
+      const a = clamp01((core + halo * WISP_HALO_WEIGHT) * edge);
       if (a <= 0.002) continue;
       const i = (y * size + x) * 4;
-      px[i] = Math.round(255 * clamp01(0.42 + 0.58 * core));
-      px[i + 1] = Math.round(255 * clamp01(0.78 + 0.22 * core));
+      // The core saturates to WHITE rather than to a brighter green. A light is
+      // white at its centre and coloured at its edge — that is what separates
+      // "a green lamp" from "green mist", and the halo is now small enough that
+      // the colour lives almost entirely in the fringe.
+      px[i] = Math.round(255 * clamp01(0.4 + 0.6 * core));
+      px[i + 1] = Math.round(255 * clamp01(0.8 + 0.2 * core));
       px[i + 2] = Math.round(255 * clamp01(0.62 + 0.38 * core));
       px[i + 3] = Math.round(255 * a);
     }

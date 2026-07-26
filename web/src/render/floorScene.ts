@@ -420,6 +420,21 @@ export function buildFloorScene(snap: FloorSnapshot, o: FloorSceneOptions): Scen
   // says must not happen. Lowered rather than removed, because without it the
   // rim, the frame and the table are lit by ambient alone and every bit of
   // §11's edge work is invisible.
+  //
+  // MEASURED, AND LEFT ALONE, WHICH IS A DELIBERATE PAIR. On a fully revealed
+  // Hollow Gate floor at 962x600 the lamp is worth **+51% of the whole frame's
+  // mean luminance**; the emitters below, all of them together, are worth
+  // +4.5%. So when the board reads "pale and washed rather than dark with
+  // pools" — ENGINE_PLAN §18.1 item 2 — the sconces are not what is doing it
+  // any more, and were not the biggest part of it on a real floor even before
+  // this pass. This lamp is.
+  //
+  // Not changed here because §15.1 calls it "a design decision and not a knob"
+  // and §20 set this number three commits ago with a stated argument. The
+  // number is recorded rather than acted on, so whoever takes that decision
+  // takes it with the measurement in front of them. The honest fix is not a
+  // smaller value either: it is §14's per-tile height field, which would let
+  // the outer wall actually stop the ray the way the harness's board did.
   const roomLamp = o.roomLamp ?? 0.32;
   if (roomLamp > 0) {
     lights.push({
