@@ -7,7 +7,7 @@
 // computed explicitly below and shown to violate paint order.
 // =========================================================================
 import { describe, expect, it } from 'vitest';
-import { makeCamera } from '../scene/camera';
+import { makeCamera, MIN_TILT } from '../scene/camera';
 import {
   batchGroups,
   buildVertexData,
@@ -113,7 +113,9 @@ describe('vertex data', () => {
     expect(bl.y).toBeCloseTo(br.y, 9);
     // Default pivot is bottom-centre: the two bottom corners straddle the
     // anchor x, and their average must equal it.
-    expect((bl.x + br.x) / 2).toBeCloseTo(0 * CAM.zoom + CAM.viewport.x / 2, 6);
+    // The sprite sits at board x = 0, which is the camera centre, so the
+    // anchor lands at the middle of the viewport.
+    expect((bl.x + br.x) / 2).toBeCloseTo(CAM.viewport.x / 2, 6);
   });
 
   it("REPRO: quad height must carry the camera's tilt squash, or art drifts off the grid", () => {
@@ -169,5 +171,83 @@ describe('vertex data', () => {
 
     const plain = buildVertexData([{ ...sp, tint: undefined }], CAM);
     close([plain[4], plain[5], plain[6], plain[7]], [1, 1, 1, 1]);
+  });
+});
+
+/**
+ * STANDING UP.
+ *
+ * Paul's organising idea is that the hero and the monsters are game pieces on
+ * a board (ENGINE_PLAN §1.2). Before `upright`, every sprite was scaled by
+ * `cos(tilt)` — which is to say every sprite was a floor decal, and the engine
+ * could not draw a standing piece at all. These tests are written against that
+ * old behaviour rather than merely describing the new one, per LIGHTING_PLAN §10.
+ */
+describe('pieces stand up; decals lie down', () => {
+  const CAM = makeCamera({ centre: { x: 0, y: 0 }, zoom: 100, viewport: { x: 800, y: 600 } });
+  const UVFULL = { u0: 0, v0: 0, u1: 1, v1: 1 };
+  const make = (upright: boolean): Sprite => ({
+    position: { x: 0, y: 0, z: 0 },
+    size: { x: 1, y: 1 },
+    pivot: { x: 0.5, y: 1 },
+    uv: UVFULL,
+    textureId: 't',
+    upright,
+  });
+  /**
+   * Screen height of the quad, read back out of the packed vertex buffer.
+   *
+   * Compared to 3 decimal places, not more: the buffer is a Float32Array, so
+   * everything here has already been rounded to single precision. Asserting
+   * to 6 places is asserting about float32 rounding rather than about the
+   * projection, and it fails by ~7e-6 for reasons that have nothing to do
+   * with the code under test.
+   */
+  const heightOf = (s: Sprite, cam = CAM) => {
+    const d = buildVertexData([s], cam);
+    const ys: number[] = [];
+    for (let i = 0; i < 6; i++) ys.push(d[i * FLOATS_PER_VERTEX + 1]);
+    return Math.max(...ys) - Math.min(...ys);
+  };
+
+  it('scales an upright sprite by sin(tilt), not cos', () => {
+    expect(heightOf(make(true))).toBeCloseTo(CAM.zoom * Math.sin(CAM.tilt), 3);
+    expect(heightOf(make(false))).toBeCloseTo(CAM.zoom * Math.cos(CAM.tilt), 3);
+  });
+
+  it('makes a real difference at the default tilt', () => {
+    // ~1.43x at 55 degrees. If these were within a few percent the flag would
+    // not be worth having.
+    expect(heightOf(make(true)) / heightOf(make(false))).toBeGreaterThan(1.3);
+  });
+
+  it('collapses a standing piece as the camera goes top-down — the old behaviour, inverted', () => {
+    // THE REPRO. Nearly straight down, a decal is full size and a standing
+    // piece is edge-on and nearly invisible. Before `upright` every sprite
+    // took the decal branch, which is why a top-down board has no pieces on
+    // it — only pictures of pieces.
+    // `makeCamera` clamps to MIN_TILT, so "top-down" is as flat as the engine
+    // will allow rather than truly zero — which is the point of the clamp.
+    const flatCam = makeCamera({ ...CAM, tilt: 0 });
+    expect(flatCam.tilt).toBe(MIN_TILT);
+    const decal = heightOf(make(false), flatCam);
+    const piece = heightOf(make(true), flatCam);
+    expect(decal).toBeGreaterThan(CAM.zoom * 0.95);
+    expect(piece).toBeLessThan(CAM.zoom * 0.2);
+    // Asserted as a ratio too, which does not move if MIN_TILT is retuned.
+    expect(decal / piece).toBeGreaterThan(5);
+    // And the relationship inverts at the shipping tilt: a piece is TALLER
+    // than a decal there, which is what makes it read as standing.
+    expect(heightOf(make(true)) / heightOf(make(false))).toBeGreaterThan(1);
+  });
+
+  it('and the two agree at exactly 45 degrees, where sin equals cos', () => {
+    const cam45 = makeCamera({ ...CAM, tilt: Math.PI / 4 });
+    expect(heightOf(make(true), cam45)).toBeCloseTo(heightOf(make(false), cam45), 3);
+  });
+
+  it('defaults to lying down, so existing scenes are unchanged', () => {
+    const noFlag: Sprite = { position: { x: 0, y: 0, z: 0 }, size: { x: 1, y: 1 }, uv: UVFULL, textureId: 't' };
+    expect(heightOf(noFlag)).toBeCloseTo(CAM.zoom * Math.cos(CAM.tilt), 3);
   });
 });

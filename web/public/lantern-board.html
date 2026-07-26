@@ -1,0 +1,301 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Lantern Board — M1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  LANTERN BOARD — the M1 milestone.
+  ================================
+  A real Scene, drawn by the real Renderer, with the game's actual tile art.
+
+  The distinction from lantern-forge.html matters. The forge is a rig for the
+  POST chain: it makes a synthetic HDR image in a shader and pushes it through
+  bloom and tonemap so each decision has a toggle. It owns its own pass
+  sequence, which was fine while there was nothing else to own it.
+
+  This page owns nothing. It builds a `Scene` — sprites, materials, a camera,
+  a light — and calls `renderer.render(scene)`. Every target, every program,
+  every pass order lives in `lantern/renderer.ts` where it belongs. If this
+  draws, the assembly works; there is no path here that could make it look
+  right while the engine is wrong.
+
+  Dev-server only: imports .ts directly, which Vite compiles on the fly.
+-->
+<style>
+  :root { --ink:#e8e3d8; --dim:#9a9384; --edge:#2a2620; --panel:#14120f; --bg:#080706; --gold:#d9a441; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:13px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    display:grid; grid-template-columns:264px 1fr; height:100vh; overflow:hidden; }
+  #panel { background:var(--panel); border-right:1px solid var(--edge); padding:14px; overflow-y:auto; }
+  h1 { font-size:15px; margin:0 0 2px; letter-spacing:.04em; color:var(--gold); }
+  .sub { color:var(--dim); font-size:11px; margin-bottom:14px; }
+  h2 { font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim);
+       margin:16px 0 8px; border-bottom:1px solid var(--edge); padding-bottom:4px; }
+  label { display:block; margin-bottom:9px; }
+  .row { display:flex; justify-content:space-between; font-size:11px; color:var(--dim); }
+  .row b { color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
+  input[type=range] { width:100%; accent-color:var(--gold); }
+  .seg { display:grid; grid-auto-flow:column; gap:4px; margin-bottom:9px; }
+  .seg button { background:#1d1a15; color:var(--ink); border:1px solid var(--edge);
+                border-radius:4px; padding:5px 4px; font:inherit; font-size:11px; cursor:pointer; }
+  .seg button[aria-pressed=true] { background:var(--gold); color:#14120f; border-color:var(--gold); font-weight:600; }
+  #stage { position:relative; display:grid; place-items:center; background:#000; overflow:hidden; }
+  canvas { max-width:100%; max-height:100vh; display:block; }
+  .note { color:var(--dim); font-size:10.5px; line-height:1.45; margin:6px 0 0; }
+  #err { color:#e06d5a; font-size:11px; white-space:pre-wrap; }
+  #stats { font-family:ui-monospace, monospace; font-size:10.5px; color:var(--dim); white-space:pre; }
+</style>
+
+<div id="panel">
+  <h1>Lantern Board</h1>
+  <div class="sub">M1 · a Scene through the Renderer</div>
+
+  <h2>Camera</h2>
+  <label><span class="row">Tilt<b id="vTilt">55°</b></span>
+    <input type="range" id="tilt" min="10" max="85" step="1" value="55" /></label>
+  <label><span class="row">Zoom<b id="vZoom">64</b></span>
+    <input type="range" id="zoom" min="16" max="160" step="1" value="64" /></label>
+  <p class="note">Tilt to 10° and the board goes flat — pieces lie down like
+    decals, which is what top-down renders as. Push it up and they stand.</p>
+
+  <h2>Gate</h2>
+  <div class="seg" id="gate">
+    <button data-v="hollow" aria-pressed="true">Hollow</button>
+    <button data-v="verdant">Verdant</button>
+    <button data-v="sunken">Sunken</button>
+  </div>
+
+  <h2>Look</h2>
+  <div class="seg" id="tm">
+    <button data-v="agx" aria-pressed="true">AgX</button>
+    <button data-v="aces">ACES</button>
+    <button data-v="none">None</button>
+  </div>
+  <label><span class="row">Exposure<b id="vExp">0.0</b></span>
+    <input type="range" id="exp" min="-3" max="4" step="0.05" value="0" /></label>
+  <label><span class="row">Bloom<b id="vBloom">0.35</b></span>
+    <input type="range" id="bloom" min="0" max="1.5" step="0.01" value="0.35" /></label>
+  <label><span class="row">Threshold<b id="vThr">1.20</b></span>
+    <input type="range" id="thr" min="0" max="4" step="0.01" value="1.2" /></label>
+
+  <h2>Status</h2>
+  <div id="stats">—</div>
+  <p id="err"></p>
+</div>
+
+<div id="stage"><canvas id="gl"></canvas></div>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const fail = (m) => { $('err').textContent = String(m?.stack || m?.message || m); console.error(m); };
+
+try {
+  const { createDevice } = await import('/src/lantern/gl/device.ts');
+  const { Renderer } = await import('/src/lantern/renderer.ts');
+  const { makeCamera, clampTilt } = await import('/src/lantern/scene/camera.ts');
+  const { makeScene, makeOccluderGrid, setSolid } = await import('/src/lantern/scene/scene.ts');
+  const { formatHud } = await import('/src/lantern/debug/hud.ts');
+
+  const canvas = $('gl');
+  const { device, status, reason } = createDevice(canvas);
+  if (!device) throw new Error(`${status}: ${reason}`);
+  const gl = device.gl;
+  const renderer = new Renderer(device);
+
+  // ---------------------------------------------------------------------
+  // Textures. The game's real art, loaded the way the game loads it.
+  // ---------------------------------------------------------------------
+  async function loadTexture(url) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error(`load failed: ${url}`)); img.src = url; });
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    // sRGB so the hardware decodes to linear for us. Everything past this
+    // point in the renderer is linear-light; sampling these as plain RGBA8
+    // would put gamma-encoded values into a linear pipeline and make every
+    // midtone too bright.
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return tex;
+  }
+
+  const UV = { u0: 0, v0: 0, u1: 1, v1: 1 };
+  const W = 22, H = 14;
+
+  /** A small dungeon: solid border, a couple of rooms, scattered pillars. */
+  function buildLayout() {
+    const solid = [];
+    for (let y = 0; y < H; y++) {
+      solid[y] = [];
+      for (let x = 0; x < W; x++) {
+        const border = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+        const pillar = x % 6 === 3 && y % 5 === 2;
+        const wall = (y === 5 && x > 2 && x < 12) || (x === 15 && y > 3 && y < 11);
+        solid[y][x] = border || pillar || wall;
+      }
+    }
+    return solid;
+  }
+
+  let materials = new Map();
+  let gate = 'hollow';
+
+  async function loadGate(name) {
+    const ground = await loadTexture(`art/tiles/${name}_ground.jpg`);
+    const wall = await loadTexture(`art/tiles/${name}_wall.jpg`);
+    const hero = await loadTexture('art/sprites/player.png');
+    materials = new Map([
+      ['ground', { id: 'ground', albedo: ground }],
+      ['wall', { id: 'wall', albedo: wall }],
+      ['hero', { id: 'hero', albedo: hero }],
+    ]);
+  }
+
+  const layout = buildLayout();
+  const grid = makeOccluderGrid(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) setSolid(grid, x, y, layout[y][x]);
+
+  /**
+   * Build the Scene. Rebuilt every frame from state, never mutated in place —
+   * the same discipline the game's reducer keeps, and what makes a frame a
+   * pure function of state plus time.
+   */
+  function buildScene(t) {
+    const camera = makeCamera({
+      centre: { x: W / 2, y: H / 2 },
+      zoom: Number($('zoom').value),
+      tilt: clampTilt((Number($('tilt').value) * Math.PI) / 180),
+      viewport: { x: canvas.width, y: canvas.height },
+    });
+
+    const sprites = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const isWall = layout[y][x];
+        sprites.push({
+          position: { x, y, z: 0 },
+          size: { x: 1, y: 1 },
+          pivot: { x: 0, y: 0 },
+          // Window the shared tile texture per cell so neighbouring tiles do
+          // not repeat visibly — the same trick FloorScreen already does in
+          // CSS with backgroundPosition, which is a UV lookup by another name.
+          uv: { u0: (x % 4) / 4, v0: (y % 4) / 4, u1: (x % 4 + 1) / 4, v1: (y % 4 + 1) / 4 },
+          textureId: isWall ? 'wall' : 'ground',
+          tint: isWall ? [0.85, 0.85, 0.9, 1] : [1, 1, 1, 1],
+        });
+        // A wall gets a FRONT FACE — a quad STANDING UP out of the board at
+        // its near edge. `upright` is what makes it stand rather than lie:
+        // its height scales by sin(tilt) instead of cos(tilt). This is the
+        // whole reason to tilt the camera at all, because without a vertical
+        // surface a lantern has nothing but floor to rake across.
+        if (isWall && !layout[y + 1]?.[x]) {
+          sprites.push({
+            position: { x, y: y + 1, z: 0 },
+            size: { x: 1, y: 0.9 },
+            pivot: { x: 0, y: 1 },
+            upright: true,
+            uv: { u0: (x % 4) / 4, v0: 0.5, u1: (x % 4 + 1) / 4, v1: 1 },
+            textureId: 'wall',
+            // Slightly darker than the cap: a vertical face catches less of
+            // the ambient sky than a horizontal one. A placeholder until M2
+            // computes it properly from a normal map.
+            tint: [0.72, 0.72, 0.78, 1],
+          });
+        }
+      }
+    }
+
+    // The hero, walking a small circuit, standing up off the board.
+    const hx = W / 2 + Math.cos(t * 0.35) * 4.2;
+    const hy = H / 2 + Math.sin(t * 0.35) * 2.6;
+    sprites.push({
+      position: { x: hx, y: hy, z: 0 },
+      size: { x: 1.1, y: 1.7 },
+      pivot: { x: 0.5, y: 1 },
+      // A piece, not a decal. Without this the hero lies face-up on the board
+      // like a printed counter.
+      upright: true,
+      uv: UV,
+      textureId: 'hero',
+    });
+
+    return makeScene(camera, {
+      sprites,
+      materials,
+      occluders: grid,
+      time: t,
+      lights: [
+        {
+          position: { x: hx, y: hy, z: 0.9 },
+          colour: [1, 0.62, 0.28],
+          intensity: 9,
+          radius: 0.18,
+          reach: 7,
+        },
+      ],
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  const start = performance.now();
+  function frame() {
+    const t = (performance.now() - start) / 1000;
+    device.resize(canvas.clientWidth || 1280, canvas.clientHeight || 800, window.devicePixelRatio || 1);
+    const stats = renderer.render(buildScene(t), {
+      exposure: Math.pow(2, Number($('exp').value)),
+      bloomStrength: Number($('bloom').value),
+      bloomThreshold: Number($('thr').value),
+      tonemap: current.tonemap,
+    });
+    $('stats').textContent = formatHud(stats) + `\nsprites    ${buildSpriteCount}`;
+  }
+  window.boardFrame = frame;
+
+  const current = { tonemap: 'agx' };
+
+  for (const b of $('tm').querySelectorAll('button')) {
+    b.onclick = () => {
+      current.tonemap = b.dataset.v;
+      for (const o of $('tm').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      frame();
+    };
+  }
+  for (const b of $('gate').querySelectorAll('button')) {
+    b.onclick = async () => {
+      gate = b.dataset.v;
+      for (const o of $('gate').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      await loadGate(gate);
+      frame();
+    };
+  }
+  for (const [id, out, fmt] of [['tilt','vTilt',(v)=>`${v}°`],['zoom','vZoom',(v)=>String(v)],
+                                ['exp','vExp',(v)=>Number(v).toFixed(1)],['bloom','vBloom',(v)=>Number(v).toFixed(2)],
+                                ['thr','vThr',(v)=>Number(v).toFixed(2)]]) {
+    const el = $(id);
+    const sync = () => { $(out).textContent = fmt(el.value); frame(); };
+    el.addEventListener('input', sync);
+    el.addEventListener('change', sync);
+  }
+
+  await loadGate(gate);
+  const resize = () => {
+    canvas.width = Math.min(1400, canvas.clientWidth || 1280);
+    canvas.height = Math.round(canvas.width * 0.625);
+    frame();
+  };
+  window.addEventListener('resize', resize);
+  resize();
+  for (const [id, out, fmt] of [['tilt','vTilt',(v)=>`${v}°`],['zoom','vZoom',(v)=>String(v)]]) $(out).textContent = fmt($(id).value);
+
+  const loop = () => { frame(); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+} catch (e) {
+  fail(e);
+}
+</script>

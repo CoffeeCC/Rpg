@@ -46,6 +46,26 @@ export interface Sprite {
   textureId: string;
   /** Straight [0,1] multiplier, default opaque white. */
   tint?: Tint;
+  /**
+   * STANDING UP, rather than lying on the board.
+   *
+   * This is the difference between a game piece and a painted decal, and it
+   * is one trigonometric function. A quad lying on the board is squashed by
+   * `cos(tilt)` — it is part of the floor and shrinks with it. A quad standing
+   * up is scaled by `sin(tilt)`, because its height is measured along the axis
+   * the camera is tilted TOWARD, not the one it is tilted away from.
+   *
+   * At the default 55 degrees those differ by about 1.4x, so getting it wrong
+   * is not subtle — but the tell is at the extremes. Tilt to nearly straight
+   * down and an upright sprite collapses to nothing (correct: you are looking
+   * at the top of a standing card edge-on) while a flat one is full size. That
+   * is exactly why a top-down camera cannot show pieces, stated as geometry.
+   *
+   * Used by hero and monster pieces, and by the FRONT FACE of a wall — the
+   * surface that gives the lantern something to rake across, and the entire
+   * reason the camera is tilted at all.
+   */
+  upright?: boolean;
 }
 
 const DEFAULT_PIVOT: Vec2 = { x: 0.5, y: 1 };
@@ -105,11 +125,15 @@ export const VERTICES_PER_SPRITE = 6;
 export function buildVertexData(sprites: readonly Sprite[], camera: Camera): Float32Array {
   const out = new Float32Array(sprites.length * VERTICES_PER_SPRITE * FLOATS_PER_VERTEX);
   const cos = Math.cos(camera.tilt);
+  const sin = Math.sin(camera.tilt);
   let o = 0;
   for (const sp of sprites) {
     const anchor = project(sp.position, camera);
     const w = sp.size.x * camera.zoom;
-    const h = sp.size.y * camera.zoom * cos;
+    // The one line that decides whether this is a piece or a decal. See the
+    // `upright` note on Sprite: lying down squashes by cos, standing up
+    // scales by sin, and they are the same number only at 45 degrees.
+    const h = sp.size.y * camera.zoom * (sp.upright ? sin : cos);
     const pivot = sp.pivot ?? DEFAULT_PIVOT;
     const left = anchor.x - w * pivot.x;
     const top = anchor.y - h * pivot.y;

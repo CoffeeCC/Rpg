@@ -267,7 +267,7 @@ once.**
 | | | what Paul sees |
 |---|---|---|
 | **M0** | **Lantern Lab** — `web/public/lantern-lab.html`. Material baker: albedo → height → normal + AO, live-lit preview, PNG export. | ✅ **Done.** Drag a light across a real tile and see whether derived normals hold up. They do — measured, §7. |
-| **M1** | **Lantern core** — GL context, sprite batcher, HDR target, tonemap, bloom, debug HUD. The board drawn on the GPU with today's art. | Looks *the same*. Deliberately. Proof the floor renders at 60fps with nothing new on it. |
+| **M1** | **Lantern core** — GL context, sprite batcher, HDR target, tonemap, bloom, debug HUD, Scene, Renderer. The board drawn on the GPU with today's art. | ✅ **Done.** `web/public/lantern-board.html` — real tiles, real hero sprite, painter-sorted, 2.3 ms CPU at 1200x750. Flat and bright on purpose: M1 draws **albedo only**, so nothing is dark yet. M2 is where light lands. |
 | **M2** | **Materials + per-pixel lighting** — the Lab's pipeline as a build step, normal-mapped diffuse and specular, soft shadows from world geometry. | **The first real moment.** The lantern rakes across the board instead of just clearing fog. |
 | **M3** | **The tilt** — board camera, walls given front faces, pieces stand up as billboards with contact shadows. | It becomes a board with pieces on it. |
 | **M4** | **The furniture** — UI surfaces drawn as lit materials under the DOM text. Elevation, contact shadows, hover-lift, pressed buttons. | Every screen, all at once. Cards lift and cast. No flat rectangles left. |
@@ -724,3 +724,69 @@ instead of only the standalone HTML lab; and the G-buffer pass, which M1's
 device/target/program plumbing supports but nothing has built yet — though
 that may be better scoped as the start of M2 (materials + per-pixel
 lighting), since M1's own bar is "looks the same, deliberately."
+
+---
+
+## 10. M1 closed: the assembly, and what it exposed
+
+Paul, looking at a growing `lantern/` tree: *"does everything have a place
+though?"* The answer at the time was **no**, and the diagnosis is worth keeping
+because it is a failure mode this project is structurally prone to.
+
+There were 2,000 lines of good, individually-tested parts — camera, batcher,
+bloom, tonemap, LUT, HUD, quality tiers — and **no assembly**. No `Scene`, no
+`Renderer`. The frame loop lived in `lantern-forge.html`, a demo page. A demo
+page owning the pass order, the render targets and the composite shader is the
+classic tell that the orchestrator has not been written: every piece is right
+and nothing is plugged into anything.
+
+That mattered urgently rather than eventually, because M2 adds materials and
+lighting. Starting M2 would have added **more parts to the box**.
+
+**Closed by `scene/scene.ts` and `renderer.ts`.** The Scene is the renderer's
+entire input — sprites, materials, lights, an occupancy grid, night colour,
+time — and `render(scene)` is the whole public surface. That is what makes §2's
+isolation rule enforceable rather than aspirational: there is nowhere in the
+signature for a monster, a card or a DOM node to get in. Verified by grep, and
+it held through an unsupervised overnight run.
+
+### What building it exposed
+
+**The engine could not draw a standing piece.** `buildVertexData` scaled every
+quad's height by `cos(tilt)` — which is to say every sprite was a floor decal.
+The hero lay face-up on the board like a printed counter, and a wall's front
+face was impossible to express. That is the centre of the board-game model and
+it simply was not in the data model.
+
+Fixed with `Sprite.upright`, one trig function: lying down squashes by
+`cos(tilt)`, standing up scales by `sin(tilt)`. At the shipping 55° they differ
+by ~1.4x; the tell is at the extremes, where a nearly-top-down camera collapses
+a standing piece to nothing while a decal stays full size. **That is exactly
+why a top-down camera cannot show pieces, stated as geometry**, and it is now a
+test rather than a paragraph.
+
+This is the argument for building the assembly early rather than late: the gap
+was invisible while the parts sat in a box, and obvious within one frame of
+them being connected.
+
+### Honest state of the M1 preview
+
+`lantern-board.html` draws **albedo only**. `scene.lights` and
+`scene.occluders` are read for the HUD count and otherwise ignored — direct
+lighting is M2 and the cascade solve is M5. So the board renders flat and
+bright, which is *correct for an unlit render* and looks nothing like the game.
+Do not read it as a regression; there is no lighting in it yet to be wrong.
+
+### Known cleanups, deliberately deferred
+
+- **`lantern-forge.html` still owns a private pass sequence.** It is a rig for
+  the post chain on a synthetic HDR input, which is a legitimate thing to have,
+  but it now duplicates what `Renderer` does. Fold it into `Renderer` +
+  `RenderOptions` (which already carries every toggle it exposes) or retire it
+  in favour of the board page.
+- **`gl/lut.ts` is filed under `gl/` but is really a pass.** Harmless, wrong
+  drawer.
+- **Nothing is wired into the game yet.** `?r=lantern` from §4 does not exist;
+  `FloorScreen` still renders through the DOM. That is deliberate — the flag is
+  worth adding when there is something better than the DOM map to show, which
+  is M2, not before.
