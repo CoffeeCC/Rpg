@@ -8,7 +8,7 @@
 // bounce floor, and a light that keeps burning when motion is turned off.
 // =========================================================================
 import { describe, expect, it } from 'vitest';
-import { fractalNoise, renderLight, type Occluder } from '../../art/lightEngine';
+import { flameSample, fractalNoise, renderLight, type Occluder } from '../../art/lightEngine';
 
 interface DrawCall {
   op: string;
@@ -196,5 +196,67 @@ describe('reduced motion', () => {
     const b = render([], 4.7, true).out;
     expect(a.flicker).not.toBe(b.flicker);
     expect(a.lean).not.toBe(b.lean);
+  });
+});
+
+/**
+ * THE DIAGONAL.
+ *
+ * Paul, looking at a screenshot of the map: "there are partially lit tiles
+ * with a diagonal line through them."
+ *
+ * The cause was the flame's sample layout. Every sample sat on ONE straight
+ * line through the source — a glowing stick, not a flame — and a stick-shaped
+ * light projects any edge running parallel to it to exactly the same place
+ * from every sample. Those edges got no penumbra at all and came out
+ * knife-sharp, always along the same diagonal, while edges across the stick
+ * softened normally.
+ *
+ * The property that actually matters is therefore not "how many samples" but
+ * "do they cover an AREA" — so that is what gets asserted.
+ */
+describe('the flame is a disc, not a stick', () => {
+  const N = 7;
+  const SIZE = 22;
+  const src = { x: 100, y: 100 };
+  const samples = Array.from({ length: N }, (_, i) => flameSample(src, SIZE, i, N));
+
+  it('spreads its samples in two dimensions, not along one line', () => {
+    // Principal-axis test: take the spread along the widest direction, then the
+    // spread perpendicular to it. A collinear set has zero perpendicular
+    // spread — which is exactly what produced the hard diagonal.
+    const cx = samples.reduce((t, p) => t + p.x, 0) / N;
+    const cy = samples.reduce((t, p) => t + p.y, 0) / N;
+    let sxx = 0;
+    let syy = 0;
+    let sxy = 0;
+    for (const p of samples) {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      sxx += dx * dx;
+      syy += dy * dy;
+      sxy += dx * dy;
+    }
+    // Eigenvalues of the 2x2 covariance matrix: the variance along the major
+    // and minor axes of the sample cloud.
+    const tr = sxx + syy;
+    const det = sxx * syy - sxy * sxy;
+    const disc = Math.sqrt(Math.max(0, (tr * tr) / 4 - det));
+    const major = tr / 2 + disc;
+    const minor = tr / 2 - disc;
+
+    // The old line-of-samples scored ~0 here. A disc is close to 1; anything
+    // above a third means every edge orientation gets a real penumbra.
+    expect(minor / major).toBeGreaterThan(0.33);
+  });
+
+  it('keeps every sample inside the flame', () => {
+    for (const p of samples) {
+      expect(Math.hypot(p.x - src.x, p.y - src.y)).toBeLessThanOrEqual(SIZE / 2 + 1e-9);
+    }
+  });
+
+  it('is deterministic — the same frame twice is the same shadows', () => {
+    expect(flameSample(src, SIZE, 3, N)).toEqual(flameSample(src, SIZE, 3, N));
   });
 });

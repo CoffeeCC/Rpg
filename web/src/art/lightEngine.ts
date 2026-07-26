@@ -325,6 +325,38 @@ function facingEdges(o: Occluder, light: Vec2): [Vec2, Vec2][] {
 const FLAME_SAMPLES = 7;
 
 /**
+ * Where on the flame each sample sits — spread over a DISC, not along a line.
+ *
+ * Paul: "the lighting still looks a little broken on the map... there are
+ * partially lit tiles with a diagonal line through them."
+ *
+ * That diagonal was this function's predecessor. It placed every sample on one
+ * straight line through the source — `{ x: src.x + spread, y: src.y + spread *
+ * 0.3 }` — which does not model a flame, it models a glowing STICK lying at a
+ * fixed angle. And a stick-shaped light has a very specific failure: an edge
+ * running PARALLEL to it is projected to the same place by every sample, so it
+ * gets no penumbra whatsoever and comes out knife-sharp, while edges across it
+ * soften normally. The penumbra was anisotropic, and every hard shadow edge in
+ * the game lay along the same diagonal — the one the stick was pointing down.
+ *
+ * A real flame has extent in both directions, so the samples need to cover an
+ * area. This is a Vogel spiral: `theta` steps by the golden angle and the
+ * radius grows as sqrt(i/n), which distributes n points over a disc with equal
+ * area per point and no clumping or banding at any n. Every edge orientation
+ * now sees the same spread of the source, so every shadow softens the same
+ * amount regardless of which way it happens to run.
+ */
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+export function flameSample(src: Vec2, size: number, i: number, n: number): Vec2 {
+  // +0.5 keeps the first sample off the exact centre, so no single sample is
+  // privileged and the set stays symmetric about the flame.
+  const r = Math.sqrt((i + 0.5) / n) * (size / 2);
+  const theta = i * GOLDEN_ANGLE;
+  return { x: src.x + Math.cos(theta) * r, y: src.y + Math.sin(theta) * r };
+}
+
+/**
  * How much light survives in full shadow — the bounce term.
  *
  * Nothing outdoors is ever at zero. Light off the ground and the surrounding
@@ -484,11 +516,12 @@ export function renderLight(
   ctx.globalCompositeOperation = 'source-over';
 
   for (let s = 0; s < FLAME_SAMPLES; s++) {
-    // Sample across the flame's width. This spread IS the penumbra: widen it
-    // and every shadow edge in the scene softens, exactly as it would if you
-    // swapped a candle for a lamp.
-    const spread = (s / (FLAME_SAMPLES - 1) - 0.5) * light.size;
-    const sample: Vec2 = { x: src.x + spread, y: src.y + spread * 0.3 };
+    // Sample over the flame's AREA. This spread IS the penumbra: widen it and
+    // every shadow edge in the scene softens, exactly as it would if you
+    // swapped a candle for a lamp. Over a disc rather than along a line, so
+    // that softening does not depend on which way the edge happens to run —
+    // see `flameSample`.
+    const sample = flameSample(src, light.size, s, FLAME_SAMPLES);
     ctx.globalAlpha = cutAlpha;
     for (const o of near) {
       for (const [a, bEdge] of facingEdges(o, sample)) {
