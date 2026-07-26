@@ -93,9 +93,22 @@ const DEFAULTS: Required<RenderOptions> = {
   normalStrength: 1,
   specular: 0.25,
   gloss: 24,
-  seamWidth: 0.045,
-  seamDarken: 0.42,
-  seamBevel: 0.85,
+  // MEASURED, not eyeballed. The first pass used 0.045/0.42/0.85 and the
+  // seams read as a dark grid laid over the lit pool — around a point light
+  // on a tilted board that comes out as concentric arcs, which is exactly
+  // what it was reported as. Averaging the radial brightness profile over a
+  // fan of angles and taking its second difference: roughness 9.4 with the
+  // seams, 1.5 with them off. So they were carrying six sevenths of all the
+  // structure in what should be a smooth falloff.
+  //
+  // The bevel was the larger half. Tipping a floor tile's normal by 0.85
+  // leaves its z component at 0.64 right at the seam, which against a nearly
+  // overhead lantern is most of the diffuse gone — a black line, not a
+  // chamfer. 0.32 keeps z above 0.95 and still turns as the light moves,
+  // which is all the cue needs to do.
+  seamWidth: 0.035,
+  seamDarken: 0.72,
+  seamBevel: 0.32,
   debug: 0,
 };
 

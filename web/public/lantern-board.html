@@ -114,6 +114,17 @@
   <p class="note">Drag Piece lift and watch the shadow WIDEN AND FADE together.
     Widening alone reads as the piece growing; the fade is what reads as a lift.</p>
 
+  <h2>Inlay</h2>
+  <label><span class="row">Seam width<b id="vSw">0.035</b></span>
+    <input type="range" id="sw" min="0" max="0.15" step="0.005" value="0.035" /></label>
+  <label><span class="row">Seam darken<b id="vSd">0.72</b></span>
+    <input type="range" id="sd" min="0" max="1" step="0.01" value="0.72" /></label>
+  <label><span class="row">Seam bevel<b id="vSb">0.32</b></span>
+    <input type="range" id="sb" min="0" max="1.2" step="0.01" value="0.32" /></label>
+  <p class="note">The chamfer is what makes a seam an EDGE rather than a drawn
+    line — but push it past ~0.5 and it tips a floor tile so far from the
+    lantern that the seam goes black, and the grid reads as rings in the pool.
+
   <h2>Debug</h2>
   <div class="seg" id="dbg" style="grid-auto-flow:row; grid-template-columns:repeat(3,1fr); grid-auto-rows:auto;">
     <button data-v="0" aria-pressed="true">Off</button>
@@ -504,6 +515,9 @@ try {
       tonemap: current.tonemap,
       lit: current.lit,
       debug: current.debug,
+      seamWidth: Number($('sw').value),
+      seamDarken: Number($('sd').value),
+      seamBevel: Number($('sb').value),
     });
     $('stats').textContent = formatHud(stats);
   }
@@ -522,6 +536,9 @@ try {
     tonemap: current.tonemap,
     lit: current.lit,
     debug: current.debug,
+    seamWidth: Number($('sw').value),
+    seamDarken: Number($('sd').value),
+    seamBevel: Number($('sb').value),
     ...opts,
   });
   window.boardScene = (t) => buildScene(t);
@@ -565,6 +582,8 @@ try {
                                 ['lamp','vLamp',(v)=>Number(v).toFixed(1)],['reach','vReach',(v)=>Number(v).toFixed(1)],
                                 ['rad','vRad',(v)=>Number(v).toFixed(2)],['amb','vAmb',(v)=>Number(v).toFixed(3)],
                                 ['room','vRoom',(v)=>Number(v).toFixed(2)],
+                                ['sw','vSw',(v)=>Number(v).toFixed(3)],['sd','vSd',(v)=>Number(v).toFixed(2)],
+                                ['sb','vSb',(v)=>Number(v).toFixed(2)],
                                 ['base','vBase',(v)=>Number(v).toFixed(2)],['thick','vThick',(v)=>Number(v).toFixed(2)],
                                 ['shad','vShad',(v)=>Number(v).toFixed(2)],['lift','vLift',(v)=>Number(v).toFixed(2)]]) {
     const el = $(id);

@@ -82,7 +82,25 @@ uniform float uShadowSoftness;
  */
 uniform float uOccluderHeight;
 
-/** 1.0 = fully lit, 0.0 = fully blocked. */
+/**
+ * 1.0 = fully lit, 0.0 = fully blocked.
+ *
+ * DDA — the ray walks TILE BOUNDARY to TILE BOUNDARY, not in fixed steps.
+ *
+ * The fixed-step version marched 0.75 tiles at a time, which is wrong in the
+ * way fixed steps are always wrong on a grid: depending on the ray ANGLE it
+ * can sample either side of a tile the ray genuinely crosses (a leak through
+ * the corner of a wall) or sample the same tile twice (wasted work). Angle
+ * dependence is what turns a clean shadow boundary ragged. There is also no
+ * honest step length to pick, because the right one is a property of the ray
+ * and not of the quality tier.
+ *
+ * Walking boundaries visits exactly the tiles the ray passes through, once
+ * each, in order. It cannot leak and it cannot double-count, so the loop
+ * bound stops being a correctness parameter and goes back to being a budget —
+ * and it is the traversal a per-tile HEIGHT field wants (ENGINE_PLAN section
+ * 14), so it survives the grid ceasing to be binary.
+ */
 float traceShadow(vec3 from, vec2 to) {
   // Above the wall layer there is nothing left to hide behind. Without this,
   // every block top is shadowed by its own neighbours.
@@ -93,12 +111,7 @@ float traceShadow(vec3 from, vec2 to) {
   if (dist < 1e-4) return 1.0;
   vec2 dir = delta / dist;
 
-  // Step just under a tile so the march cannot stride over a one-tile wall.
-  // A step of exactly 1.0 can skip a thin occluder when the ray enters and
-  // leaves it between samples — the classic light-leak, and the reason
-  // LIGHTING_PLAN §9.3 also insists on conservative mips for the cascades.
-  float stepLen = 0.75;
-  int steps = int(min(float(SHADOW_STEPS), dist / stepLen));
+  vec2 tile = floor(from.xy);
   // A surface must not shadow itself. The first version skipped by DISTANCE,
   // which fails on any receiver that sits INSIDE a solid tile — the top face
   // of a wall block being exactly that — because the sample lands back in the
@@ -106,12 +119,26 @@ float traceShadow(vec3 from, vec2 to) {
   // punched in the board. Skipping by TILE is what the grid actually means:
   // a tile is solid or it is not, and the tile you are standing on cannot be
   // between you and anything.
-  vec2 originTile = floor(from.xy);
+  vec2 originTile = tile;
 
-  for (int i = 1; i <= SHADOW_STEPS; i++) {
-    if (i > steps) break;
-    vec2 p = from.xy + dir * (float(i) * stepLen);
-    vec2 tile = floor(p);
+  // tMax is how far along the ray the next boundary on each axis lies;
+  // tDelta is the spacing between successive ones. An axis the ray does not
+  // travel along gets an effectively infinite tMax and is simply never
+  // chosen, which is why an exactly horizontal or vertical ray needs no
+  // special case.
+  vec2 advance = sign(dir);
+  vec2 tDelta = 1.0 / max(abs(dir), vec2(1e-8));
+  vec2 tMax = vec2(
+    dir.x > 0.0 ? (tile.x + 1.0 - from.x) : (from.x - tile.x),
+    dir.y > 0.0 ? (tile.y + 1.0 - from.y) : (from.y - tile.y)
+  ) * tDelta;
+
+  for (int i = 0; i < SHADOW_STEPS; i++) {
+    // Distance at which the ray leaves the tile it is in. Past the light
+    // means nothing else can be in the way.
+    if (min(tMax.x, tMax.y) >= dist) break;
+    if (tMax.x < tMax.y) { tile.x += advance.x; tMax.x += tDelta.x; }
+    else { tile.y += advance.y; tMax.y += tDelta.y; }
     if (all(equal(tile, originTile))) continue;
     // OFF THE BOARD IS NOT ROCK ANY MORE. The grid used to be sampled
     // CLAMP_TO_EDGE, so anything past the last row read the border wall and
