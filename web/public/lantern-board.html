@@ -171,6 +171,16 @@
   <p class="note">0 is a flat card — the standee before §15. Raise it and the
     EDT bevel carves the figure, so the lantern rakes across its form.</p>
 
+  <h2>Piece alpha</h2>
+  <div class="seg" id="alphaseg">
+    <button data-v="1" aria-pressed="true">Sharpened</button>
+    <button data-v="0">Original</button>
+  </div>
+  <p class="note">The shipped sprites were cut out with a luminance key, so
+    dark cloth became low alpha and the figures render translucent over a lit
+    board. Sharpened restores the silhouette — <code>tamer</code> goes from 23%
+    to 79% opaque.</p>
+
   <h2>Status</h2>
   <div id="stats">—</div>
   <p id="err"></p>
@@ -219,10 +229,15 @@ try {
   // ---------------------------------------------------------------------
   // Textures. The game's real art, loaded the way the game loads it.
   // ---------------------------------------------------------------------
-  async function loadTexture(url) {
+  async function loadTexture(url, optional = false) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error(`load failed: ${url}`)); img.src = url; });
+    try {
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error(`load failed: ${url}`)); img.src = url; });
+    } catch (e) {
+      if (optional) return null;   // not baked yet is not an error
+      throw e;
+    }
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -399,9 +414,21 @@ try {
   async function loadGate(name) {
     const ground = await loadTexture(`art/tiles/${name}_ground.jpg`);
     const wall = await loadTexture(`art/tiles/${name}_wall.jpg`);
-    const hero = await loadTexture('art/sprites/player.png');
-    const merchant = await loadTexture('art/sprites/merchant.png');
-    const tamer = await loadTexture('art/sprites/tamer.png');
+    // Both cuts, so the toggle can compare them without a reload. The
+    // sharpened albedo comes out of the material pipeline's bevel path, which
+    // repairs the luminance-keyed matte; falling back to the original keeps
+    // the page working on a checkout that has not baked yet.
+    const heroSharp = await loadTexture(`${STAGING}/sprites/player_albedo.png`, true);
+    const merchantSharp = await loadTexture(`${STAGING}/sprites/merchant_albedo.png`, true);
+    const tamerSharp = await loadTexture(`${STAGING}/sprites/tamer_albedo.png`, true);
+    const heroRaw = await loadTexture('art/sprites/player.png');
+    const merchantRaw = await loadTexture('art/sprites/merchant.png');
+    const tamerRaw = await loadTexture('art/sprites/tamer.png');
+    const hero = heroSharp ?? heroRaw;
+    const merchant = merchantSharp ?? merchantRaw;
+    const tamer = tamerSharp ?? tamerRaw;
+    window.__alpha = { sharp: { hero: heroSharp, merchant: merchantSharp, tamer: tamerSharp },
+                       raw: { hero: heroRaw, merchant: merchantRaw, tamer: tamerRaw } };
     // THE CARVED RELIEF (ENGINE_PLAN §15). EDT beveling derives a height
     // field from the sprite's ALPHA, so the outline becomes the geometry and
     // the figure lights as a bas-relief instead of as a flat card.
@@ -763,6 +790,18 @@ try {
     };
   }
 
+  for (const b of $('alphaseg').querySelectorAll('button')) {
+    b.onclick = () => {
+      const set = window.__alpha?.[b.dataset.v === '1' ? 'sharp' : 'raw'];
+      const fallback = window.__alpha?.raw;
+      if (set) for (const id of ['hero', 'merchant', 'tamer']) {
+        const m = window.__mats?.get(id);
+        if (m) m.albedo = set[id] ?? fallback?.[id] ?? m.albedo;
+      }
+      for (const o of $('alphaseg').querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      frame();
+    };
+  }
   for (const b of $('litseg').querySelectorAll('button')) {
     b.onclick = () => {
       current.lit = b.dataset.v === '1';
