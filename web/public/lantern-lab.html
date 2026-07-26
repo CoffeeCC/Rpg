@@ -1,0 +1,660 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Lantern Lab — material baker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  LANTERN LAB
+  ===========
+  The material baker, and the answer to the riskiest question in M2 of
+  docs/ENGINE_PLAN.md: does deriving a normal map from the art we already have
+  actually look good, or does it look like embossed mush?
+
+  Everything here runs in WebGL2 with no dependencies and no build step, on the
+  same shader path the engine will use. Load a tile, drag the light, and the
+  question answers itself.
+
+  The pipeline, left to right:
+
+     albedo -> luminance -> denoise -> [ detail height | form height ]
+                                              \          /
+                                               sobel, weighted
+                                                    |
+                                              NORMAL + AO
+                                                    |
+                                    normal-mapped diffuse + specular
+
+  DETAIL AND FORM ARE SEPARATE ON PURPOSE. A single blur radius has to choose
+  between reading the mortar between bricks (small radius, and the wall as a
+  whole comes out flat) and reading the wall's overall curvature (large radius,
+  and every brick disappears). Splitting the height into a fine band and a
+  coarse one, and weighting them independently, is what separates a usable
+  normal map from the classic emboss-filter look.
+
+  THE JPEG PROBLEM IS VISIBLE HERE. Deriving a normal means differentiating the
+  image, and differentiation amplifies exactly the 8x8 block noise JPEG leaves
+  behind. Set Denoise to 0 on a .jpg tile and the blocks are plainly visible in
+  the normal view. That is the argument for PNG source art, on screen.
+-->
+<style>
+  :root {
+    --ink: #e8e3d8;
+    --dim: #9a9384;
+    --edge: #2a2620;
+    --panel: #14120f;
+    --bg: #0a0908;
+    --gold: #d9a441;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+    display: grid; grid-template-columns: 300px 1fr; height: 100vh; overflow: hidden;
+  }
+  #panel {
+    background: var(--panel); border-right: 1px solid var(--edge);
+    padding: 14px; overflow-y: auto;
+  }
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; color: var(--gold); }
+  .sub { color: var(--dim); font-size: 11px; margin-bottom: 14px; }
+  h2 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--dim); margin: 18px 0 8px; border-bottom: 1px solid var(--edge); padding-bottom: 4px;
+  }
+  label { display: block; margin-bottom: 9px; }
+  .row { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); }
+  .row b { color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--gold); margin: 2px 0 0; }
+  select, button {
+    width: 100%; background: #1d1a15; color: var(--ink);
+    border: 1px solid var(--edge); border-radius: 4px; padding: 6px 8px; font: inherit;
+  }
+  button { cursor: pointer; margin-top: 6px; }
+  button:hover { border-color: var(--gold); color: var(--gold); }
+  .views { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .views button { margin: 0; font-size: 11px; padding: 5px 4px; }
+  .views button[aria-pressed=true] { background: var(--gold); color: #14120f; border-color: var(--gold); font-weight: 600; }
+  #stage { position: relative; display: grid; place-items: center; overflow: hidden; background: #060505; }
+  canvas { max-width: 100%; max-height: 100vh; display: block; cursor: crosshair; image-rendering: auto; }
+  #hint {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    color: var(--dim); font-size: 11px; background: #0009; padding: 4px 10px; border-radius: 999px;
+    pointer-events: none;
+  }
+  .note { color: var(--dim); font-size: 10.5px; line-height: 1.45; margin: 6px 0 0; }
+  #err { color: #e06d5a; font-size: 11px; white-space: pre-wrap; }
+</style>
+
+<div id="panel">
+  <h1>Lantern Lab</h1>
+  <div class="sub">Material baker · WebGL2</div>
+
+  <h2>Source</h2>
+  <select id="src"></select>
+  <button id="pick">Load a file…</button>
+  <input type="file" id="file" accept="image/*" hidden />
+
+  <h2>View</h2>
+  <div class="views">
+    <button data-view="0" aria-pressed="true">Lit</button>
+    <button data-view="1">Split</button>
+    <button data-view="2">Albedo</button>
+    <button data-view="3">Normal</button>
+    <button data-view="4">Height</button>
+    <button data-view="5">AO</button>
+  </div>
+  <p class="note">Split shows flat art on the left, lit on the right — drag to move the seam.</p>
+
+  <h2>Height</h2>
+  <label><span class="row">Denoise<b id="vDen">1.4</b></span><input type="range" id="den" min="0" max="6" step="0.1" value="1.4" /></label>
+  <label><span class="row">Detail strength<b id="vDet">1.00</b></span><input type="range" id="det" min="0" max="3" step="0.01" value="1" /></label>
+  <label><span class="row">Form strength<b id="vFrm">0.55</b></span><input type="range" id="frm" min="0" max="3" step="0.01" value="0.55" /></label>
+  <label><span class="row">Form radius<b id="vRad">9</b></span><input type="range" id="rad" min="2" max="24" step="1" value="9" /></label>
+  <label><span class="row">Invert<b id="vInv">0.00</b></span><input type="range" id="inv" min="0" max="1" step="0.01" value="0" /></label>
+  <p class="note">Invert if the art reads darker where it should stick out — mortar, cracks and recesses.</p>
+
+  <h2>Light</h2>
+  <label><span class="row">Height above surface<b id="vLz">0.35</b></span><input type="range" id="lz" min="0.05" max="1.5" step="0.01" value="0.35" /></label>
+  <label><span class="row">Intensity<b id="vInt">1.60</b></span><input type="range" id="int" min="0" max="4" step="0.01" value="1.6" /></label>
+  <label><span class="row">Falloff<b id="vFal">2.60</b></span><input type="range" id="fal" min="0" max="10" step="0.05" value="2.6" /></label>
+  <label><span class="row">Ambient<b id="vAmb">0.07</b></span><input type="range" id="amb" min="0" max="0.6" step="0.005" value="0.07" /></label>
+  <label><span class="row">Specular<b id="vSpc">0.35</b></span><input type="range" id="spc" min="0" max="2" step="0.01" value="0.35" /></label>
+  <label><span class="row">Gloss<b id="vGls">24</b></span><input type="range" id="gls" min="2" max="128" step="1" value="24" /></label>
+  <label><span class="row">AO strength<b id="vAoS">0.70</b></span><input type="range" id="aos" min="0" max="1" step="0.01" value="0.7" /></label>
+
+  <h2>Export</h2>
+  <button id="exNrm">Download normal map</button>
+  <button id="exHgt">Download height map</button>
+  <button id="exAo">Download AO map</button>
+  <p class="note" id="info"></p>
+  <p class="note" id="levels"></p>
+  <p id="err"></p>
+</div>
+
+<div id="stage">
+  <canvas id="gl" width="900" height="900"></canvas>
+  <div id="hint">move the mouse to move the lantern · scroll to change its height</div>
+</div>
+
+<script type="module">
+// -------------------------------------------------------------------------
+// The tiles that ship with the game. Same paths the engine uses.
+// -------------------------------------------------------------------------
+const GATES = ['hollow', 'verdant', 'sunken', 'storm', 'abyss'];
+const SOURCES = [
+  ...GATES.flatMap((g) => [
+    { label: `${g} — wall`, url: `art/tiles/${g}_wall.jpg` },
+    { label: `${g} — ground`, url: `art/tiles/${g}_ground.jpg` },
+  ]),
+  ...GATES.map((g) => ({ label: `${g} — backdrop`, url: `art/backdrop_${g}.jpg` })),
+];
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
+if (!gl) $('err').textContent = 'WebGL2 unavailable in this browser.';
+
+// Float render targets make the height chain smooth. Without them 8-bit height
+// bands, and banding in height is ridges in the normal — the exact artifact
+// this tool exists to avoid. Falls back rather than failing.
+const FLOAT = gl.getExtension('EXT_color_buffer_float');
+const gl_ = gl;
+const INTERNAL = FLOAT ? gl_.RGBA16F : gl_.RGBA8;
+const TYPE = FLOAT ? gl_.HALF_FLOAT : gl_.UNSIGNED_BYTE;
+
+// -------------------------------------------------------------------------
+// Minimal GL plumbing — a fullscreen triangle and a program cache.
+// -------------------------------------------------------------------------
+const VERT = `#version 300 es
+out vec2 uv;
+void main() {
+  // One triangle covering the viewport. Cheaper than a quad and no diagonal
+  // seam through the middle, which matters for derivative-based passes.
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+function compile(src, type) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+  return s;
+}
+function program(frag) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(VERT, gl.VERTEX_SHADER));
+  gl.attachShader(p, compile(frag, gl.FRAGMENT_SHADER));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const loc = new Map();
+  p.u = (n) => {
+    if (!loc.has(n)) loc.set(n, gl.getUniformLocation(p, n));
+    return loc.get(n);
+  };
+  return p;
+}
+
+/** A render target you can ping-pong through. */
+function target(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, INTERNAL, w, h, 0, gl.RGBA, TYPE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fb, w, h };
+}
+
+function draw(prog, out, binds = {}, uniforms = () => {}) {
+  gl.useProgram(prog);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fb : null);
+  gl.viewport(0, 0, out ? out.w : canvas.width, out ? out.h : canvas.height);
+  let unit = 0;
+  for (const [name, tex] of Object.entries(binds)) {
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(prog.u(name), unit);
+    unit++;
+  }
+  uniforms(prog);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// -------------------------------------------------------------------------
+// The passes
+// -------------------------------------------------------------------------
+
+/**
+ * Luminance, then a small blur to kill compression noise.
+ *
+ * Perceptual weights, not a flat average: the eye reads green as most of
+ * brightness, and a flat mean makes saturated reds and blues read as height
+ * they do not have.
+ */
+const P_LUM = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D src;
+uniform vec2 texel;
+uniform float denoise;
+void main() {
+  float sum = 0.0, wsum = 0.0;
+  int R = int(ceil(denoise * 2.0));
+  for (int y = -8; y <= 8; y++) {
+    for (int x = -8; x <= 8; x++) {
+      if (abs(x) > R || abs(y) > R) continue;
+      float d = length(vec2(float(x), float(y)));
+      float w = exp(-(d * d) / max(0.0001, 2.0 * denoise * denoise));
+      vec3 c = texture(src, uv + vec2(float(x), float(y)) * texel).rgb;
+      sum += dot(c, vec3(0.2126, 0.7152, 0.0722)) * w;
+      wsum += w;
+    }
+  }
+  o = vec4(vec3(sum / max(wsum, 1e-5)), 1.0);
+}`);
+
+/**
+ * Auto-level the height into the full 0..1 range.
+ *
+ * Measured on the shipped `hollow_wall` tile, raw luminance height occupied
+ * [0, 0.34] — the art is dark, so a third of the range carried all of the
+ * information. The Sobel is a derivative and survives that, but everything
+ * downstream does not: the height VIEW is unreadable, the AO threshold is
+ * meaningless, and on the 8-bit fallback path a third of the range is a third
+ * of the levels, which is quantisation, which is ridges in the normal.
+ *
+ * Levels come from a percentile of a downsample rather than a true min/max, so
+ * one blown speculum in the source art cannot flatten the whole tile.
+ */
+const P_LEVELS = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D src;
+uniform float lo, hi;
+void main() {
+  float h = (texture(src, uv).r - lo) / max(1e-4, hi - lo);
+  o = vec4(vec3(clamp(h, 0.0, 1.0)), 1.0);
+}`);
+
+/** Separable Gaussian — the coarse "form" band of the height. */
+const P_BLUR = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D src;
+uniform vec2 dir;
+uniform float radius;
+void main() {
+  float sum = 0.0, wsum = 0.0;
+  int R = int(min(24.0, ceil(radius)));
+  for (int i = -24; i <= 24; i++) {
+    if (abs(i) > R) continue;
+    float w = exp(-(float(i) * float(i)) / max(0.0001, 2.0 * radius * radius));
+    sum += texture(src, uv + dir * float(i)).r * w;
+    wsum += w;
+  }
+  o = vec4(vec3(sum / max(wsum, 1e-5)), 1.0);
+}`);
+
+/**
+ * Sobel on both height bands, combined.
+ *
+ * Two bands weighted separately is the whole trick. One radius has to choose
+ * between reading the mortar and reading the wall, and either choice looks
+ * like an emboss filter. Detail carries the grain; form carries the shape.
+ */
+const P_NORMAL = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D detail, form;
+uniform vec2 texel;
+uniform float kDetail, kForm, invert;
+
+vec2 sobel(sampler2D t) {
+  float tl = texture(t, uv + texel * vec2(-1, -1)).r;
+  float tc = texture(t, uv + texel * vec2( 0, -1)).r;
+  float tr = texture(t, uv + texel * vec2( 1, -1)).r;
+  float ml = texture(t, uv + texel * vec2(-1,  0)).r;
+  float mr = texture(t, uv + texel * vec2( 1,  0)).r;
+  float bl = texture(t, uv + texel * vec2(-1,  1)).r;
+  float bc = texture(t, uv + texel * vec2( 0,  1)).r;
+  float br = texture(t, uv + texel * vec2( 1,  1)).r;
+  return vec2(
+    (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl),
+    (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr)
+  );
+}
+void main() {
+  vec2 g = sobel(detail) * kDetail + sobel(form) * kForm;
+  g *= mix(1.0, -1.0, invert);
+  // The z term sets how much the surface is allowed to tilt. Scaling the
+  // gradient rather than clamping the normal keeps it unit-length and stops
+  // strong settings from flattening into a hard cutoff.
+  vec3 n = normalize(vec3(-g * 4.0, 1.0));
+  o = vec4(n * 0.5 + 0.5, 1.0);
+}`);
+
+/**
+ * Ambient occlusion: how far below its own neighbourhood a point sits.
+ *
+ * Crude next to a real hemisphere trace, and right for the shape of the
+ * problem — creases and mortar lines are exactly the places the coarse blur
+ * sits above the fine height.
+ */
+const P_AO = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D detail, form;
+void main() {
+  float d = texture(detail, uv).r;
+  float f = texture(form, uv).r;
+  float ao = clamp(1.0 - max(0.0, f - d) * 4.0, 0.0, 1.0);
+  o = vec4(vec3(ao), 1.0);
+}`);
+
+/** The payoff: normal-mapped diffuse + specular from a point light. */
+const P_LIT = program(`#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D albedo, normalTex, aoTex, heightTex;
+uniform vec3 lightPos;      // xy in uv space, z above the surface
+uniform vec3 lightColour;
+uniform float intensity, falloff, ambient, specular, gloss, aoStrength;
+uniform int view;           // 0 lit · 1 split · 2 albedo · 3 normal · 4 height · 5 ao
+uniform float split;
+uniform float aspect;
+
+void main() {
+  vec3 alb = texture(albedo, uv).rgb;
+  vec3 n = normalize(texture(normalTex, uv).rgb * 2.0 - 1.0);
+  float ao = mix(1.0, texture(aoTex, uv).r, aoStrength);
+
+  if (view == 2) { o = vec4(alb, 1.0); return; }
+  if (view == 3) { o = vec4(n * 0.5 + 0.5, 1.0); return; }
+  if (view == 4) { o = vec4(vec3(texture(heightTex, uv).r), 1.0); return; }
+  if (view == 5) { o = vec4(vec3(texture(aoTex, uv).r), 1.0); return; }
+  if (view == 1 && uv.x < split) { o = vec4(alb, 1.0); return; }
+
+  // The surface is the z=0 plane; the light floats above it. Aspect-correct so
+  // a square tile is not lit as though it were a rectangle.
+  vec3 frag = vec3(uv.x * aspect, uv.y, 0.0);
+  vec3 lp = vec3(lightPos.x * aspect, lightPos.y, lightPos.z);
+  vec3 toLight = lp - frag;
+  float dist = length(toLight);
+  vec3 L = toLight / max(dist, 1e-5);
+  // n is stored y-down (texture space); flip so +y is up in light space.
+  vec3 N = vec3(n.x, -n.y, n.z);
+
+  float atten = 1.0 / (1.0 + falloff * dist * dist);
+  float diff = max(dot(N, L), 0.0);
+
+  vec3 V = vec3(0.0, 0.0, 1.0);
+  vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), gloss) * specular;
+  // No specular where no light lands, or highlights float on unlit geometry.
+  spec *= step(0.001, diff);
+
+  vec3 lit = alb * (ambient * ao + diff * intensity * atten) + lightColour * spec * atten;
+
+  // Reinhard, then gamma. Without a tonemap the specular clips to white discs
+  // and the whole point of an HDR-ish light is lost.
+  lit = lit / (1.0 + lit);
+  o = vec4(pow(lit, vec3(1.0 / 2.2)), 1.0);
+
+  if (view == 1 && abs(uv.x - split) < 0.0012) o = vec4(0.85, 0.64, 0.25, 1.0);
+}`);
+
+// -------------------------------------------------------------------------
+// State
+// -------------------------------------------------------------------------
+let albedoTex = null;
+let size = { w: 1024, h: 1024 };
+let tDetail, tForm, tTmp, tNormal, tAo, tRaw, tSmall;
+/** The measured height range, shown in the panel so the art can be judged. */
+let levels = { lo: 0, hi: 1 };
+let view = 0;
+let split = 0.5;
+let light = { x: 0.5, y: 0.55, z: 0.35 };
+let dragSplit = false;
+
+const num = (id) => parseFloat($(id).value);
+
+function allocate(w, h) {
+  size = { w, h };
+  for (const t of [tDetail, tForm, tTmp, tNormal, tAo, tRaw, tSmall]) {
+    if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+  }
+  tDetail = target(w, h); tForm = target(w, h); tTmp = target(w, h);
+  tNormal = target(w, h); tAo = target(w, h); tRaw = target(w, h);
+  tSmall = target(128, 128);
+}
+
+/**
+ * Measure the height's usable range off a 128x128 downsample.
+ *
+ * One small readback per bake, never per frame. Percentiles rather than the
+ * extremes, so a single blown highlight in the art cannot flatten the tile.
+ */
+function measureLevels(src) {
+  draw(P_LEVELS, tSmall, { src }, (p) => {
+    gl.uniform1f(p.u('lo'), 0);
+    gl.uniform1f(p.u('hi'), 1);
+  });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tSmall.fb);
+  const n = 128 * 128;
+  const buf = FLOAT ? new Float32Array(n * 4) : new Uint8Array(n * 4);
+  gl.readPixels(0, 0, 128, 128, gl.RGBA, FLOAT ? gl.FLOAT : gl.UNSIGNED_BYTE, buf);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const vals = new Float32Array(n);
+  for (let i = 0; i < n; i++) vals[i] = FLOAT ? buf[i * 4] : buf[i * 4] / 255;
+  vals.sort();
+  const at = (q) => vals[Math.max(0, Math.min(n - 1, Math.round(q * (n - 1))))];
+  const lo = at(0.02);
+  const hi = at(0.98);
+  // Refuse to amplify noise on art that genuinely has no range in it.
+  return hi - lo < 0.02 ? { lo: 0, hi: 1 } : { lo, hi };
+}
+
+/** Re-bake the maps. Only when a height control moves — not per frame. */
+function bake() {
+  if (!albedoTex) return;
+  const texel = [1 / size.w, 1 / size.h];
+
+  draw(P_LUM, tRaw, { src: albedoTex }, (p) => {
+    gl.uniform2f(p.u('texel'), texel[0], texel[1]);
+    gl.uniform1f(p.u('denoise'), Math.max(0.001, num('den')));
+  });
+
+  levels = measureLevels(tRaw.tex);
+  draw(P_LEVELS, tDetail, { src: tRaw.tex }, (p) => {
+    gl.uniform1f(p.u('lo'), levels.lo);
+    gl.uniform1f(p.u('hi'), levels.hi);
+  });
+
+  const r = num('rad');
+  draw(P_BLUR, tTmp, { src: tDetail.tex }, (p) => {
+    gl.uniform2f(p.u('dir'), texel[0], 0);
+    gl.uniform1f(p.u('radius'), r);
+  });
+  draw(P_BLUR, tForm, { src: tTmp.tex }, (p) => {
+    gl.uniform2f(p.u('dir'), 0, texel[1]);
+    gl.uniform1f(p.u('radius'), r);
+  });
+
+  draw(P_NORMAL, tNormal, { detail: tDetail.tex, form: tForm.tex }, (p) => {
+    gl.uniform2f(p.u('texel'), texel[0], texel[1]);
+    gl.uniform1f(p.u('kDetail'), num('det'));
+    gl.uniform1f(p.u('kForm'), num('frm'));
+    gl.uniform1f(p.u('invert'), num('inv'));
+  });
+
+  draw(P_AO, tAo, { detail: tDetail.tex, form: tForm.tex });
+
+  const span = levels.hi - levels.lo;
+  $('levels').textContent =
+    `height used ${(span * 100).toFixed(0)}% of range before levelling` +
+    (span < 0.45 ? ' — dark art, so levelling is doing real work here.' : '.');
+}
+
+function render() {
+  if (!albedoTex) return;
+  draw(
+    P_LIT,
+    null,
+    { albedo: albedoTex, normalTex: tNormal.tex, aoTex: tAo.tex, heightTex: tDetail.tex },
+    (p) => {
+      gl.uniform3f(p.u('lightPos'), light.x, light.y, light.z);
+      gl.uniform3f(p.u('lightColour'), 1.0, 0.86, 0.66);
+      gl.uniform1f(p.u('intensity'), num('int'));
+      gl.uniform1f(p.u('falloff'), num('fal'));
+      gl.uniform1f(p.u('ambient'), num('amb'));
+      gl.uniform1f(p.u('specular'), num('spc'));
+      gl.uniform1f(p.u('gloss'), num('gls'));
+      gl.uniform1f(p.u('aoStrength'), num('aos'));
+      gl.uniform1i(p.u('view'), view);
+      gl.uniform1f(p.u('split'), split);
+      gl.uniform1f(p.u('aspect'), size.w / size.h);
+    },
+  );
+}
+
+// -------------------------------------------------------------------------
+// Loading
+// -------------------------------------------------------------------------
+async function load(url, label) {
+  try {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise((res, rej) => {
+      img.onload = res;
+      img.onerror = () => rej(new Error(`could not load ${url}`));
+      img.src = url;
+    });
+    if (albedoTex) gl.deleteTexture(albedoTex);
+    albedoTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, albedoTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const side = Math.min(900, img.naturalWidth);
+    canvas.width = side;
+    canvas.height = Math.round((side * img.naturalHeight) / img.naturalWidth);
+    allocate(img.naturalWidth, img.naturalHeight);
+    const fmt = /\.jpe?g$/i.test(url) ? 'JPEG' : 'PNG';
+    $('info').textContent =
+      `${label} · ${img.naturalWidth}x${img.naturalHeight} · ${fmt}` +
+      (fmt === 'JPEG' ? ' — set Denoise to 0 to see the block artifacts this leaves in the normal.' : '');
+    $('err').textContent = '';
+    bake();
+    render();
+  } catch (e) {
+    $('err').textContent = String(e.message || e);
+  }
+}
+
+// -------------------------------------------------------------------------
+// Export — read the target back and hand over a PNG.
+// -------------------------------------------------------------------------
+function download(tex, name, decodeSigned) {
+  const { w, h } = size;
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const buf = FLOAT ? new Float32Array(w * h * 4) : new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, FLOAT ? gl.FLOAT : gl.UNSIGNED_BYTE, buf);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const img = c.getContext('2d').createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    for (let k = 0; k < 3; k++) {
+      const v = FLOAT ? buf[i * 4 + k] * 255 : buf[i * 4 + k];
+      img.data[i * 4 + k] = Math.max(0, Math.min(255, Math.round(v)));
+    }
+    img.data[i * 4 + 3] = 255;
+  }
+  c.getContext('2d').putImageData(img, 0, 0);
+  const a = document.createElement('a');
+  a.download = name;
+  a.href = c.toDataURL('image/png');
+  a.click();
+}
+
+// -------------------------------------------------------------------------
+// Wiring
+// -------------------------------------------------------------------------
+const sel = $('src');
+for (const s of SOURCES) {
+  const o = document.createElement('option');
+  o.value = s.url; o.textContent = s.label;
+  sel.appendChild(o);
+}
+sel.onchange = () => load(sel.value, sel.selectedOptions[0].textContent);
+
+$('pick').onclick = () => $('file').click();
+$('file').onchange = (e) => {
+  const f = e.target.files[0];
+  if (f) load(URL.createObjectURL(f), f.name);
+};
+
+for (const b of document.querySelectorAll('.views button')) {
+  b.onclick = () => {
+    view = +b.dataset.view;
+    for (const o of document.querySelectorAll('.views button')) o.setAttribute('aria-pressed', String(o === b));
+    render();
+  };
+}
+
+const HEIGHT_CONTROLS = ['den', 'det', 'frm', 'rad', 'inv'];
+const LABELS = { den: 'vDen', det: 'vDet', frm: 'vFrm', rad: 'vRad', inv: 'vInv',
+                 lz: 'vLz', int: 'vInt', fal: 'vFal', amb: 'vAmb', spc: 'vSpc', gls: 'vGls', aos: 'vAoS' };
+for (const [id, out] of Object.entries(LABELS)) {
+  const el = $(id);
+  const sync = () => {
+    const v = parseFloat(el.value);
+    $(out).textContent = el.step === '1' ? String(v) : v.toFixed(2);
+    if (id === 'lz') light.z = v;
+    if (HEIGHT_CONTROLS.includes(id)) bake();
+    render();
+  };
+  el.addEventListener('input', sync);
+  sync();
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (view === 1) { dragSplit = true; canvas.setPointerCapture(e.pointerId); }
+});
+canvas.addEventListener('pointerup', () => { dragSplit = false; });
+canvas.addEventListener('pointermove', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width;
+  const y = (e.clientY - r.top) / r.height;
+  if (dragSplit) split = Math.max(0.02, Math.min(0.98, x));
+  else { light.x = x; light.y = y; }
+  render();
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  light.z = Math.max(0.05, Math.min(1.5, light.z * (e.deltaY > 0 ? 1.12 : 0.89)));
+  $('lz').value = String(light.z);
+  $('vLz').textContent = light.z.toFixed(2);
+  render();
+}, { passive: false });
+
+$('exNrm').onclick = () => download(tNormal.tex, 'normal.png');
+$('exHgt').onclick = () => download(tDetail.tex, 'height.png');
+$('exAo').onclick = () => download(tAo.tex, 'ao.png');
+
+load(SOURCES[0].url, SOURCES[0].label);
+</script>

@@ -58,7 +58,85 @@ tuning. We pay that back in §6 with an in-game debug overlay and hot-reloadable
 tuning constants, and it is a real cost — expect to spend real time on tooling
 that Unity would have handed over free.
 
-### 1.2 The world becomes a scene. The UI stays DOM.
+### 1.2 It is a board game on a table, and everything is on the board
+
+Paul, and this is the load-bearing sentence in the whole document: *"the Player
+and the map should be like Game pieces on a Board game and the UI should be
+Part of the Board game map itself."* Plus: *"I do want the UI to also Interact
+with the Lighting... when a card hovers it should cast a shadow... i dont just
+want flat 2d Buttons and Menus."*
+
+Take that literally. **There is one board, one lantern, and everything in the
+game is a physical object sitting on that board at some height above it.**
+
+- The **map** is the board — timber, slate, inlaid tile, painted parchment.
+- The **hero and the monsters** are pieces standing on it. Carved, painted,
+  with thickness, casting contact shadows onto the board they stand on.
+- The **UI is furniture on the same board.** The hand of cards is real cards
+  lying on the table. The draw pile is a stack with edges. The vigor rail is a
+  row of candles. The log is a strip of vellum. Buttons are brass plates and
+  routed recesses. Panels are trays cut into the wood.
+
+This is not decoration. It is the organising principle, and it **removes** work:
+
+**There is no "world lighting" and "UI lighting".** There is one lit scene. The
+split I had drawn in this section — world on the GPU, UI in DOM — was drawn in
+the wrong place. The right split is:
+
+> **The GPU draws every SURFACE. The DOM draws TEXT and HIT TARGETS.**
+
+DOM elements stay exactly where they are, at exactly the same rects, carrying
+exactly the same text, handlers, ARIA and `data-nav-item` attributes — they just
+become *transparent*. Their visible surface is drawn by the renderer underneath
+them, lit, textured, casting a real shadow. So:
+
+- `nav/` keeps working on all 22 screens because the box tree is unchanged.
+- Text stays crisp DOM text at every breakpoint, and stays selectable and
+  announced.
+- Every panel, card and button becomes a lit material for free, because the
+  renderer does not know the difference between a card and a wall.
+
+**Elevation becomes a first-class scene property.** Everything has a `z` above
+the board. A card in the hand rests a couple of millimetres up; hovered, it
+*lifts* — and its shadow softens and slides, and the specular sweeps across its
+varnish, because that is what lifting a card does. The hover effect Paul asked
+for is not an effect at all; it is the physics falling out of the model. Same
+for a pressed button sinking into its recess.
+
+**It settles the camera.** You look at a board from above, at an angle — not
+straight down (you would see no pieces) and not rotated to a diamond (boards are
+not). The orthographic tilt of `LIGHTING_PLAN.md` §12 is exactly the board-game
+camera, arrived at twice from two different directions.
+
+**It gives the art direction a spine.** Every asset now has one obvious
+question — *what is this thing made of?* — instead of an open-ended one. Wood,
+brass, wax, vellum, pewter, slate, painted tin. A brief in those terms is one
+Grok can execute consistently across 125 assets, and consistency is most of what
+makes work look expensive.
+
+**And it turns an existing hack into the design.** The battlefield today lights
+the arena by counting lit candles in the HUD with a CSS `:has()` selector
+(`lighting.css:762–815`) — a HUD-reads-world data path that exists nowhere in
+TypeScript and was, frankly, a cheat. On a board, the candle rail is *a rail of
+candles sitting on the board*, and of course it lights the board. The cheat
+becomes the mechanism.
+
+#### What still stays DOM, unchanged
+
+Every menu, rail, panel, log, tooltip, sheet, overlay and button **as an
+element**: its box, its text, its handlers, its focus behaviour, its ARIA. Only
+its *painted surface* moves to the renderer.
+
+#### The old framing, and why it was wrong
+
+`LIGHTING_PLAN.md` §5 rejected every lighting library with *"every one assumes
+it owns the renderer. The fight is DOM."* That was right about libraries and
+wrong as a general principle, and the board model is what shows the difference.
+The problem was never that the DOM was in the way — it was that those libraries
+wanted to own the *text and the layout* too. Letting the renderer own surfaces
+while the DOM keeps layout and text gives up nothing and gains everything.
+
+### 1.2b The world becomes a scene. Text stays DOM.
 
 `LIGHTING_PLAN.md` §5 rejected every lighting library with: *"every one assumes
 it owns the renderer. The fight is DOM."* That was correct, and it is worth
@@ -188,20 +266,27 @@ once.**
 
 | | | what Paul sees |
 |---|---|---|
-| **M1** | **Lantern core** — GL context, sprite batcher, HDR target, tonemap, bloom, debug HUD. The map's existing art, drawn on the GPU. | Looks *the same*. Deliberately. Proof the floor renders at 60fps with nothing new on it. |
-| **M2** | **Per-pixel lighting** — derived normal maps, normal-mapped diffuse + specular, soft shadows from world geometry. | **The first real moment.** The lantern rakes across wall faces instead of just clearing fog. This is where the art ask gets made. |
-| **M3** | **Radiance cascades** — real 2D GI. Bounce, colour bleed, penumbra that closes. | The headline. Shadows get *structure* instead of a constant. |
-| **M4** | **Orthographic tilt** — grid squash, wall front faces, billboarded characters. | The HD-2D read. |
-| **M5** | **Volumetrics + emitters** — god rays through a doorway, glowing shrines, a fire card lighting the room for a turn. | Atmosphere. The murk's honest successor. |
-| **M6** | **Battle through the same renderer.** | Consistency; the arena stops being a different game visually. |
-| **M7** | **Grade** — LUT, vignette, dispersion, grain, dithering. | The cinematic pass. |
+| **M0** | **Lantern Lab** — `web/public/lantern-lab.html`. Material baker: albedo → height → normal + AO, live-lit preview, PNG export. | ✅ **Done.** Drag a light across a real tile and see whether derived normals hold up. They do — measured, §7. |
+| **M1** | **Lantern core** — GL context, sprite batcher, HDR target, tonemap, bloom, debug HUD. The board drawn on the GPU with today's art. | Looks *the same*. Deliberately. Proof the floor renders at 60fps with nothing new on it. |
+| **M2** | **Materials + per-pixel lighting** — the Lab's pipeline as a build step, normal-mapped diffuse and specular, soft shadows from world geometry. | **The first real moment.** The lantern rakes across the board instead of just clearing fog. |
+| **M3** | **The tilt** — board camera, walls given front faces, pieces stand up as billboards with contact shadows. | It becomes a board with pieces on it. |
+| **M4** | **The furniture** — UI surfaces drawn as lit materials under the DOM text. Elevation, contact shadows, hover-lift, pressed buttons. | Every screen, all at once. Cards lift and cast. No flat rectangles left. |
+| **M5** | **Radiance cascades** — real 2D GI. Bounce, colour bleed, penumbra that closes. `AMBIENT_FLOOR` dies here. | Shadows get *structure* instead of a constant. |
+| **M6** | **Volumetrics + emitters** — god rays through a doorway, glowing shrines, a fire card lighting the room for a turn. | Atmosphere. The murk's honest successor. |
+| **M7** | **The battle board.** | The arena stops being a different game visually. |
+| **M8** | **Grade** — LUT, vignette, dispersion, grain, dithering. | The cinematic pass. |
 
-**M1–M3 is the real project.** M4–M7 are large but well-understood; M3 is the
-one with genuine research risk, which is why a research agent is on it before a
-line of it gets written.
+**Why the cascades moved from third to fifth.** They are the headline and the
+only milestone with genuine research risk. M2, M3 and M4 are each a large
+visible win and each well understood — so putting three of them first means the
+game *looks like the vision* before the risky work starts, and a stalled M5
+leaves it far better than it found it rather than half-converted. That is the
+same "nothing may break the map and the battlefield at once" discipline applied
+to schedule rather than to code.
 
-No dates. The honest shape is that M1 is days, M2 is days, M3 is weeks, and
-anyone quoting a date for M3 before reading the cascade research is guessing.
+No dates. The honest shape is that M1 and M2 are days each, M3 and M4 are about
+a week each, and anyone quoting a date for M5 before reading the cascade
+research is guessing.
 
 ---
 
@@ -352,7 +437,64 @@ in the project, and expect it to be worth it).
 
 ---
 
-## 8. Open, and mine to close
+## 8. What the extraction audit found
+
+A full audit of `FloorScreen.tsx` (829 lines) and `BattleScreen.tsx` (1479
+lines) ran on 2026-07-25. The findings that change the plan:
+
+**Good news, and it is bigger than expected.**
+
+- **The map grid already has zero focusable children.** The whole grid is a
+  single nav widget — `navItem({ widget: true, initial: true, role: 'group' })`
+  on `.map-frame` (`FloorScreen.tsx:511–521`), with cells as plain `<span>`s.
+  A canvas carrying the same props is a **drop-in**. The map's controller
+  support survives the port untouched.
+- **Wall texturing is already a UV atlas lookup**, done in CSS: each wall cell
+  windows the same full-grid-sized texture via `backgroundPosition`
+  (`FloorScreen.tsx:431–438`). That maps onto GPU sampling directly.
+- **Tile clutter is already deterministic** — position-hashed, no `Math.random`
+  (`tileArt.tsx:30–33`). Keep the hash and every floor's clutter is identical.
+
+**Things that must be designed, not ported.**
+
+1. **`LightLayer` loses its input entirely.** It measures occluders, anchor and
+   responders out of live DOM with a `MutationObserver`. Under a canvas there
+   are no `.map-cell.wall` boxes. Occluders come from the tile grid — which is
+   what §12 of the lighting plan already decided, and which *deletes* the
+   `occluderPad` fudge rather than porting it.
+2. **`lightresponse.css` has nothing to write to.** `--lit`/`--lx`/`--ly`/
+   `--twinkle` are written onto real elements every fourth frame; the rim is an
+   **alpha-shaped `drop-shadow`** that traces the sprite silhouette. Reproducing
+   that needs an alpha-dilate pass per sprite — not free, and easy to overlook.
+3. **Two nav registrations sit on world elements**: the hero and each ally
+   figure become focus stops when a heal is aimable (`BattleScreen.tsx:1204,
+   1252–1254`), reached by bounding-rect scoring in `nav/geometry.ts`. Fix:
+   transparent proxy elements over the canvas — which is exactly the §1.2 model
+   anyway, so this costs nothing extra.
+4. **`BattleView.backdrop` is a `ReactNode`** (`BattleScreen.tsx:90`). The view
+   model hands the renderer a React element. Must become data (a texture id),
+   and **both** adapters — solo and duel — have to change together.
+5. **`--cell` and `--bf-scale` are the real source of truth for scale**, CSS
+   tokens resolved across four breakpoints, with `battle.css` `!important`-ing
+   over the components' inline sizes. The TSX numbers are hints, not authority.
+   The renderer must own that ladder explicitly.
+6. **`isRevealed`/`isOpened`/`isBroken` are `Array.includes`** over string keys
+   (`floors.ts:135–145`) — ~250 linear scans per render today. At 60fps GPU
+   redraw that becomes the frame budget. **These need to be `Set`s, and that
+   fix is independent of everything else here.**
+7. **Source-level CSS tests will fail.** `engine/test/lighting.test.ts`
+   regex-matches ~15 CSS rules against raw source. Deleting the DOM they select
+   for fails tests without changing a pixel. They need to be migrated
+   deliberately, not deleted in passing.
+
+**Cleanup to decide before building an atlas:** `TileFill`'s procedural SVG path
+is unreachable for all five gates; 41 of 92 monster PNGs are not in
+`PAINTED_MONSTERS`; `.tile-prop` opacity is declared twice with different values
+(`App.css:827` 0.82 vs `floor.css:118` 0.92); object halos are declared twice.
+
+---
+
+## 9. Open, and mine to close
 
 - WebGL2 versus WebGPU as the target — research in flight. The likely answer is
   WebGL2 for the web build and WebGPU for the Steam/Electron build behind one
