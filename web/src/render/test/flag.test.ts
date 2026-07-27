@@ -151,6 +151,37 @@ describe('lanternBattle.css cannot reach the default path', () => {
     expect(css).not.toMatch(/\.bf-ring-(track|fill)[^{]*\{[^}]*display:\s*none/);
     expect(css).toMatch(/\.bf-ring::after[^{]*\{[^}]*display:\s*none/);
   });
+
+  it('takes the impact flare only where a piece is drawn to replace it', () => {
+    // ENGINE_PLAN §21.7 -> §1.2: the flare is a SURFACE, so the GPU draws it
+    // and the DOM's SVG comes off. But `BattleScreen` renders `ImpactEffect`
+    // in TWO places — inside `.bf-figure`, which the renderer measures and
+    // stands a lit piece in, and inside the rival tamer's `.bf-ring` portrait
+    // chip in a duel, where NOTHING is drawn behind it. An unscoped
+    // `.impact-fx-anchor { display: none }` would delete the duel's only hit
+    // feedback on the tamer and leave a blank chip.
+    const flare = selectors(css).filter((s) => s.includes('.impact-fx-anchor'));
+    expect(flare, 'the flare is still a flat DOM overlay on the lit path').toHaveLength(1);
+    expect(flare[0]).toContain('.bf-figure');
+    expect(flare[0]).toContain('.lantern-battle');
+    expect(/\.impact-fx-anchor[^{]*\{[^}]*display:\s*none/.test(css)).toBe(true);
+  });
+
+  it('leaves the damage popups and the aim reticle in the DOM', () => {
+    // §1.2 draws the line: the GPU takes SURFACES, the DOM keeps TEXT and HIT
+    // TARGETS. A damage number is text and has to stay crisp at four
+    // breakpoints; the reticle marks which `.bf-unit` the d-pad is sitting on,
+    // which is a hit target's own state. Neither belongs on the board, and a
+    // stylesheet that took them would be the port overreaching.
+    // Against the SELECTORS, not the source text — the rule above explains in
+    // a comment why the reticle stays, and a raw `toMatch` on the file would
+    // fail on the explanation rather than on a rule.
+    for (const sel of selectors(css)) {
+      for (const kept of ['.dmg-popup', '.popup-layer', '.aim-reticle', '.aim-c']) {
+        expect(sel, `lanternBattle.css should not touch ${kept}`).not.toContain(kept);
+      }
+    }
+  });
 });
 
 // =========================================================================

@@ -24,9 +24,11 @@ import { play as sfx, type SfxName } from '../platform/sfx';
 import { useNavScope, useNavInputMode, useRefocusOn, navItem, focusFirstIn, getInputMode } from '../nav';
 import { DrillCoach } from './DrillCoach';
 import { renderDebug, renderMode } from '../render/flag';
-import { LanternBattlefield, type BattleFigureRef } from '../render/LanternBattlefield';
+import { LanternBattlefield, type BattleFigureRef, type CombatFxTrigger } from '../render/LanternBattlefield';
 import { LanternCards, type HandCardRef } from '../render/LanternCards';
 import {
+  COMBAT_FX_KINDS,
+  FX_KO_FLASH_SECONDS,
   HUD_END_TURN,
   HUD_LOG,
   HUD_PILE_DISCARD,
@@ -36,6 +38,7 @@ import {
   HUD_PORTRAIT_HERO,
   heroTextureId,
   monsterTextureId,
+  type CombatFxFlash,
 } from '../render/battleScene';
 
 // ===========================================================================
@@ -197,7 +200,17 @@ interface UnitSlotSnapshot {
 
 let popupSeq = 0;
 let ghostSeq = 0;
-const IMPACT_KINDS = new Set(['slash', 'pierce', 'fire', 'frost', 'bolt', 'dark', 'holy', 'hit']);
+/**
+ * Which `FxEvent`s get a shape rather than only a number.
+ *
+ * Taken from `render/battleScene.COMBAT_FX_KINDS` rather than written out
+ * again: the same eight names now drive the DOM's SVG (`art/impactFx.tsx`) and
+ * the renderer's atlas cell, and two hand-maintained copies of one list is how
+ * a flare ends up drawing the wrong element's shape on one path only. Exactly
+ * the same eight strings this line has always held — the set is unchanged and
+ * so is every behaviour that reads it.
+ */
+const IMPACT_KINDS = new Set<string>(COMBAT_FX_KINDS);
 
 type PileId = 'draw' | 'discard' | 'exhaust';
 
@@ -479,6 +492,34 @@ export function BattleStage({ view }: { view: BattleView | null }) {
    * still see exactly what they always saw.
    */
   const hudRefs = useRef<Map<string, HTMLElement>>(new Map());
+  /**
+   * The combat effects the renderer draws as lit surfaces and real lights
+   * (ENGINE_PLAN §21.7), append-only and self-expiring.
+   *
+   * A REF, exactly like `figureRefs` and `hudRefs` above, and for the same
+   * reasons restated: pushing to it writes nothing to the DOM and re-renders
+   * nothing, so the 60 fps loop that reads it can never be a reason for React
+   * to re-render the fight. And it is populated on EVERY path, flag or no
+   * flag, because a branch here would be a second place for the two paths to
+   * drift — with the flag off nobody ever reads the queue.
+   *
+   * It carries no state the DOM path does not already have. `impactFx` and
+   * `flashing` are untouched above; this is the same two events with the one
+   * thing a CSS class cannot carry — WHEN they started — so the renderer can
+   * make a frame a pure function of state and time.
+   */
+  const combatFxRef = useRef<CombatFxTrigger[]>([]);
+  const pushCombatFx = useCallback((uid: string, kind: CombatFxFlash) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const q = combatFxRef.current;
+    q.push({ uid, kind, at: now });
+    // Expire from the front, which is safe because pushes are chronological.
+    // Nothing downstream needs this — `activeFx` already ignores anything
+    // older than its own duration — so it is purely to stop a long fight from
+    // growing an unbounded array the frame loop then maps every frame.
+    const cutoff = now - FX_KO_FLASH_SECONDS * 1000 * 2;
+    while (q.length > 0 && q[0].at < cutoff) q.shift();
+  }, []);
   const hudRef = useCallback(
     (key: string) => (el: HTMLElement | null) => {
       if (el) hudRefs.current.set(key, el);
@@ -583,6 +624,20 @@ export function BattleStage({ view }: { view: BattleView | null }) {
               if (next[ev.targetUid] === kind) delete next[ev.targetUid];
               return next;
             }), 450);
+          }
+          // THE SAME TWO EFFECTS, for the renderer (ENGINE_PLAN §21.7).
+          //
+          // Not a third effect and not a different pacing — the identical beat
+          // that just set a `flash-*` class and an `ImpactEffect` above, with
+          // the one thing neither a class nor a React element can carry: the
+          // MOMENT it started. That timestamp is what lets `battleScene` make
+          // the flare, its light and the piece's flash a pure function of
+          // state and time instead of an animation someone has to drive.
+          //
+          // A ref push. No state, no re-render, no DOM write — and unbranched
+          // on the flag for the reason `figureRefs` states above.
+          if (ev.fx === 'ko' || IMPACT_KINDS.has(ev.fx)) {
+            pushCombatFx(ev.targetUid, ev.fx as CombatFxFlash);
           }
         }, i * step)
       );
@@ -1092,6 +1147,7 @@ export function BattleStage({ view }: { view: BattleView | null }) {
         <LanternBattlefield
           figureRefs={figureRefs}
           hudRefs={hudRefs}
+          fxRef={combatFxRef}
           figures={lanternFigures}
           energy={view.energy}
           maxEnergy={view.maxEnergy}

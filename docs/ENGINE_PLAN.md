@@ -2660,6 +2660,201 @@ The canvas still does not composite in this environment
 fires); every frame above came through `window.__lanternBattle.frame()` and
 `gl.readPixels`, which is what that hook exists for.
 
+## 21.9 The combat FX are on the lit path (2026-07-26)
+
+§21.7's open list led with the last thing standing between this renderer and
+being the default:
+
+> `ImpactEffect`, the flash classes and the damage popups are still DOM
+> overlays. They are not lit and they do not cast. The felled fade and the
+> acting lift are the only two combat states the renderer knows about.
+
+That is closed. The decision rule was §1.2 — **the GPU draws every SURFACE, the
+DOM draws TEXT and HIT TARGETS** — applied per effect rather than to the group,
+and it splits them four ways.
+
+### What became a SURFACE
+
+**The impact flare.** `art/impactFx.tsx`'s eight shapes are generated as pixels
+(`battleMaterials.impactAtlasPixels`) into one 3x3 atlas and drawn as an
+emissive billboard standing on the piece's own measured `.bf-figure` box —
+`placeFigure`'s placement scaled by `FX_BURST_SPREAD`, not a second geometry.
+The shapes are the SVG's, traced: `slash`'s three quadratic arcs out of its own
+200-unit viewBox, `bolt`'s zigzag stroked down its spine rather than filled,
+`hit`/`holy` as an astroid (`sqrt|x| + sqrt|y| <= 1` is exactly the concave
+four-point star the SVG builds by hand from eight points). The colours are
+`IMPACT_COLOR` converted to linear light, so the fight's palette is unchanged
+and only its dimensionality moved.
+
+**The flash.** `battle.css`'s `.flash-*` classes are a CSS `filter` on
+`.bf-unit`, and on the lit path the figure `<img>` inside it is
+`visibility: hidden` — so the one thing the flash is *about*, the piece, did
+not flash at all while its nameplate did. It is a tint MULTIPLIER on the lit
+piece now, which is the difference that matters: `lighting.ts` computes
+`albedo * vTint * (ambient + lit + emissive)`, so a combatant in the lantern's
+pool flares and one out at the dark far edge only glimmers. A CSS
+`filter: brightness()` cannot know that. Each keyframe's own extreme is
+reproduced including `flashDark`'s, which **darkens**
+(`brightness(0.5) saturate(2) hue-rotate(230deg)`) — a port that assumed "flash
+means brighter" would light a shadow card like a holy one, and there is a test
+that fails on exactly that.
+
+### What became a LIGHT
+
+**The burst**, and this is the one that earns the renderer. Each impact adds a
+real `emitterLight` at the point of contact, in the element's own hue, with a
+hard attack (12% of its life) and a squared decay — an envelope deliberately
+different from the flare's hold, because the DECAY is what reads as "something
+detonated" rather than "a lamp switched on". `IMPACT_LOOK` is the whole table:
+fire and bolt reach 3.6 and 3.4 tiles at intensity 6 and 7; a slash is a glint
+off an edge and lights 2.2 tiles at 2.6.
+
+**§12 still holds, and it constrains this.** "The hero's lantern is the only
+significant light" survives because every one of these reaches LESS far than
+`LANTERN_REACH` (asserted, per kind) and is gone in 420ms. A burst is allowed
+to out-shine the lantern for a tenth of a second precisely because it is over
+before the eye adapts.
+
+### What stayed DOM, and why that is the same rule and not an exception
+
+**The damage popups and status words.** They are text. They stay crisp at four
+breakpoints, they stay selectable and announced, and §1.2 gives text to the
+DOM. Nothing about them was touched.
+
+**The aim reticle.** It marks which `.bf-unit` the d-pad is sitting on. §1.2
+gives HIT TARGETS to the DOM, and a reticle is a hit target's own selection
+state rather than scenery — moving it to the board would put a focus indicator
+one frame behind the thing it indicates, for no gain. There is a test asserting
+`lanternBattle.css` never touches `.aim-reticle`, `.aim-c`, `.dmg-popup` or
+`.popup-layer`.
+
+**The rival tamer's portrait-chip flare.** `BattleScreen` renders
+`ImpactEffect` in TWO places, and only one of them has a piece behind it. The
+CSS rule is scoped `.lantern-battle .bf-figure .impact-fx-anchor` for that
+reason: the flare comes off exactly where a lit one replaces it, and the duel's
+chip copy — which nothing is drawn behind — stays.
+
+### The queue, and why it is a ref
+
+`BattleStage` pushes `{uid, kind, at: performance.now()}` into a ref in the same
+beat that already sets a `flash-*` class and an `ImpactEffect`. Not a third
+effect and not a second pacing — the identical event, carrying the one thing
+neither a CSS class nor a React element can: WHEN it started. That timestamp is
+what makes the flare, its light and the piece's tint a pure function of state
+and time rather than an animation something has to drive. It is a ref, like
+`figureRefs` and `hudRefs`, so an impact costs zero re-renders; it is populated
+on BOTH paths, because a branch there would be a second place for the two to
+drift; and it is append-only and self-expiring — `activeFx` finds nothing once
+an entry is older than its own duration, so nothing ever has to retract one.
+
+### Three things that were wrong until they were measured
+
+**1. The first flare was a white ball that ate the combatant.** Copying the
+flame's `emissiveStrength: 2.6` puts a flare at more than double `LOOK`'s 1.25
+bloom threshold, and pairing that with a 0.55 core glow bloomed every hit into
+one blob about three times the width of the piece. The DOM overlay it replaces
+is a translucent SVG you can still see the target through, and that is correct
+behaviour: you have to be able to watch the thing you just hit. Emissive to 1.5
+(just over the threshold, so the shape survives the bloom instead of being
+eaten by it), the cores halved, `FX_BURST_SPREAD` 1.6 -> 1.35, and a
+`FX_BURST_PEAK_ALPHA` of 0.82 so the quad is never opaque. Only looking at a
+composited frame could have caught this; nothing about it is visible in a test.
+
+**2. `glowLightPosition`'s offsets are wrong for a burst, and for a reason
+worth stating.** `emitters.ts` derives GLOW_FRONT/GLOW_LIFT for a sprite that
+must be lit BY ITS OWN LIGHT. A flare has no such problem — it is emissive and
+bright with no light at all — and its light's job is the BOARD. At full offset,
+0.75 of a two-tile flare is a tile and a half toward the viewer, which lights
+the near rank instead of the target. `FX_LIGHT_NUDGE` keeps the direction and
+drops the distance.
+
+**3. A NaN hole in `placeFigure` that predates this work.** It clamps with
+`Math.max(0.05, w / zoom)`, and `Math.max` of a NaN is NaN — so a non-finite
+rect produced a quad with NaN vertices rather than a small one, which does not
+draw badly, it blanks the canvas for the rest of the session. `measure()` did
+not stop it either: `r.width < 2` is FALSE for NaN, the classic shape of this
+bug. Both are closed (`!(r.width >= 2)` at the DOM boundary, a finite-placement
+guard in the builder), and the clock is normalised once at the top of
+`buildBattleScene` for the same reason — `flicker` of a non-finite `t` is NaN,
+and that reaches every flame quad and every flickering light.
+
+### The budget, measured rather than assumed
+
+**Bursts do not stack at the shipping pacing, and that is structural rather
+than lucky.** `BattleStage` paces beats at `min(800, max(500, 12000/n))` ms
+against a 0.42s burst, so consecutive impacts — including a multi-target card's
+and a whole pack's attacks — cannot overlap. Sampled over a full round of a real
+Hollow Gate fight (592 frames, ~15s, one card played and the enemy phase
+resolved): **base 5 lights, max 6, i.e. never more than ONE concurrent burst
+light**, across two separate bursts. `binPeak` 4 -> 5 of a capacity of 16,
+`binDropped` **0** throughout. `MAX_FX_LIGHTS = 4` is therefore a guard against
+a future re-tune, not a routine trim; its worst case is base + 4 = 8 of 16, and
+a unit test drives ten simultaneous impacts and asserts exactly four lights are
+added — the brightest four, deterministically.
+
+### Verified by measurement versus by eye
+
+By **measurement**, on a live `?r=lantern` fight through
+`window.__lanternBattle.frame()` + `gl.readPixels` (the browser still does not
+composite in this environment — `document.visibilityState` stays `"hidden"`, so
+`requestAnimationFrame` never fires):
+
+- the flare's footprint round-trips through `camera.project` to the pixel the
+  `.bf-figure` box was measured at, to 1e-6 — the same guarantee `placeFigure`
+  gives the piece, so the two cannot drift apart;
+- **the board actually lights**: whole-canvas mean luminance 54.60 -> 56.43 on a
+  hit at three candles, and **29.9 -> 38.4 (+28%)** on an Ember Bolt with the
+  vigor rail burned down to nothing — the darker the room, the more a burst is
+  worth, which is the same curve §21.3 tuned the lantern for;
+- the light's own envelope, sampled at ~25ms: present for 12-21 frames (~420ms,
+  `FX_BURST_SECONDS` exactly), rising to a peak and then monotonically decaying;
+- `binPeak` 5/16 and `binDropped` 0 at every sample of every fight;
+- eleven degenerate inputs (NaN `at`, infinite `at`, NaN clock, zero and NaN
+  rects, NaN centre) each producing NO sprite and never a non-finite vertex;
+- 1365 tests (was 1326), `tsc -b` clean.
+
+**Flag OFF, in a live `?r=off` fight**: `.battle-stage` carries
+`panel battle-stage` and nothing else, no `.lantern-arena`, no
+`__lanternBattle`, `LightLayer`'s canvas present, `.stage-backdrop` present,
+the figure `<img>` `visible`, `.vigor-candles` `flex`, `.bf-rail` keeping its
+gradient and its `rgba(150, 120, 62, 0.38)` border, the chip's fake socket
+`::after` `block`, `--vigor-lume` still 0.11 off the `:has()` count — and, the
+new claim, `.bf-figure .impact-fx-anchor` present and **displayed in 22 of 22
+sampled frames** of a real impact, its `<svg>` carrying
+`impact-fx-inner impact-fx-slash`, `.dmg-popup` live for 61 frames and
+`flash-slash` on the `.bf-unit`. The stylesheet IS loaded in that document and
+simply does not apply, which is the scoping guarantee confirmed live rather
+than only statically.
+
+**Flag ON, the complement, same fight**: the DOM anchor exists for 22 frames
+and is `display: none` in **all 22**, while the GPU burst runs for 21 — the
+overlay comes off exactly where a lit one replaces it — and `.dmg-popup` and
+`flash-hit` are still there, because text and plates were never the renderer's.
+
+By **eye**: a composited frame of a real hit, before and after the tuning
+above. The first showed the burst working and the flare wrong — the board and
+the plinth visibly lit in a pool that is not in the quiet frame, and the
+combatant gone behind a white ball. The second, at 1.5 emissive: `slash` reads
+as its three sweeping arcs, the piece is still visible through and behind them,
+the board around its feet lights, and the untouched neighbour one slot over is
+unchanged.
+
+### What is NOT ported (added to §21.5 and §21.7's lists)
+
+- **The `flashBolt` strobe.** Every other `@keyframes flash*` puts one extreme
+  at 30%; bolt's inverts three times in 0.35s, which on a lit board reads as a
+  dropped frame rather than as lightning. It gets the same single-peak envelope
+  at its own (highest) brightness.
+- **`flash-ko`'s `grayscale(1)`.** A tint is a multiply and cannot desaturate.
+  A KO gets the neutral `brightness(3)` half of that keyframe, and the felled
+  fade the renderer already draws is what carries the rest.
+- **Nothing casts.** Bursts are `indirectOnly` + `castsShadow: false`, which is
+  §12.4's rule for a broad dim source and is also where most of a light's cost
+  lives. A fire burst throwing a real moving shadow off every piece is an M5
+  conversation, not a flag on a `Light`.
+
+---
+
 ## 22. The walls are this gate's rock, and the console is furnished (2026-07-26)
 
 Two things, and the second one closes §21.8's list. `893ca1f` ended with a

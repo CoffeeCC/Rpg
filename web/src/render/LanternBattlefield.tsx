@@ -46,6 +46,8 @@ import {
   logWellBox,
   pileTrayBox,
   portraitBezelBox,
+  type CombatFxEvent,
+  type CombatFxFlash,
   type FieldAnchors,
   type FigureBox,
   type FurnitureBox,
@@ -93,6 +95,23 @@ export interface BattleFigureRef {
   flip?: boolean;
 }
 
+/**
+ * One combat effect as the FIGHT reports it — on the WALL CLOCK, in ms.
+ *
+ * The clock conversion is the whole reason this type exists separately from
+ * `battleScene.CombatFxEvent`. `BattleStage` fires these from `setTimeout`
+ * callbacks and knows only `performance.now()`; the scene builder is pure and
+ * knows only "seconds since this renderer started". Converting at this
+ * boundary keeps the impure clock on the impure side, which is the same split
+ * `measure()` keeps for the DOM's rects.
+ */
+export interface CombatFxTrigger {
+  uid: string;
+  kind: CombatFxFlash;
+  /** `performance.now()` when the beat played. */
+  at: number;
+}
+
 export interface LanternBattlefieldProps {
   /**
    * The live `.bf-figure` boxes, keyed by uid.
@@ -113,6 +132,17 @@ export interface LanternBattlefieldProps {
    * enemy chip does not exist in every fight — and a missing key draws nothing.
    */
   hudRefs?: React.RefObject<Map<string, HTMLElement>>;
+  /**
+   * The combat effects in flight, newest last (§21.7).
+   *
+   * A REF, not a prop, and for a third reason on top of the two `figureRefs`
+   * gives: an impact is a 420ms animation, so a prop would have to re-render
+   * `BattleStage` on every beat of every fight to hand over a value the frame
+   * loop is going to re-read 25 times anyway. The queue is append-only and
+   * self-expiring — `battleScene.activeFx` finds nothing once an entry is
+   * older than its own duration — so nothing ever has to retract an entry.
+   */
+  fxRef?: React.RefObject<CombatFxTrigger[]>;
   figures: readonly BattleFigureRef[];
   /** §8 item 9's explicit uniform: how much of the rail is still burning. */
   energy: number;
@@ -130,6 +160,7 @@ export interface LanternBattlefieldProps {
 export function LanternBattlefield({
   figureRefs,
   hudRefs,
+  fxRef,
   figures,
   energy,
   maxEnergy,
@@ -224,7 +255,13 @@ export function LanternBattlefield({
         const el = figureRefs.current?.get(f.uid);
         if (!el) continue;
         const r = el.getBoundingClientRect();
-        if (r.width < 2 || r.height < 2) continue;
+        // NEGATED `>=`, NOT `<`. `NaN < 2` is FALSE, so the obvious spelling
+        // of this guard lets a non-finite rect straight through to
+        // `placeFigure`, which clamps with `Math.max` and produces a NaN quad
+        // rather than a small one. Same shape of hole `buildBattleScene` now
+        // closes on its own side; both, because this one is the boundary the
+        // DOM's numbers actually cross.
+        if (!(r.width >= 2) || !(r.height >= 2)) continue;
         const feetY = (r.bottom - hostRect.top) * scale;
         boxes.push({
           uid: f.uid,
@@ -316,12 +353,25 @@ export function LanternBattlefield({
       const cam = arenaCamera(anchors);
       camRef.current = cam;
 
+      // THE ONE CLOCK CONVERSION. `time` and every `CombatFxEvent.at` have to
+      // be on the same axis or an effect fires 1.7 billion seconds early, and
+      // the only place both numbers exist is here. `frameAt` PINS the clock
+      // for the headless hook, so a fixed `nowMs` gives a fixed set of ages
+      // and therefore a byte-identical frame — which is what every pixel-diff
+      // measurement in this project depends on.
+      const time = (nowMs - start) / 1000;
+      const triggers = fxRef?.current;
+      const fx: CombatFxEvent[] | undefined = triggers?.length
+        ? triggers.map((t) => ({ uid: t.uid, kind: t.kind, at: (t.at - start) / 1000 }))
+        : undefined;
+
       const scene = buildBattleScene({
         camera: cam,
-        time: (nowMs - start) / 1000,
+        time,
         materials: lib.materials,
         figures: boxes,
         furniture,
+        fx,
         vigor: vigorRef.current,
         enemyVigor: foeVigorRef.current,
       });

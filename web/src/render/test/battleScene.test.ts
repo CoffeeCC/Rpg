@@ -31,6 +31,7 @@ import {
   ARENA_RIM_LAYER,
   BACKDROP_LAYER,
   CANDLE_FRAME_X,
+  COMBAT_FX_KINDS,
   CONSOLE_BODY_HEIGHT,
   CONSOLE_BODY_LAYER,
   CONSOLE_BODY_REPEAT_UNIT,
@@ -58,6 +59,24 @@ import {
   sliceBands,
   strapCentres,
   ENEMY_RANK,
+  FX_ATTACK,
+  FX_BURST_PEAK_ALPHA,
+  FX_BURST_SECONDS,
+  FX_FLASH_SECONDS,
+  FX_KO_FLASH_SECONDS,
+  FX_LIGHT_RADIUS,
+  IMPACT_LOOK,
+  LANTERN_REACH,
+  MAT_IMPACT,
+  MAX_FX_LIGHTS,
+  activeFx,
+  burstEnvelope,
+  burstLightEnvelope,
+  flashEnvelope,
+  flashMultiplier,
+  fxDuration,
+  impactUv,
+  type CombatFxEvent,
   MAT_ARENA,
   MAT_BACKDROP,
   MAT_BLANK,
@@ -1507,5 +1526,468 @@ describe('console_body is the deck the six fittings are mounted on (§22.5)', ()
     // Both halves of the split share one frame, or they cannot draw at one rect.
     const b = png('console_body_brass');
     expect([b.w, b.h]).toEqual([p.w, p.h]);
+  });
+});
+
+// =========================================================================
+// COMBAT FX (ENGINE_PLAN §21.7) — the impact as a SURFACE and a LIGHT
+//
+// Every test below is written to REJECT THE BEHAVIOUR THAT SHIPPED, not to
+// describe the new one. What shipped: `ImpactEffect` and the `.flash-*`
+// classes were DOM overlays, so a hit added no sprite, no light and no change
+// to any piece's tint — and on the lit path the flash could not reach the
+// figure at all, because `lanternBattle.css` hides the `<img>` it filters.
+// Each `it` below fails on that code.
+// =========================================================================
+
+const FX_MATERIALS = [MAT_IMPACT, monsterTextureId('duskhound')];
+
+function fxScene(fx: CombatFxEvent[], time: number, over: Partial<Parameters<typeof buildBattleScene>[0]> = {}) {
+  return buildBattleScene({
+    camera: camera(),
+    time,
+    materials: allMaterials(FX_MATERIALS),
+    figures: [figure()],
+    vigor: { lit: 2, total: 3 },
+    fx,
+    ...over,
+  });
+}
+
+/** Everything the arena draws with no fight happening — the reference frame. */
+function quietScene(time = 0) {
+  return buildBattleScene({
+    camera: camera(),
+    time,
+    materials: allMaterials(FX_MATERIALS),
+    figures: [figure()],
+    vigor: { lit: 2, total: 3 },
+  });
+}
+
+describe('an impact is drawn on the board, not over it', () => {
+  it('adds a flare sprite AND a light where the DOM path added neither', () => {
+    const quiet = quietScene();
+    const hit = fxScene([{ uid: 'e1', kind: 'fire', at: 0 }], 0.1);
+    const flare = hit.sprites.filter((s) => s.textureId === MAT_IMPACT);
+    expect(quiet.sprites.some((s) => s.textureId === MAT_IMPACT)).toBe(false);
+    expect(flare).toHaveLength(1);
+    // A real light, and one MORE than the quiet frame has. This is the line
+    // §21.7 was actually about: "they are not lit and they do not cast."
+    expect(hit.lights.length).toBe(quiet.lights.length + 1);
+  });
+
+  it('stands the flare on the piece, facing the viewer', () => {
+    const hit = fxScene([{ uid: 'e1', kind: 'bolt', at: 0 }], 0.1);
+    const flare = hit.sprites.find((s) => s.textureId === MAT_IMPACT)!;
+    const cam = camera();
+    const f = figure();
+    // The flare's own footprint round-trips to the pixel column the DOM box
+    // was measured at — the same guarantee `placeFigure` gives the piece, and
+    // for the same reason: the two must not be able to drift apart.
+    expect(project({ x: flare.position.x, y: flare.position.y, z: 0 }, cam).x).toBeCloseTo(f.cx, 6);
+    expect(project({ x: flare.position.x, y: flare.position.y, z: 0 }, cam).y).toBeCloseTo(f.feetY, 6);
+    expect(flare.billboard).toBe(true);
+    // Up the piece's body, not on the floor at its feet.
+    expect(flare.position.z).toBeGreaterThan(0.1);
+  });
+
+  it("lights the fight in the element's own colour, and the light is not a shadow-caster", () => {
+    const quietCount = quietScene().lights.length;
+    for (const kind of COMBAT_FX_KINDS) {
+      const scene = fxScene([{ uid: 'e1', kind, at: 0 }], 0.06);
+      expect(scene.lights.length, `no light for ${kind}`).toBe(quietCount + 1);
+      // Identified by its authored reach: the candles and the lantern have
+      // their own, and none of them is an element's.
+      const added = scene.lights.filter((l) => l.radius === FX_LIGHT_RADIUS);
+      expect(added, `no burst light for ${kind}`).toHaveLength(1);
+      const l = added[0];
+      expect(l.intensity).toBeGreaterThan(0);
+      expect(l.reach).toBeGreaterThan(0);
+      // Faint-emitter routing (§12.4): a burst is a broad source and throws no
+      // hard edge, which is also where most of a light's cost lives.
+      expect(l.castsShadow).toBe(false);
+      expect(l.indirectOnly).toBe(true);
+      // Brightest channel normalised to 1, so `intensity` means one thing.
+      expect(Math.max(l.colour[0], l.colour[1], l.colour[2])).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('reaches less far than the lantern, so §12 still holds', () => {
+    // "The hero's lantern is the ONLY significant light." A burst is allowed
+    // to be bright because it is over in a tenth of a second; it is NOT
+    // allowed to become a second lantern by reaching across the whole board.
+    for (const kind of COMBAT_FX_KINDS) {
+      expect(IMPACT_LOOK[kind].reach, `${kind} reaches too far`).toBeLessThan(LANTERN_REACH);
+    }
+  });
+
+  it('is over when it is over — no sprite, no light, no residue on the piece', () => {
+    const quiet = quietScene(FX_BURST_SECONDS + 0.2);
+    const late = fxScene([{ uid: 'e1', kind: 'fire', at: 0 }], FX_BURST_SECONDS + 0.2);
+    expect(late.sprites.some((s) => s.textureId === MAT_IMPACT)).toBe(false);
+    expect(late.lights).toHaveLength(quiet.lights.length);
+    // And the piece is EXACTLY what it is with no fx at all — a flash that
+    // leaks a tint is the failure mode a per-frame multiplier invites.
+    expect(JSON.stringify(late.sprites)).toBe(JSON.stringify(quiet.sprites));
+  });
+
+  it('ignores an effect that has not started yet', () => {
+    const quiet = quietScene(0);
+    const early = fxScene([{ uid: 'e1', kind: 'fire', at: 5 }], 0);
+    expect(JSON.stringify(early.sprites)).toBe(JSON.stringify(quiet.sprites));
+    expect(early.lights).toHaveLength(quiet.lights.length);
+  });
+
+  it('draws nothing for a uid that is not on the field', () => {
+    const quiet = quietScene(0.1);
+    const stray = fxScene([{ uid: 'nobody', kind: 'holy', at: 0 }], 0.1);
+    expect(JSON.stringify(stray.sprites)).toBe(JSON.stringify(quiet.sprites));
+    expect(stray.lights).toHaveLength(quiet.lights.length);
+  });
+});
+
+describe('the flash reaches the piece, which is the thing it is about', () => {
+  it('brightens the lit piece — the DOM filter could not touch it at all', () => {
+    // `lanternBattle.css` hides the figure `<img>` (it is the box the renderer
+    // measures), so `filter: brightness(2.4)` on `.bf-unit` lights the
+    // nameplate and nothing else on this path. This is the piece flashing.
+    const quiet = quietScene(0.1);
+    const flashing = fxScene([{ uid: 'e1', kind: 'slash', at: 0 }], 0.1);
+    const id = monsterTextureId('duskhound');
+    const before = quiet.sprites.find((s) => s.textureId === id)!;
+    const after = flashing.sprites.find((s) => s.textureId === id)!;
+    expect(before.tint).toBeUndefined();
+    expect(after.tint![0]).toBeGreaterThan(1);
+    expect(after.tint![3]).toBe(1);
+  });
+
+  it('DARKENS for `dark`, because that keyframe darkens', () => {
+    // `@keyframes flashDark { 30% { filter: brightness(0.5) ... } }`. A port
+    // that assumed "flash == brighter" would light a shadow card up like a
+    // holy one, which is the difference between porting an effect and
+    // inventing a new one.
+    const dark = fxScene([{ uid: 'e1', kind: 'dark', at: 0 }], FX_FLASH_SECONDS * 0.3);
+    const tint = dark.sprites.find((s) => s.textureId === monsterTextureId('duskhound'))!.tint!;
+    expect(tint[0]).toBeLessThan(1);
+    expect(tint[1]).toBeLessThan(1);
+    // Violet-shifted while it is down: `saturate(2) hue-rotate(230deg)`.
+    expect(tint[2]).toBeGreaterThan(tint[1]);
+  });
+
+  it('is a MULTIPLIER, so an unlit piece cannot flash brighter than it is lit', () => {
+    // The whole reason the flash is a tint rather than an added constant.
+    expect(flashMultiplier('fire', 0)).toEqual([1, 1, 1]);
+    const peak = flashMultiplier('fire', 1);
+    expect(peak[0]).toBeGreaterThan(peak[2]);
+    // Half-way is half-way, on every channel.
+    const half = flashMultiplier('fire', 0.5);
+    for (let c = 0; c < 3; c++) expect(half[c]).toBeCloseTo(1 + (peak[c] - 1) * 0.5, 12);
+  });
+
+  it('keeps a felled piece felled while it flashes', () => {
+    const felled = fxScene([{ uid: 'e1', kind: 'bolt', at: 0 }], 0.1, {
+      figures: [figure({ felled: true })],
+    });
+    const tint = felled.sprites.find((s) => s.textureId === monsterTextureId('duskhound'))!.tint!;
+    // The ashen fade is a multiply too, so the two compose rather than one
+    // winning: still translucent, still desaturated toward the base tint.
+    expect(tint[3]).toBeCloseTo(0.42, 12);
+    expect(tint[0]).toBeCloseTo(0.42 * flashMultiplier('bolt', flashEnvelope(0.1, FX_BURST_SECONDS))[0], 12);
+  });
+});
+
+describe('a felling flashes but does not detonate', () => {
+  it('draws no flare and adds no light for `ko`', () => {
+    const quiet = quietScene(0.1);
+    const ko = fxScene([{ uid: 'e1', kind: 'ko', at: 0 }], 0.1);
+    expect(ko.sprites.some((s) => s.textureId === MAT_IMPACT)).toBe(false);
+    expect(ko.lights).toHaveLength(quiet.lights.length);
+    // But the piece DOES flash — `flash-ko` is `brightness(3) grayscale(1)`.
+    const tint = ko.sprites.find((s) => s.textureId === monsterTextureId('duskhound'))!.tint!;
+    expect(tint[0]).toBeGreaterThan(1);
+    expect(tint[0]).toBeCloseTo(tint[1], 12);
+    expect(tint[1]).toBeCloseTo(tint[2], 12);
+  });
+
+  it('lasts longer than a hit does, exactly as its keyframe does', () => {
+    expect(fxDuration('ko')).toBe(FX_KO_FLASH_SECONDS);
+    expect(fxDuration('fire')).toBe(FX_BURST_SECONDS);
+    expect(FX_KO_FLASH_SECONDS).toBeGreaterThan(FX_BURST_SECONDS);
+    // Still flashing at a moment every other kind is already finished.
+    const late = FX_BURST_SECONDS + 0.05;
+    expect(flashEnvelope(late, fxDuration('ko'))).toBeGreaterThan(0);
+    expect(flashEnvelope(late, fxDuration('fire'))).toBe(0);
+  });
+});
+
+describe('the budget (§12): a multi-hit card cannot become a second sun', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ uid: `e${i}`, kind: 'fire' as const, at: 0 }));
+
+  it('caps the lights a single beat can add', () => {
+    const figures = Array.from({ length: 10 }, (_, i) =>
+      figure({ uid: `e${i}`, cx: 80 + i * 90 }),
+    );
+    const quiet = buildBattleScene({
+      camera: camera(),
+      time: 0.1,
+      materials: allMaterials(FX_MATERIALS),
+      figures,
+      vigor: { lit: 2, total: 3 },
+    });
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0.1,
+      materials: allMaterials(FX_MATERIALS),
+      figures,
+      vigor: { lit: 2, total: 3 },
+      fx: many(10),
+    });
+    expect(scene.lights.length - quiet.lights.length).toBe(MAX_FX_LIGHTS);
+    // Every FLARE still draws. The budget is on lights, which is where the
+    // cost and the bin-capacity risk are — ten quads is ten quads.
+    expect(scene.sprites.filter((s) => s.textureId === MAT_IMPACT)).toHaveLength(10);
+  });
+
+  it('keeps the BRIGHTEST hits when it has to choose', () => {
+    const figures = Array.from({ length: 6 }, (_, i) => figure({ uid: `e${i}`, cx: 80 + i * 140 }));
+    // Two bolts (7.0) among four slashes (2.6): both bolts must survive.
+    const fx: CombatFxEvent[] = figures.map((f, i) => ({
+      uid: f.uid,
+      kind: i === 1 || i === 4 ? ('bolt' as const) : ('slash' as const),
+      at: 0,
+    }));
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0.06,
+      materials: allMaterials(FX_MATERIALS),
+      figures,
+      vigor: { lit: 2, total: 3 },
+      fx,
+    });
+    const bolts = scene.lights.filter(
+      (l) => l.radius === FX_LIGHT_RADIUS && l.reach === IMPACT_LOOK.bolt.reach,
+    );
+    expect(bolts).toHaveLength(2);
+  });
+});
+
+describe('the flare is gated on its atlas, and the LIGHT deliberately is not', () => {
+  it('draws no quad when the atlas never uploaded', () => {
+    // §21.7's lesson: a gate nobody ever withholds a material from is a gate
+    // that has never been exercised.
+    const materials = allMaterials(FX_MATERIALS);
+    materials.delete(MAT_IMPACT);
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0.1,
+      materials,
+      figures: [figure()],
+      vigor: { lit: 2, total: 3 },
+      fx: [{ uid: 'e1', kind: 'fire', at: 0 }],
+    });
+    expect(scene.sprites.some((s) => s.textureId === MAT_IMPACT)).toBe(false);
+    // The light still fires: a hit that lights the board with no shape on it
+    // is a worse frame than one with both, and a much better one than nothing.
+    const quiet = buildBattleScene({
+      camera: camera(),
+      time: 0.1,
+      materials,
+      figures: [figure()],
+      vigor: { lit: 2, total: 3 },
+    });
+    expect(scene.lights.length).toBe(quiet.lights.length + 1);
+  });
+});
+
+describe('the atlas addresses eight distinct cells', () => {
+  it('gives every kind its own window, inside the texture', () => {
+    const seen = new Set<string>();
+    for (const kind of COMBAT_FX_KINDS) {
+      const uv = impactUv(kind);
+      expect(uv.u0).toBeGreaterThanOrEqual(0);
+      expect(uv.v0).toBeGreaterThanOrEqual(0);
+      expect(uv.u1).toBeLessThanOrEqual(1);
+      expect(uv.v1).toBeLessThanOrEqual(1);
+      expect(uv.u1 - uv.u0).toBeCloseTo(1 / 3, 12);
+      expect(uv.v1 - uv.v0).toBeCloseTo(1 / 3, 12);
+      const key = `${uv.u0},${uv.v0}`;
+      expect(seen.has(key), `${kind} shares a cell`).toBe(false);
+      seen.add(key);
+    }
+    expect(seen.size).toBe(8);
+  });
+
+  it('lists exactly the eight kinds the fight can emit', () => {
+    expect([...COMBAT_FX_KINDS].sort()).toEqual(
+      ['bolt', 'dark', 'fire', 'frost', 'hit', 'holy', 'pierce', 'slash'].sort(),
+    );
+    for (const kind of COMBAT_FX_KINDS) expect(IMPACT_LOOK[kind]).toBeDefined();
+  });
+});
+
+describe('the envelopes are shaped like their keyframes', () => {
+  it('brings the flare in, holds it and takes it out', () => {
+    expect(burstEnvelope(-0.01)).toBeNull();
+    expect(burstEnvelope(FX_BURST_SECONDS)).toBeNull();
+    expect(burstEnvelope(0)!.alpha).toBe(0);
+    expect(burstEnvelope(FX_BURST_SECONDS * 0.25)!.alpha).toBeCloseTo(FX_BURST_PEAK_ALPHA, 6);
+    expect(burstEnvelope(FX_BURST_SECONDS * 0.4)!.alpha).toBeCloseTo(FX_BURST_PEAK_ALPHA, 6);
+    // NEVER opaque: you have to be able to watch the piece you just hit.
+    expect(FX_BURST_PEAK_ALPHA).toBeLessThan(1);
+    expect(burstEnvelope(FX_BURST_SECONDS * 0.99)!.alpha).toBeLessThan(0.05);
+    // 0.3 -> 1.3, monotonically, exactly as `impactBurst` scales.
+    expect(burstEnvelope(0)!.scale).toBeCloseTo(0.3, 12);
+    expect(burstEnvelope(FX_BURST_SECONDS * 0.999)!.scale).toBeCloseTo(1.299, 3);
+  });
+
+  it('gives the LIGHT an attack and a decay, not the flare s hold', () => {
+    expect(burstLightEnvelope(-1)).toBe(0);
+    expect(burstLightEnvelope(FX_BURST_SECONDS)).toBe(0);
+    expect(burstLightEnvelope(FX_BURST_SECONDS * FX_ATTACK)).toBeCloseTo(1, 6);
+    // Already falling where the flare is still at full opacity — which is
+    // what makes a hit read as a detonation rather than as a lamp switching
+    // on and off.
+    expect(burstLightEnvelope(FX_BURST_SECONDS * 0.4)).toBeLessThan(0.8);
+    let prev = 1;
+    for (let p = FX_ATTACK + 0.05; p < 1; p += 0.05) {
+      const v = burstLightEnvelope(FX_BURST_SECONDS * p);
+      expect(v).toBeLessThan(prev);
+      prev = v;
+    }
+  });
+
+  it('peaks the flash where every flash keyframe puts its extreme', () => {
+    expect(flashEnvelope(-1, 0.35)).toBe(0);
+    expect(flashEnvelope(0.35, 0.35)).toBe(0);
+    expect(flashEnvelope(0.35 * 0.3, 0.35)).toBeCloseTo(1, 6);
+    expect(flashEnvelope(0, 0.35)).toBe(0);
+    expect(flashEnvelope(0.1, 0)).toBe(0);
+  });
+});
+
+describe('a frame of a fight is a pure function of state and time', () => {
+  it('renders the same moment identically twice, mid-burst', () => {
+    // The constraint every measurement in this project rests on. A single
+    // `Math.random` in the flicker, the shape or the budget's tie-break makes
+    // this fail — and makes every pixel diff of a fight meaningless.
+    const opts = {
+      camera: camera(),
+      time: 0.137,
+      materials: allMaterials(FX_MATERIALS),
+      figures: [figure(), figure({ uid: 'p1', side: 'ally' as const, feetY: PARTY_FEET, flip: true })],
+      vigor: { lit: 2, total: 4 },
+      fx: [
+        { uid: 'e1', kind: 'fire' as const, at: 0.02 },
+        { uid: 'p1', kind: 'frost' as const, at: 0.05 },
+      ],
+    };
+    const a = buildBattleScene(opts);
+    const b = buildBattleScene(opts);
+    expect(JSON.stringify(a.sprites)).toBe(JSON.stringify(b.sprites));
+    expect(JSON.stringify(a.lights)).toBe(JSON.stringify(b.lights));
+  });
+
+  it('animates: two different moments of one burst are different frames', () => {
+    const base = {
+      camera: camera(),
+      materials: allMaterials(FX_MATERIALS),
+      figures: [figure()],
+      vigor: { lit: 2, total: 4 },
+      fx: [{ uid: 'e1', kind: 'fire' as const, at: 0 }],
+    };
+    // 0.05s is on the way IN, 0.40s is on the way OUT (the hold ends at 55%
+    // of 0.42s). Both sides of the envelope, or this only proves the quad
+    // grows — which it would do even if the alpha were a constant.
+    const early = buildBattleScene({ ...base, time: 0.05 });
+    const later = buildBattleScene({ ...base, time: 0.4 });
+    const flare = (s: typeof early) => s.sprites.find((x) => x.textureId === MAT_IMPACT)!;
+    expect(flare(later).size.x).toBeGreaterThan(flare(early).size.x);
+    expect(flare(later).tint![3]).toBeLessThan(flare(early).tint![3]);
+    // And the light is decaying while the flare is still growing.
+    const lightAt = (s: typeof early) =>
+      s.lights.find((l) => l.radius === FX_LIGHT_RADIUS)!.intensity;
+    expect(lightAt(later)).toBeLessThan(lightAt(early));
+  });
+});
+
+describe('a degenerate fx never reaches the camera as a NaN', () => {
+  const finite = (n: number) => Number.isFinite(n);
+
+  it('survives every broken input a live layout can hand over', () => {
+    const cases: { fx: CombatFxEvent[]; figures: FigureBox[]; time: number }[] = [
+      { fx: [{ uid: 'e1', kind: 'fire', at: Number.NaN }], figures: [figure()], time: 0.1 },
+      { fx: [{ uid: 'e1', kind: 'fire', at: Number.POSITIVE_INFINITY }], figures: [figure()], time: 0.1 },
+      { fx: [{ uid: 'e1', kind: 'fire', at: 0 }], figures: [figure()], time: Number.NaN },
+      { fx: [{ uid: 'e1', kind: 'fire', at: 0 }], figures: [figure({ w: 0, h: 0 })], time: 0.1 },
+      { fx: [{ uid: 'e1', kind: 'fire', at: 0 }], figures: [figure({ w: Number.NaN, h: 40 })], time: 0.1 },
+      { fx: [{ uid: 'e1', kind: 'fire', at: 0 }], figures: [figure({ cx: Number.NaN })], time: 0.1 },
+      { fx: [{ uid: 'e1', kind: 'fire', at: 0 }], figures: [figure({ feetY: Number.NaN })], time: 0.1 },
+    ];
+    for (const c of cases) {
+      const scene = buildBattleScene({
+        camera: camera(),
+        time: c.time,
+        materials: allMaterials(FX_MATERIALS),
+        figures: c.figures,
+        vigor: { lit: 2, total: 3 },
+        fx: c.fx,
+      });
+      for (const s of scene.sprites) {
+        expect(finite(s.position.x) && finite(s.position.y) && finite(s.position.z)).toBe(true);
+        expect(finite(s.size.x) && finite(s.size.y)).toBe(true);
+        if (s.tint) for (const v of s.tint) expect(finite(v)).toBe(true);
+      }
+      for (const l of scene.lights) {
+        expect(finite(l.position.x) && finite(l.position.y) && finite(l.position.z)).toBe(true);
+        expect(finite(l.intensity) && finite(l.reach) && finite(l.radius)).toBe(true);
+      }
+    }
+  });
+
+  it('draws NO PIECE for a non-finite box, where it used to draw a NaN one', () => {
+    // The hole this closes was in `placeFigure`'s clamp, not in the fx: it
+    // clamps with `Math.max(0.05, w / zoom)` and `Math.max` of a NaN is NaN,
+    // so a non-finite rect produced a quad with NaN vertices — which does not
+    // draw badly, it blanks the canvas for the rest of the session. The old
+    // code emits a plinth, a shadow and a figure here; the new one emits
+    // nothing for that combatant and everything for the board around it.
+    const id = monsterTextureId('duskhound');
+    for (const bad of [{ w: Number.NaN }, { h: Number.NaN }, { cx: Number.NaN }, { feetY: Number.NaN }]) {
+      const scene = buildBattleScene({
+        camera: camera(),
+        time: 0.1,
+        materials: allMaterials(FX_MATERIALS),
+        figures: [figure(bad)],
+        vigor: { lit: 2, total: 3 },
+        fx: [{ uid: 'e1', kind: 'fire', at: 0 }],
+      });
+      expect(scene.sprites.some((s) => s.textureId === id)).toBe(false);
+      expect(scene.sprites.some((s) => s.textureId === MAT_IMPACT)).toBe(false);
+      // The board itself is still drawn — one broken measurement is not a
+      // reason to render nothing.
+      expect(scene.sprites.some((s) => s.textureId === MAT_ARENA)).toBe(true);
+    }
+  });
+
+  it('finds nothing for a NaN clock rather than pretending', () => {
+    expect(activeFx([{ uid: 'e1', kind: 'fire', at: 0 }], 'e1', Number.NaN)).toBeNull();
+    expect(activeFx([{ uid: 'e1', kind: 'fire', at: Number.NaN }], 'e1', 0.1)).toBeNull();
+    expect(activeFx(undefined, 'e1', 0.1)).toBeNull();
+    expect(activeFx([], 'e1', 0.1)).toBeNull();
+  });
+
+  it('takes the NEWEST live effect when a piece is hit twice', () => {
+    const found = activeFx(
+      [
+        { uid: 'e1', kind: 'slash', at: 0 },
+        { uid: 'e1', kind: 'fire', at: 0.15 },
+      ],
+      'e1',
+      0.2,
+    );
+    expect(found?.ev.kind).toBe('fire');
+    expect(found?.age).toBeCloseTo(0.05, 12);
   });
 });

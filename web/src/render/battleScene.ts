@@ -62,7 +62,7 @@
 // =========================================================================
 
 import { DEFAULT_TILT, unproject, type Camera, type Vec2, type Vec3 } from '../lantern/scene/camera';
-import { makeOccluderGrid, makeScene, type Light, type Material, type Scene } from '../lantern/scene/scene';
+import { makeOccluderGrid, makeScene, type Light, type Material, type RGB, type Scene } from '../lantern/scene/scene';
 import { LAYER_BOARD, LAYER_DECAL, type Sprite, type UVRect } from '../lantern/scene/sprite';
 import { contactShadowSprite, pieceBaseSprites } from '../lantern/scene/piece';
 import { boardSlabSprites } from '../lantern/scene/board';
@@ -1255,6 +1255,362 @@ export function logWellBox(rect: MeasuredBox): FurnitureBox {
 }
 
 // -------------------------------------------------------------------------
+// COMBAT FX (§21.7) — an impact is a SURFACE and a LIGHT, not an overlay
+// -------------------------------------------------------------------------
+//
+// §21.7's open list: *"`ImpactEffect`, the flash classes and the damage popups
+// are still DOM overlays. They are not lit and they do not cast. The felled
+// fade and the acting lift are the only two combat states the renderer knows
+// about."* On the old flat battlefield that cost nothing. On a lit board a
+// flat unlit overlay looks WORSE than it did before, because everything around
+// it now has depth and it does not.
+//
+// §1.2 is the decision rule, not taste — THE GPU DRAWS EVERY SURFACE, THE DOM
+// DRAWS TEXT AND HIT TARGETS — and it sorts the three effects cleanly:
+//
+//   `ImpactEffect`   A SURFACE. A flare sweeping over the piece is paint, so
+//                    it is drawn here as an emissive quad on the piece's own
+//                    measured box, at the same 8 shapes `art/impactFx.tsx`
+//                    draws in SVG. `lanternBattle.css` hides the DOM one
+//                    inside `.bf-figure` — where a piece is drawn to replace
+//                    it — and leaves the rival tamer's portrait-chip copy
+//                    alone, because no piece stands behind a HUD chip.
+//
+//   the burst        A LIGHT, and this is the one that earns the renderer. A
+//                    fire card genuinely illuminates the board and the pieces
+//                    around it for a few frames. Nothing about a DOM overlay
+//                    can do that; it is the single strongest argument that
+//                    this renderer is better than the one it replaces.
+//
+//   the flash        A SURFACE PROPERTY. `battle.css`'s `.flash-*` classes are
+//                    a CSS `filter` on `.bf-unit`, and on the lit path the
+//                    figure `<img>` inside it is `visibility: hidden` — so the
+//                    piece, the one thing the flash is about, does not flash
+//                    at all today while its nameplate does. It becomes a tint
+//                    pulse on the lit piece, mirroring each keyframe's own
+//                    brightness including `flashDark`'s, which DARKENS.
+//
+//   the popups       TEXT. They stay in the DOM, untouched. They are numbers
+//                    and status words, they have to stay crisp at four
+//                    breakpoints, and §1.2 gives text to the DOM.
+//
+//   the reticle      A HIT TARGET's selection state. It stays in the DOM: it
+//                    marks which `.bf-unit` the d-pad is sitting on, it is
+//                    drawn by `battle.css` on that element, and moving it to
+//                    the board would put a focus indicator one frame behind
+//                    the thing it indicates. §1.2 gives hit targets to the DOM
+//                    and a reticle is a hit target's own state, not scenery.
+//
+// EVERY NUMBER BELOW IS A PURE FUNCTION OF STATE AND TIME. There is no
+// `Math.random` anywhere on this path and there cannot be one: two renders of
+// the same moment must be identical or every pixel-diff measurement in this
+// project becomes impossible. `flicker(seed, t, amount)` exists precisely for
+// the animation a random number would otherwise be reached for.
+
+/** The eight impact shapes `art/impactFx.tsx` draws. Same names, same events. */
+export type CombatFxKind = 'slash' | 'pierce' | 'fire' | 'frost' | 'bolt' | 'dark' | 'holy' | 'hit';
+
+/**
+ * A felling is a flash with no flare — `battle.css` gives `flash-ko` a
+ * `brightness(3) grayscale(1)` and no `ImpactEffect` at all, and that asymmetry
+ * is deliberate rather than an omission: a KO is the fight's punctuation, and
+ * the felled fade the renderer already draws is the thing that reads.
+ */
+export type CombatFxFlash = CombatFxKind | 'ko';
+
+/**
+ * ATLAS ORDER. The index IS the cell, so changing this list moves every UV —
+ * which is why the generator (`battleMaterials.impactAtlasPixels`) reads this
+ * same array rather than keeping its own copy. A typo in a second copy is a
+ * flare that silently draws the wrong element's shape, which looks like art
+ * direction rather than like a bug.
+ */
+export const COMBAT_FX_KINDS: readonly CombatFxKind[] = [
+  'slash',
+  'pierce',
+  'hit',
+  'fire',
+  'frost',
+  'bolt',
+  'dark',
+  'holy',
+];
+
+/**
+ * 3x3, because `createRGBATexture` uploads SQUARE buffers and eight cells do
+ * not tile into a square any other way. The ninth cell is left blank and is
+ * never addressed.
+ */
+export const IMPACT_ATLAS_COLS = 3;
+export const IMPACT_ATLAS_ROWS = 3;
+
+export const MAT_IMPACT = 'impact';
+
+/** The atlas window for one kind. Unknown kinds take cell 0 rather than NaN. */
+export function impactUv(kind: CombatFxKind): UVRect {
+  const found = COMBAT_FX_KINDS.indexOf(kind);
+  const cell = found < 0 ? 0 : found;
+  const cx = cell % IMPACT_ATLAS_COLS;
+  const cy = Math.floor(cell / IMPACT_ATLAS_COLS);
+  return {
+    u0: cx / IMPACT_ATLAS_COLS,
+    v0: cy / IMPACT_ATLAS_ROWS,
+    u1: (cx + 1) / IMPACT_ATLAS_COLS,
+    v1: (cy + 1) / IMPACT_ATLAS_ROWS,
+  };
+}
+
+/** `battle.css`'s own timings, so the two paths beat together. */
+export const FX_BURST_SECONDS = 0.42;
+export const FX_FLASH_SECONDS = 0.35;
+export const FX_KO_FLASH_SECONDS = 0.6;
+
+/** How much of the burst is the attack. Short: a hit has no fade-in. */
+export const FX_ATTACK = 0.12;
+
+/**
+ * The flare's edge length, as a multiple of the piece's own measured box.
+ *
+ * `.impact-fx-anchor` is `width: 180%; height: 180%` of `.bf-figure`. This is
+ * a little under that because the SVG viewBox is padded and these cells are
+ * not: the shapes below are drawn out to a stated transparent margin (see
+ * `IMPACT_CELL_MARGIN`) and nothing else, so the same visual size needs a
+ * smaller quad.
+ */
+export const FX_BURST_SPREAD = 1.35;
+
+/**
+ * The flare's peak opacity. NOT 1, and that is the point.
+ *
+ * `art/impactFx.tsx` draws a translucent SVG you can still see the target
+ * through, and the first cut here did not — a fully opaque emissive quad
+ * scaled 1.3x over a piece is a piece you cannot see get hit. Looked at on a
+ * real frame, which is the only way this number could have been wrong.
+ */
+export const FX_BURST_PEAK_ALPHA = 0.82;
+
+/**
+ * How far the burst's LIGHT sits in front of and above the flare, as a
+ * fraction of what `glowLightPosition` would use for an ordinary emitter.
+ *
+ * `emitters.ts` derives GLOW_FRONT/GLOW_LIFT for a sprite that must be lit BY
+ * ITS OWN LIGHT — put the light in the quad's plane and the fragments above it
+ * face 90 degrees away and go black. A flare does not have that problem,
+ * because it carries `emissiveStrength` and is bright with no light at all
+ * (`lighting.ts`: `albedo * (ambient + lit + uEmissive)`). Its light's job is
+ * the BOARD, so the full offset — 0.75 of a two-tile flare, i.e. a tile and a
+ * half toward the viewer — would light the near rank instead of the target.
+ * The nudge keeps the direction (a billboard's normal is the view direction,
+ * so a source dead level with it rakes) and drops the distance.
+ */
+export const FX_LIGHT_NUDGE = 0.35;
+
+/**
+ * Source size of a burst, in tiles. An explosion has no filament.
+ *
+ * Wider than the candles' 0.14 and the lantern's 0.22, and deliberately: a
+ * wide source softens the core, which is what stops a very bright, very short
+ * light from showing a hard rim where its falloff bottoms out. It also happens
+ * to be the only thing on the board with this radius, which is what lets a
+ * test pick the burst lights out of a frame without guessing.
+ */
+export const FX_LIGHT_RADIUS = 0.3;
+
+/**
+ * THE BUDGET, and it is the constraint §12 puts on this whole feature.
+ *
+ * "The hero's lantern is the ONLY significant light." A burst is allowed to
+ * out-shine it for a tenth of a second precisely because it is over before the
+ * eye adapts — but ten of them at once is a second sun, and it is also how a
+ * light bin overflows: `DEFAULT_BIN_CAPACITY` is 16 and the base arena already
+ * spends the lantern, the room lamp and one light per burning candle.
+ *
+ * The FX playback is staggered (`BattleScreen` paces beats 500-800ms apart
+ * against a 0.42s burst), so this is a guard rather than a routine trim: a
+ * multi-hit card that lands on four bodies inside one beat gets four lights,
+ * and a fifth would be a bug elsewhere.
+ */
+export const MAX_FX_LIGHTS = 4;
+
+/** One combat effect, on the scene's own clock. */
+export interface CombatFxEvent {
+  /** Whose measured box it lands on. */
+  uid: string;
+  kind: CombatFxFlash;
+  /** Seconds, same clock as `BattleSceneOptions.time`. */
+  at: number;
+}
+
+/** How long a kind stays on screen. */
+export function fxDuration(kind: CombatFxFlash): number {
+  return kind === 'ko' ? FX_KO_FLASH_SECONDS : FX_BURST_SECONDS;
+}
+
+/**
+ * The live effect on one combatant, or null.
+ *
+ * NEWEST WINS, and expired entries are simply not found — which is what lets
+ * the component keep a plain append-only queue and never have to tell the
+ * renderer that something ended. "Ended" is `time - at >= duration`, and time
+ * is already an input.
+ */
+export function activeFx(
+  fx: readonly CombatFxEvent[] | undefined,
+  uid: string,
+  time: number,
+): { ev: CombatFxEvent; age: number } | null {
+  if (!fx || fx.length === 0 || !Number.isFinite(time)) return null;
+  let best: { ev: CombatFxEvent; age: number } | null = null;
+  for (const ev of fx) {
+    if (ev.uid !== uid) continue;
+    if (!Number.isFinite(ev.at)) continue;
+    const age = time - ev.at;
+    if (age < 0 || age >= fxDuration(ev.kind)) continue;
+    if (!best || age < best.age) best = { ev, age };
+  }
+  return best;
+}
+
+/**
+ * The flare's alpha and quad scale over its life.
+ *
+ * `@keyframes impactBurst` in `battle.css` is the spec and this is it as
+ * arithmetic: in by 25%, held to 55%, out by 100%, scaling 0.3 -> 1.3. Null
+ * outside the window rather than a clamped zero, so a caller cannot draw a
+ * fully transparent quad and pay for it.
+ */
+export function burstEnvelope(age: number): { alpha: number; scale: number } | null {
+  if (!Number.isFinite(age) || age < 0 || age >= FX_BURST_SECONDS) return null;
+  const p = age / FX_BURST_SECONDS;
+  const rise = p / 0.25;
+  const fall = 1 - (p - 0.55) / 0.45;
+  const alpha = p < 0.25 ? rise : p < 0.55 ? 1 : fall;
+  return {
+    alpha: Math.max(0, Math.min(1, alpha)) * FX_BURST_PEAK_ALPHA,
+    scale: 0.3 + p,
+  };
+}
+
+/**
+ * The LIGHT's envelope, 0..1 — and it is deliberately not the flare's.
+ *
+ * A flash of light is an attack and a decay: it is at full brightness before
+ * the eye has resolved the shape, and it is the DECAY that reads as "something
+ * detonated" rather than "something switched on". Squared falloff because a
+ * linear one reads as a dimmer being turned down.
+ */
+export function burstLightEnvelope(age: number): number {
+  if (!Number.isFinite(age) || age < 0 || age >= FX_BURST_SECONDS) return 0;
+  const p = age / FX_BURST_SECONDS;
+  if (p < FX_ATTACK) return p / FX_ATTACK;
+  const decay = 1 - (p - FX_ATTACK) / (1 - FX_ATTACK);
+  return decay * decay;
+}
+
+/**
+ * The flash's envelope, 0..1, peaking where its keyframe does.
+ *
+ * Every `@keyframes flash*` in `battle.css` puts its extreme at 30% and
+ * returns to nothing, except `flashBolt` which strobes; the strobe is not
+ * reproduced, because at 0.35s it is three frames of the piece's tint
+ * inverting and on a lit board that reads as a dropped frame.
+ */
+export function flashEnvelope(age: number, duration: number): number {
+  if (!Number.isFinite(age) || !Number.isFinite(duration) || duration <= 0) return 0;
+  if (age < 0 || age >= duration) return 0;
+  const p = age / duration;
+  return p < 0.3 ? p / 0.3 : 1 - (p - 0.3) / 0.7;
+}
+
+/** sRGB byte to linear light. The shader works in linear; `battle.css` does not. */
+function srgbToLinear(byte: number): number {
+  const s = Math.max(0, Math.min(1, byte / 255));
+  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+}
+
+function linearRgb(r: number, g: number, b: number): RGB {
+  return [srgbToLinear(r), srgbToLinear(g), srgbToLinear(b)];
+}
+
+/** Brightest channel to 1, so `intensity` means the same thing for every kind. */
+function normalised(c: RGB): RGB {
+  const m = Math.max(c[0], c[1], c[2], 1e-4);
+  return [c[0] / m, c[1] / m, c[2] / m];
+}
+
+/**
+ * What each element looks like, as one table.
+ *
+ * `tint` is `art/impactFx.tsx`'s own `IMPACT_COLOR` converted to linear light
+ * — the same eight colours the DOM path has always drawn, so the fight's
+ * palette does not change when the flag flips, only its dimensionality.
+ *
+ * `flashPeak` and `flashBias` are the matching `@keyframes flash*` read as a
+ * multiplier on the piece: 2.4 for the white kinds, 1.9 warm for fire, 2.8 for
+ * bolt — and 0.5 cool-violet for `dark`, which is the one keyframe that
+ * DARKENS its target (`brightness(0.5) saturate(2) hue-rotate(230deg)`).
+ * Reproducing that faithfully is the difference between porting an effect and
+ * inventing a new one.
+ *
+ * `intensity`/`reach` are the light. Fire and bolt reach furthest and burn
+ * brightest because they are area effects; a slash is a glint off an edge and
+ * lights about as far as the body it landed on. Against the lantern's 6.5 at
+ * 5.6 tiles (`lanternForVigor`, `LANTERN_REACH`) even the brightest of these
+ * is a peer for a tenth of a second and then gone — which is what keeps §12's
+ * "the hero's lantern is the ONLY significant light" true.
+ */
+export interface ImpactLook {
+  tint: RGB;
+  flashPeak: number;
+  flashBias: RGB;
+  intensity: number;
+  reach: number;
+}
+
+export const IMPACT_LOOK: Record<CombatFxKind, ImpactLook> = {
+  // #f8f5ec
+  slash: { tint: linearRgb(248, 245, 236), flashPeak: 2.4, flashBias: [1, 1, 1], intensity: 2.6, reach: 2.2 },
+  // #f0e8d8
+  pierce: { tint: linearRgb(240, 232, 216), flashPeak: 2.4, flashBias: [1, 1, 1], intensity: 2.4, reach: 2.0 },
+  // #f0e8d8
+  hit: { tint: linearRgb(240, 232, 216), flashPeak: 2.4, flashBias: [1, 1, 1], intensity: 2.8, reach: 2.4 },
+  // #ff8a3c
+  fire: { tint: linearRgb(255, 138, 60), flashPeak: 1.9, flashBias: [1.15, 0.85, 0.55], intensity: 6, reach: 3.6 },
+  // #9fd8f0
+  frost: { tint: linearRgb(159, 216, 240), flashPeak: 2, flashBias: [0.72, 0.95, 1.2], intensity: 4, reach: 3 },
+  // #f8e04a
+  bolt: { tint: linearRgb(248, 224, 74), flashPeak: 2.8, flashBias: [1.1, 1.02, 0.72], intensity: 7, reach: 3.4 },
+  // #b888e8 — and this one gets DARKER, not brighter. See above.
+  dark: { tint: linearRgb(184, 136, 232), flashPeak: 0.5, flashBias: [0.9, 0.7, 1.25], intensity: 3, reach: 2.8 },
+  // #ffe89a
+  holy: { tint: linearRgb(255, 232, 154), flashPeak: 2.6, flashBias: [1.12, 1.02, 0.78], intensity: 5.5, reach: 3.4 },
+};
+
+/** `flashKo`: `brightness(3) grayscale(1)`. Neutral, because it has no element. */
+export const KO_FLASH: { flashPeak: number; flashBias: RGB } = { flashPeak: 3, flashBias: [1, 1, 1] };
+
+/**
+ * The piece's tint multiplier for a flash at strength `k`.
+ *
+ * A MULTIPLIER, which is what makes this the lit answer rather than the DOM
+ * one. `lighting.ts` computes `albedo * vTint * (ambient + lit + emissive)`,
+ * so a flashing piece brightens IN PROPORTION TO HOW LIT IT ALREADY IS — a
+ * combatant standing in the lantern's pool flares, one out at the dark far
+ * edge only glimmers, and the burst's own light is what decides which. A CSS
+ * `filter: brightness()` cannot know any of that.
+ */
+export function flashMultiplier(kind: CombatFxFlash, k: number): RGB {
+  const look = kind === 'ko' ? KO_FLASH : IMPACT_LOOK[kind];
+  if (!look) return [1, 1, 1];
+  const t = Math.max(0, Math.min(1, k));
+  return [
+    1 + (look.flashPeak * look.flashBias[0] - 1) * t,
+    1 + (look.flashPeak * look.flashBias[1] - 1) * t,
+    1 + (look.flashPeak * look.flashBias[2] - 1) * t,
+  ];
+}
+
+// -------------------------------------------------------------------------
 // THE BUILD
 // -------------------------------------------------------------------------
 
@@ -1272,6 +1628,15 @@ export interface BattleSceneOptions {
    * and every existing test get — the arena is exactly what it was.
    */
   furniture?: readonly FurnitureBox[];
+  /**
+   * The combat effects in flight this frame (§21.7), on this same clock.
+   *
+   * Omitted or empty draws no flares, adds no lights and leaves every piece's
+   * tint exactly what it was — which is what the flag-off path and every
+   * pre-existing test get. An entry whose `at` is already `fxDuration` old is
+   * simply not found by `activeFx`, so the caller never has to retract one.
+   */
+  fx?: readonly CombatFxEvent[];
   /** The explicit uniform that replaces `lighting.css`'s `:has()` count. */
   vigor: { lit: number; total: number };
   /**
@@ -1351,6 +1716,15 @@ export function lanternForVigor(energy: number, maxEnergy: number, peak = 6.5): 
 /** One frame of a fight, as a Scene. Rebuilt from state, never mutated. */
 export function buildBattleScene(o: BattleSceneOptions): Scene {
   const cam = o.camera;
+  // ONE NORMALISED CLOCK, read once.
+  //
+  // `flicker` is three sines of `t`, so a non-finite `time` does not make a
+  // still frame — it makes NaN, which propagates into every flame's quad size
+  // and every flickering light's intensity, and a NaN vertex blanks the canvas
+  // for the rest of the session rather than drawing badly. The clock is the
+  // one input here that reaches almost every sprite, so it is guarded at the
+  // door instead of at each of the five places that read it.
+  const clock = Number.isFinite(o.time) ? o.time : 0;
   const has = (id: string) => o.materials.has(id);
   const sprites: Sprite[] = [];
   const lights: Light[] = [];
@@ -1529,8 +1903,34 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
   }
 
   // --- the pieces --------------------------------------------------------
+  //
+  // AND THE COMBAT FX ON THEM, because a flare belongs to the box the piece
+  // was placed from and there is no second place that knows it. `placeFigure`
+  // has already unprojected the measured `.bf-figure` rect; the flare is that
+  // placement scaled, and the light is that placement nudged toward the
+  // viewer. Nothing here re-measures anything.
+  const fxLights: { light: Light; strength: number }[] = [];
   for (const f of o.figures) {
     const p = placeFigure(f, cam);
+    // NO PIECE RATHER THAN A NaN PIECE, and this guard was missing.
+    //
+    // `placeFigure` clamps with `Math.max(0.05, w / zoom)`, and `Math.max` of
+    // a NaN is NaN — so a `.bf-figure` whose rect came back non-finite (or a
+    // camera that did) produced a quad with NaN vertices rather than a small
+    // one. `measure()` did not stop it either: its `r.width < 2` test is FALSE
+    // for NaN, which is the classic shape of this bug. A NaN vertex does not
+    // draw badly, it blanks the canvas for the rest of the session — the same
+    // reason `placeFurniture` returns null instead of clamping, stated there
+    // at length and equally true one function up.
+    if (
+      !Number.isFinite(p.at.x) ||
+      !Number.isFinite(p.at.y) ||
+      !Number.isFinite(p.width) ||
+      !Number.isFinite(p.height) ||
+      !Number.isFinite(p.radius)
+    ) {
+      continue;
+    }
     const lift = f.acting ? 0.13 : 0;
     const felled = !!f.felled;
     const baseTint = felled
@@ -1544,7 +1944,25 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
         shadow: { strength: felled ? 0.3 : 0.8, height: lift },
       }),
     );
+    const hit = activeFx(o.fx, f.uid, clock);
+    // THE FLASH, as a multiplier on the piece rather than a filter over it.
+    // See `flashMultiplier`. Applied to the standing art only: the plinth is
+    // furniture the piece is placed on, and the burst's own light is what
+    // lights it, which is the physically honest answer and also the one that
+    // keeps `felled`'s ashen base tint meaning what it says.
+    const flash = hit ? flashMultiplier(hit.ev.kind, flashEnvelope(hit.age, fxDuration(hit.ev.kind))) : null;
     if (f.textureId && has(f.textureId)) {
+      const rest: [number, number, number, number] | undefined = felled
+        ? [0.42, 0.42, 0.46, 0.42]
+        : undefined;
+      const tint: [number, number, number, number] | undefined = flash
+        ? [
+            (rest ? rest[0] : 1) * flash[0],
+            (rest ? rest[1] : 1) * flash[1],
+            (rest ? rest[2] : 1) * flash[2],
+            rest ? rest[3] : 1,
+          ]
+        : rest;
       sprites.push({
         position: { x: p.at.x, y: p.at.y, z: 0.1 + lift },
         size: { x: p.width, y: p.height },
@@ -1552,9 +1970,72 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
         billboard: true,
         uv: f.flip ? FLIP_UV : FULL_UV,
         textureId: f.textureId,
-        tint: felled ? [0.42, 0.42, 0.46, 0.42] : undefined,
+        tint,
       });
     }
+    // THE FLARE AND ITS LIGHT. A felling gets neither — `battle.css` gives
+    // `flash-ko` no `ImpactEffect` either, and the felled fade is what carries
+    // it. Guarded on a finite placement for the reason `placeFurniture` states
+    // at length: a NaN vertex does not draw badly, it blanks the canvas for
+    // the rest of the session.
+    if (!hit || hit.ev.kind === 'ko') continue;
+    const kind = hit.ev.kind;
+    const look = IMPACT_LOOK[kind];
+    const env = burstEnvelope(hit.age);
+    const spread = Math.max(p.width, p.height) * FX_BURST_SPREAD;
+    if (!env || !look || !Number.isFinite(spread) || spread <= 0) continue;
+    const centre: Vec3 = { x: p.at.x, y: p.at.y, z: 0.1 + lift + p.height * 0.55 };
+    const size = spread * env.scale;
+    if (has(MAT_IMPACT)) {
+      sprites.push({
+        position: centre,
+        size: { x: size, y: size },
+        pivot: { x: 0.5, y: 0.5 },
+        billboard: true,
+        uv: impactUv(kind),
+        textureId: MAT_IMPACT,
+        tint: [look.tint[0], look.tint[1], look.tint[2], env.alpha],
+      });
+    }
+    // THE LIGHT IS NOT GATED ON THE TEXTURE, and that is deliberate. A flash
+    // that lights the fight is the effect; the shape is how you read WHICH
+    // effect it was. If the atlas never uploaded, a hit should still light the
+    // board rather than silently doing nothing at all.
+    const k = burstLightEnvelope(hit.age);
+    if (k <= 0) continue;
+    const intensity = look.intensity * k;
+    if (!Number.isFinite(intensity) || intensity <= 0) continue;
+    fxLights.push({
+      light: emitterLight(glowLightPosition(centre, spread * FX_LIGHT_NUDGE), {
+        colour: normalised(look.tint),
+        intensity,
+        reach: look.reach,
+        // A wide source: an explosion has no filament. It also softens the
+        // core, which is what stops a very bright short light from showing a
+        // hard rim where its falloff bottoms out (the candles' own note).
+        radius: FX_LIGHT_RADIUS,
+        // DETERMINISTIC, and this is the constraint the whole file keeps: a
+        // flame's character is that it is never still, and `Math.random` here
+        // would make two renders of the same moment differ. Seeded off the
+        // event's own start time so two simultaneous hits do not pulse in
+        // lockstep — see `pushRail`'s per-rail seed for the same argument.
+        flicker: 0.22,
+        time: clock,
+        seed: hit.ev.at * 3.1 + 0.7,
+      }),
+      strength: intensity,
+    });
+  }
+
+  // THE BUDGET (§12, `MAX_FX_LIGHTS`). Brightest first, ties broken by the
+  // order the figures were measured in, so the trim is a pure function of the
+  // frame exactly like everything else here.
+  if (fxLights.length > MAX_FX_LIGHTS) {
+    const ranked = fxLights.map((l, i) => ({ l, i }));
+    ranked.sort((a, b) => b.l.strength - a.l.strength || a.i - b.i);
+    for (const r of ranked.slice(0, MAX_FX_LIGHTS)) lights.push(r.l.light);
+  } else {
+    for (const l of fxLights) lights.push(l.light);
   }
 
   // --- the candles (§8 item 9) -------------------------------------------
@@ -1626,7 +2107,7 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
       const centre: Vec3 = { x: spot.x, y: spot.y, z: CANDLE_HEIGHT + 0.06 };
       const size = 0.19;
       if (has('flame')) {
-        const wob = flicker(i * 2.7 + seed, o.time, 0.1);
+        const wob = flicker(i * 2.7 + seed, clock, 0.1);
         sprites.push({
           position: { x: centre.x, y: centre.y - 0.02, z: centre.z },
           size: { x: size * wob, y: size * (2 - wob) },
@@ -1662,7 +2143,7 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
           // AND IT HAS TO DANCE. 0.18 on a light this small was imperceptible;
           // a candle's whole character is that it is never still.
           flicker: 0.34,
-          time: o.time,
+          time: clock,
           seed: i * 1.9 + 0.4 + seed,
         }),
       );
@@ -1739,7 +2220,7 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
     occluders: makeOccluderGrid(extent.width, extent.height),
     occluderHeight: 1,
     lights,
-    time: o.time,
+    time: clock,
     // A hair over the map's 0.06 — `lighting.css` is right that a stone room
     // bounces and is not a moor at night — but only a hair. The first pass ran
     // 0.13 with a 0.5 room lamp and the two together lit the whole arena to a
