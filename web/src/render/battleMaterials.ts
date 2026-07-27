@@ -52,6 +52,8 @@ import {
   MAT_BEZEL_SMALL,
   MAT_BLANK,
   MAT_CANDLE,
+  MAT_CONSOLE_BODY,
+  MAT_CONSOLE_BODY_BRASS,
   MAT_CORNER_BRASS,
   MAT_CRADLE,
   MAT_CRADLE_BRASS,
@@ -534,6 +536,15 @@ export function requestBoardFurniture(lib: BattleMaterialLibrary): void {
   // The band across the board-to-table joint. Frame-fixed like everything else
   // here — it is authored onto a seam, not fitted to a widget.
   lib.requestFurniture(MAT_STRAP, 'brass_strap');
+  // The console body deck (§19.1, closing §22.5's "still open" list) — the
+  // surface the six DOM-anchored fittings (`requestHudFurniture`, below) are
+  // mounted on. `repeat: true` for the same reason `candle_rail_strip` gets
+  // it: `console_body` is registered EXACT with no margin and tiles along its
+  // WIDTH (`battleScene.CONSOLE_BODY_REPEAT_UNIT`) rather than its height —
+  // `bake.py`'s own doc on `build_console_body`, "the console is one
+  // continuous surface however wide it is assembled."
+  lib.requestFurniture(MAT_CONSOLE_BODY, 'console_body', { repeat: true });
+  lib.requestFurniture(MAT_CONSOLE_BODY_BRASS, 'console_body_brass', { repeat: true });
 }
 
 /**

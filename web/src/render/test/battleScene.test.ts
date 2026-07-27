@@ -31,6 +31,9 @@ import {
   ARENA_RIM_LAYER,
   BACKDROP_LAYER,
   CANDLE_FRAME_X,
+  CONSOLE_BODY_HEIGHT,
+  CONSOLE_BODY_LAYER,
+  CONSOLE_BODY_REPEAT_UNIT,
   CORNER_BRASS_SIZE,
   CRADLE_FRAME,
   LOG_FRAME,
@@ -65,6 +68,8 @@ import {
   BEZEL_SMALL_FRAME,
   MAT_BEZEL,
   MAT_BEZEL_SMALL,
+  MAT_CONSOLE_BODY,
+  MAT_CONSOLE_BODY_BRASS,
   MAT_CORNER_BRASS,
   MAT_RAIL_STRIP,
   MAT_RAIL_STRIP_BRASS,
@@ -82,6 +87,7 @@ import {
   buildBattleScene,
   candleFrameRightX,
   candlePositions,
+  consoleBodyPlacement,
   cornerBrassCentre,
   heroTextureId,
   lanternForVigor,
@@ -96,7 +102,7 @@ import {
   type FurnitureBox,
   type MeasuredBox,
 } from '../battleScene';
-import { LAYER_DECAL, LAYER_PIECE } from '../../lantern/scene/sprite';
+import { LAYER_BOARD, LAYER_DECAL, LAYER_PIECE } from '../../lantern/scene/sprite';
 import { boardSlabSprites } from '../../lantern/scene/board';
 
 /** Every id the builder can ask for, so nothing is skipped for want of art. */
@@ -1373,5 +1379,133 @@ describe('the paint order the console needed', () => {
       logWellBox({ cx: 700, cy: 260, ...REAL.logRail }),
     ];
     for (const s of furnitureSprites(boxes, cam, () => true)) expect(s.layer).toBe(LAYER_DECAL);
+  });
+});
+
+describe('console_body is the deck the six fittings are mounted on (§22.5)', () => {
+  const extent = { width: 6, height: ARENA_DEPTH, border: 1.2 };
+
+  it('sits on the table, its far edge flush with where the straps start', () => {
+    const p = consoleBodyPlacement(extent, 0.45)!;
+    expect(p).not.toBeNull();
+    expect(p.position.z).toBeCloseTo(-0.45, 10);
+    const farEdge = p.position.y - p.size.y / 2;
+    // Exactly `strapCentres`' own `y` — the joint at the slab's near edge.
+    expect(farEdge).toBeCloseTo(ARENA_DEPTH + 1.2, 10);
+    expect(strapCentres(extent, 0.45)[0].y).toBeCloseTo(farEdge + STRAP_FRAME.h / 2, 10);
+  });
+
+  it('spans the whole frame, corner brass to corner brass', () => {
+    const p = consoleBodyPlacement(extent, 0.45)!;
+    expect(p.size.x).toBeCloseTo(extent.width + extent.border * 2, 10);
+    expect(p.position.x).toBeCloseTo(extent.width / 2, 10);
+  });
+
+  it('draws at its one registered height, never stretched', () => {
+    const p = consoleBodyPlacement(extent, 0.45)!;
+    expect(p.size.y).toBe(CONSOLE_BODY_HEIGHT);
+  });
+
+  it('produces no placement for a degenerate extent or thickness', () => {
+    expect(consoleBodyPlacement({ width: NaN, height: 6, border: 1.2 }, 0.45)).toBeNull();
+    expect(consoleBodyPlacement({ width: -6, height: 6, border: 1.2 }, 0.45)).toBeNull();
+    expect(consoleBodyPlacement({ width: 0, height: 6, border: 0 }, 0.45)).toBeNull();
+    expect(consoleBodyPlacement(extent, NaN)).toBeNull();
+  });
+
+  it('draws two quads at one rect, timber then brass, REPEAT-tiled along width', () => {
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_CONSOLE_BODY, MAT_CONSOLE_BODY_BRASS]),
+      figures: [],
+      vigor: { lit: 1, total: 3 },
+    });
+    const deck = scene.sprites.filter(
+      (s) => s.textureId === MAT_CONSOLE_BODY || s.textureId === MAT_CONSOLE_BODY_BRASS,
+    );
+    expect(deck).toHaveLength(2);
+    const [wood, brass] = deck;
+    expect(wood.textureId).toBe(MAT_CONSOLE_BODY);
+    expect(brass.textureId).toBe(MAT_CONSOLE_BODY_BRASS);
+    // Identical rect, or the fitting can drift from its own timber.
+    expect(wood.position).toEqual(brass.position);
+    expect(wood.size).toEqual(brass.size);
+    expect(wood.pivot).toEqual({ x: 0.5, y: 0.5 });
+    const ext = arenaExtent(camera());
+    const expectedU = (ext.width + ext.border * 2) / CONSOLE_BODY_REPEAT_UNIT;
+    expect(wood.uv).toEqual({ u0: 0, v0: 0, u1: expectedU, v1: 1 });
+    expect(wood.layer).toBe(CONSOLE_BODY_LAYER);
+    expect(wood.upright).toBeUndefined();
+  });
+
+  it('draws NOTHING when the bake has not arrived — timber and brass gate independently', () => {
+    // §21.7's own lesson, applied here: "the gates existed and gated nothing"
+    // was a real bug caught only by withholding the material and looking.
+    const base = { camera: camera(), time: 0, figures: [] as FigureBox[], vigor: { lit: 1, total: 3 } };
+    const timberOnly = buildBattleScene({ ...base, materials: allMaterials([MAT_CONSOLE_BODY]) });
+    let deck = timberOnly.sprites.filter(
+      (s) => s.textureId === MAT_CONSOLE_BODY || s.textureId === MAT_CONSOLE_BODY_BRASS,
+    );
+    expect(deck).toHaveLength(1);
+    expect(deck[0].textureId).toBe(MAT_CONSOLE_BODY);
+
+    const brassOnly = buildBattleScene({ ...base, materials: allMaterials([MAT_CONSOLE_BODY_BRASS]) });
+    deck = brassOnly.sprites.filter(
+      (s) => s.textureId === MAT_CONSOLE_BODY || s.textureId === MAT_CONSOLE_BODY_BRASS,
+    );
+    expect(deck).toHaveLength(1);
+    expect(deck[0].textureId).toBe(MAT_CONSOLE_BODY_BRASS);
+
+    const neither = buildBattleScene({ ...base, materials: allMaterials() });
+    expect(
+      neither.sprites.some((s) => s.textureId === MAT_CONSOLE_BODY || s.textureId === MAT_CONSOLE_BODY_BRASS),
+    ).toBe(false);
+  });
+
+  it('paints above the floor/slab and below every fitting', () => {
+    // Same trick `ARENA_RIM_LAYER` and `BACKDROP_LAYER` use, and asserted the
+    // same way: pinned by LAYER, not left to a y-sort against a DOM-measured
+    // fitting whose board y this file does not control.
+    expect(CONSOLE_BODY_LAYER).toBeGreaterThan(LAYER_BOARD);
+    expect(CONSOLE_BODY_LAYER).toBeGreaterThan(ARENA_RIM_LAYER);
+    expect(CONSOLE_BODY_LAYER).toBeLessThan(LAYER_DECAL);
+    expect(CONSOLE_BODY_LAYER).toBeLessThan(LAYER_PIECE);
+  });
+
+  it('draws above the rim and below a fitting, in a real built scene', () => {
+    const boxes = [lanternCradleBox({ cx: 500, cy: 300, ...REAL.lanternTurn })];
+    const scene = buildBattleScene({
+      camera: camera(),
+      time: 0,
+      materials: allMaterials([MAT_CONSOLE_BODY, MAT_CRADLE]),
+      figures: [],
+      vigor: { lit: 1, total: 3 },
+      furniture: boxes,
+    });
+    const rim = scene.sprites.find((s) => s.textureId === 'rim')!;
+    const deck = scene.sprites.find((s) => s.textureId === MAT_CONSOLE_BODY)!;
+    const cradle = scene.sprites.find((s) => s.textureId === MAT_CRADLE)!;
+    expect((deck.layer ?? 0)).toBeGreaterThan(rim.layer ?? 0);
+    expect((cradle.layer ?? LAYER_DECAL)).toBeGreaterThan(deck.layer ?? 0);
+  });
+
+  it("is the published PNG's own aspect — a REGISTERED shape, no margin on either axis", () => {
+    // Confirmed against the real bake rather than assumed, the same discipline
+    // §22.2's aspect-trap table used: `console_body.png` is 1024x348 against
+    // the authored 4.0 x 1.36 = 2.941 (1024/348 = 2.943), so neither axis is
+    // carrying slack for an anti-aliased silhouette. Gated on the directory
+    // existing — `web/public/art/materials/` is a build artifact.
+    const dir = join(__dirname, '..', '..', '..', 'public', 'art', 'materials', 'board');
+    if (!existsSync(dir)) return;
+    const png = (name: string) => {
+      const b = readFileSync(join(dir, `${name}.png`));
+      return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) };
+    };
+    const p = png('console_body');
+    expect(p.w / p.h).toBeCloseTo(CONSOLE_BODY_REPEAT_UNIT / CONSOLE_BODY_HEIGHT, 2);
+    // Both halves of the split share one frame, or they cannot draw at one rect.
+    const b = png('console_body_brass');
+    expect([b.w, b.h]).toEqual([p.w, p.h]);
   });
 });
