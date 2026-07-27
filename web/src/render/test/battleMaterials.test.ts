@@ -51,6 +51,9 @@ const BOARD_SHAPES = [
   'board_corner_brass',
   'sconce_bracket',
   'torch_bracket',
+  // The console body deck (§19.1, closing §22.5) — the surface the fittings
+  // above are mounted on.
+  'console_body',
 ];
 
 describe('the publisher agrees with the renderer on where board bakes live', () => {
@@ -141,6 +144,16 @@ describe('battleMaterials.ts actually requests the published furniture', () => {
     );
   });
 
+  it('wraps BOTH halves of the console body, not just the timber', () => {
+    // Same defect class §21.8 found on the candle rail, checked at its own
+    // call site: `console_body` tiles along its WIDTH
+    // (`battleScene.CONSOLE_BODY_REPEAT_UNIT`), so both the wood and the
+    // brass half need `repeat: true` or the brass lip would CLAMP_TO_EDGE and
+    // smear its last texel across the whole run.
+    expect(battleMaterialsSource).toMatch(/'console_body',\s*\{\s*repeat:\s*true\s*\}/);
+    expect(battleMaterialsSource).toMatch(/'console_body_brass',\s*\{\s*repeat:\s*true\s*\}/);
+  });
+
   it('follows the upload rules for the furniture path specifically', () => {
     // Colour: SRGB8_ALPHA8. Normal AND material: RGBA8, never sRGB. All three
     // go through the same `loadTexture` helper with the flag as a parameter,
@@ -181,6 +194,9 @@ const WIRED_SHAPES = [
   'lantern_cradle_brass',
   'log_well',
   'log_well_brass',
+  // The console body deck the six fittings above sit on (§22.5).
+  'console_body',
+  'console_body_brass',
 ];
 
 /**
@@ -201,6 +217,7 @@ const SPLIT_SHAPES = [
   'exhaust_grate',
   'lantern_cradle',
   'log_well',
+  'console_body',
 ];
 
 describe.skipIf(!existsSync(PUBLISH_DIR))('every shape the renderer fetches is on disk', () => {

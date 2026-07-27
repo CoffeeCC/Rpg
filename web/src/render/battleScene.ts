@@ -135,6 +135,20 @@ export const ARENA_RIM_LAYER = LAYER_BOARD - 0.25;
  * fitting and every piece. See its call site in `buildBattleScene`.
  */
 export const BACKDROP_LAYER = LAYER_BOARD + 0.5;
+/**
+ * Where `console_body` paints: above the floor/slab (the tiles, the frame,
+ * the rim), below every one of §19.1's six DOM-anchored fittings.
+ *
+ * BETWEEN `LAYER_BOARD` and `LAYER_DECAL`, same trick `ARENA_RIM_LAYER` and
+ * `BACKDROP_LAYER` already use and for the same reason: the fittings this
+ * panel sits under are measured off live DOM rects this file does not
+ * control the `y` of, so their unprojected board `y` cannot be trusted to
+ * land ahead of the panel's own `y` in a plain y-sort. Pinning the ORDER by
+ * layer is what §22.3's two paint-order bugs — the rim over the fittings,
+ * the backdrop over the log well — were both fixed by, and this is the same
+ * fix applied before either mistake had the chance to happen a third time.
+ */
+export const CONSOLE_BODY_LAYER = LAYER_BOARD + 0.75;
 
 /**
  * Zoom guard rails.
@@ -521,6 +535,104 @@ export function strapCentres(
     out.push({ x, y, z: -thickness });
   }
   return out;
+}
+
+// -------------------------------------------------------------------------
+// THE CONSOLE BODY (§19.1, closing §22.5's "still open" list)
+// -------------------------------------------------------------------------
+//
+// `console_body` / `console_body_brass` were baked and published in the same
+// pass as everything above and had no consumer on either render path — §22.5:
+// "the band the fittings sit on is bare table. The fittings read as fittings;
+// they do not yet read as fittings ON something." This is the deck that fixes
+// that, and it is FRAME-FIXED FURNITURE like the rail strip, the corner brass
+// and the strap above it, not a `FurnitureBox`: it has no DOM rect of its own
+// to measure, because it is not framing one widget — it is the surface all
+// six of §19.1's DOM-anchored fittings (§22.4) are measured against and
+// unproject onto. `placeFurniture`/`FurnitureFit` exist to fit a bake INTO a
+// measured box; there is no box here to fit into, so none of `cover`,
+// `contain` or `slice` apply — the same reason `pushRail`'s rail strip and
+// `strapCentres`' strap do not go through that machinery either.
+
+/**
+ * `console_body`'s own registered frame (`bake.py` SHAPES:
+ * `split("console_body", build_console_body, width=4.0, height=1.36, ...)`).
+ * A REGISTERED shape (`bake.py`'s own rule: "anything that must line up with
+ * the tile grid or tile along a run gets its EXACT extent, no margin") —
+ * confirmed against the published PNG rather than assumed: `console_body.png`
+ * is 1024x348, and 1024/348 = 2.943 against the authored 4.0/1.36 = 2.941, so
+ * neither axis is carrying slack for an anti-aliased silhouette the way a
+ * free-standing shape like `candle_socket` does.
+ *
+ * THE WIDTH AXIS IS THE ONE THAT TILES. `build_console_body`'s own doc says
+ * so directly: "IT RUNS PAST THE FRAME SIDEWAYS and carries no feature on the
+ * left or right edge... the console is one continuous surface however wide it
+ * is assembled." That is `RAIL_STRIP_REPEAT_UNIT`'s exact contract, on the
+ * other axis — there the rail "TILES ALONG ITS HEIGHT... so the height is
+ * exact and the width carries the margin"; here the height is what is drawn
+ * at its one authored size and the width is REPEAT-wrapped in units of it.
+ */
+export const CONSOLE_BODY_REPEAT_UNIT = 4.0;
+export const CONSOLE_BODY_HEIGHT = 1.36;
+
+export const MAT_CONSOLE_BODY = 'consoleBody';
+/**
+ * The console body's BRASS HALF — the near-edge lip, the back rail, the bead
+ * run and the half-straps over its own internal butt joints. `bake.py`'s
+ * `split()` emits `console_body` and `console_body_brass` from one assembly
+ * at one frame, so both draw at the IDENTICAL rect — see `MAT_RAIL_STRIP_BRASS`
+ * for why this project always requests and draws both halves of a split shape
+ * rather than only the timber.
+ */
+export const MAT_CONSOLE_BODY_BRASS = 'consoleBodyBrass';
+
+export interface ConsoleBodyPlacement {
+  position: Vec3;
+  size: Vec2;
+}
+
+/**
+ * Where the console body deck sits: ON THE TABLE, past the board's near edge —
+ * the exact joint `strapCentres` puts its straps across, and for the same
+ * reason (§19: the console is furniture on the table, not on the board).
+ *
+ * ITS FAR EDGE MEETS THE RIM where the straps start (`extent.height +
+ * extent.border`, `strapCentres`' own `y`); its NEAR EDGE — "the one the
+ * player's hands reach", per `bake.py`'s own comment on the brass rail — sits
+ * `CONSOLE_BODY_HEIGHT` tiles further out, which is exactly as far onto the
+ * table as the panel is authored to reach and no further.
+ *
+ * SPANS THE WHOLE FRAME, corner brass to corner brass (`-border` to
+ * `width + border`), rather than a width measured off any one fitting. The
+ * six DOM-anchored fittings it sits under are measured off live rects this
+ * file cannot see — the portrait bezels ride the LEFT frame band, the log
+ * well the RIGHT, the piles and the cradle somewhere across the middle
+ * (§22.4, §22.5) — so a panel narrower than the frame would have to guess
+ * which of those to clear and a panel spanning the whole frame cannot be
+ * short for any of them. `CONSOLE_BODY_REPEAT_UNIT` is what makes that
+ * affordable: the deck tiles along its width by construction, so covering a
+ * wider run than one authored frame is the shape doing exactly what it was
+ * baked to do rather than a stretch.
+ *
+ * RETURNS NULL RATHER THAN A DEGENERATE PLACEMENT, same discipline
+ * `placeFurniture` uses — a board mid-resize handing back a non-finite extent
+ * is the ordinary case for one frame, not an error worth a NaN vertex over.
+ */
+export function consoleBodyPlacement(
+  extent: { width: number; height: number; border: number },
+  thickness: number,
+): ConsoleBodyPlacement | null {
+  if (!Number.isFinite(extent.width) || !Number.isFinite(extent.border) || !Number.isFinite(extent.height)) {
+    return null;
+  }
+  if (!Number.isFinite(thickness)) return null;
+  const width = extent.width + extent.border * 2;
+  if (width <= 0) return null;
+  const y = extent.height + extent.border + CONSOLE_BODY_HEIGHT / 2;
+  return {
+    position: { x: extent.width / 2, y, z: -thickness },
+    size: { x: width, y: CONSOLE_BODY_HEIGHT },
+  };
 }
 
 // -------------------------------------------------------------------------
@@ -1331,6 +1443,37 @@ export function buildBattleScene(o: BattleSceneOptions): Scene {
       // the well.
       layer: BACKDROP_LAYER,
     });
+  }
+
+  // --- the console body deck (§19.1, closing §22.5) -----------------------
+  //
+  // THE SLAB THE SIX DOM-ANCHORED FITTINGS ARE MOUNTED ON. Until this pass
+  // `console_body` was baked and published with no consumer on either render
+  // path, which is exactly §22.5's complaint: "the band the fittings sit on
+  // is bare table." Frame-fixed like the corner brass and the strap below —
+  // see `consoleBodyPlacement` for why it is not a `FurnitureBox` — so it
+  // needs no DOM measurement of its own.
+  //
+  // TWO QUADS AT ONE RECT, timber then brass, same as every other split shape
+  // in this file. `CONSOLE_BODY_LAYER` keeps it above the floor/slab and
+  // below every fitting regardless of where any of the six unproject to — see
+  // that constant's own doc for why the ordering cannot be left to the y-sort.
+  {
+    const deck = consoleBodyPlacement(extent, ARENA_THICKNESS);
+    if (deck) {
+      const repeatU = deck.size.x / CONSOLE_BODY_REPEAT_UNIT;
+      for (const id of [MAT_CONSOLE_BODY, MAT_CONSOLE_BODY_BRASS]) {
+        if (!has(id)) continue;
+        sprites.push({
+          position: deck.position,
+          size: deck.size,
+          pivot: { x: 0.5, y: 0.5 },
+          uv: { u0: 0, v0: 0, u1: repeatU, v1: 1 },
+          textureId: id,
+          layer: CONSOLE_BODY_LAYER,
+        });
+      }
+    }
   }
 
   // --- the far-left corner brass (§19.1) ----------------------------------
