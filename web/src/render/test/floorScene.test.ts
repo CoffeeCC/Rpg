@@ -13,9 +13,9 @@
 //   §2 rule 1   nothing under `lantern/` may import `engine/`.
 // =========================================================================
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import jpegjs from 'jpeg-js';
 import { gameReducer, initialGameState, type GameState } from '../../engine/game';
 import { TILE } from '../../engine/systems/floors';
 import { makeCamera } from '../../lantern/scene/camera';
@@ -580,12 +580,20 @@ describe('a piece stands in the plinth its rank calls for', () => {
 // palette while the painted tiles are per-gate and far darker, and said so in
 // its own commit message: Hollow Gate's walls came out 5.8x too light and mean
 // frame luminance went 12.3 -> 32.8. ENGINE_PLAN §12 says the hero's lantern is
-// the only significant light, and a wall reflecting 5.8x what its art says it
-// reflects picks up the room lamp from across the board.
+// the only significant light, and a wall reflecting several times what its art
+// says it reflects picks up the room lamp from across the board.
 //
 // So these do not describe the tint; they REJECT the untinted wall, and they
-// re-derive the numbers off the shipped JPEGs so the table cannot drift from
-// the paintings it claims to have been measured from.
+// re-derive the numbers off the shipped art so the table cannot drift from the
+// paintings it claims to have been measured from.
+//
+// UPDATED 2026-07-26: the shipped tiles moved from JPG to PNG (the de-shaded
+// re-shoot — `docs/ART_QC_MATERIALS_2026-07-26.md`), so `meanLinear` now
+// decodes PNGs and the ratio bounds below are the PNGs' own numbers, not the
+// JPGs' 5.8x/27x. The re-shoot's flat, evenly-lit albedo reads much brighter
+// than the old baked-shadow art, so the gap it closes is smaller now (~1.6x
+// bytes, ~2.2x linear) — still real, just not as dramatic as the bug that
+// motivated this mechanism.
 // =========================================================================
 describe("the baked wall is this gate's rock, not the bake's shared limestone", () => {
   const GATES = ['verdant', 'hollow', 'sunken', 'storm', 'abyss'] as const;
@@ -597,8 +605,18 @@ describe("the baked wall is this gate's rock, not the bake's shared limestone", 
     return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   };
 
+  // `pngjs` ships no types (CJS, no `.d.ts`, and no `@types/pngjs` in this
+  // project's dependency tree — `tools/art/image.mjs` gets away with it by
+  // being plain JS). `require` rather than `import` sidesteps needing a
+  // declaration file at all; the shape read off it here is exactly
+  // `tools/art/image.mjs`'s `readImage`, so this stays the one place in
+  // `web/` that decodes a PNG by hand rather than importing that helper —
+  // `tools/` is not on `web/`'s TypeScript project graph.
+  const require = createRequire(import.meta.url);
+  const { PNG } = require('pngjs') as { PNG: { sync: { read: (buf: Buffer) => { width: number; height: number; data: Uint8Array } } } };
+
   function meanLinear(file: string): [number, number, number] {
-    const img = jpegjs.decode(readFileSync(file), { useTArray: true, formatAsRGBA: true });
+    const img = PNG.sync.read(readFileSync(file));
     const n = img.width * img.height;
     let r = 0;
     let g = 0;
@@ -660,39 +678,44 @@ describe("the baked wall is this gate's rock, not the bake's shared limestone", 
       for (let c = 0; c < 3; c++) expect(t[c] * BAKE_STONE[c]).toBeCloseTo(painted[c], 9);
       expect(t[3]).toBe(1);
     }
-    // AND THE OLD ANSWER FAILS, BY TWO DIFFERENT SIZES OF WRONG. Untinted, the
-    // wall is the bake's own STONE. `893ca1f` reported that as 5.8x, which is
-    // the ratio in BYTES — what the eye sees. The ratio in LINEAR light, which
-    // is what the surface actually bounces back at the room lamp, is 27x. Both
-    // are asserted because quoting only the first is how someone talks
-    // themselves into a byte-space tint that leaves the wall 2.6x too bright.
+    // AND THE OLD ANSWER FAILS, THOUGH BY A SMALLER MARGIN THAN IT USED TO.
+    // Untinted, the wall is the bake's own STONE. `893ca1f` reported that as
+    // 5.8x/27x against the original shipped JPG. The 2026-07-26 de-shaded
+    // re-shoot (`docs/ART_QC_MATERIALS_2026-07-26.md`) reads far brighter — no
+    // baked shadow left to darken it — so the untinted gap against THIS art is
+    // smaller: ~1.4x in bytes, ~2.2x in linear light. Both are still asserted,
+    // and both are still real: 1.0 would mean the tint does nothing, and it
+    // plainly does not.
     const bytes = (c: readonly [number, number, number]) => {
       const enc = (l: number) => (l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055) * 255;
       return 0.2126 * enc(c[0]) + 0.7152 * enc(c[1]) + 0.0722 * enc(c[2]);
     };
-    expect(lum(BAKE_STONE) / lum(painted)).toBeGreaterThan(25);
-    expect(lum(BAKE_STONE) / lum(painted)).toBeLessThan(29);
-    // 5.13 here against the commit's 5.8, and the gap is not an error: 5.8 is
-    // 183.3 over the PAINTING'S OWN byte mean of 31.6, while this is 183.3 over
-    // the byte value of a FLAT surface at the painting's average reflectance,
-    // 35.7. A mottled tile always reads a little darker in bytes than an even
-    // one bouncing the same light, because the encode is concave. +4.1 bytes on
-    // Hollow, and the reason a flat bake can never be byte-identical to the art
-    // it is matched to.
-    expect(bytes(BAKE_STONE) / bytes(painted)).toBeGreaterThan(5);
-    expect(bytes(BAKE_STONE) / bytes(painted)).toBeLessThan(6);
+    expect(lum(BAKE_STONE) / lum(painted)).toBeGreaterThan(2.1);
+    expect(lum(BAKE_STONE) / lum(painted)).toBeLessThan(2.4);
+    // 1.44 here against the direct byte-mean ratio of 1.57 (183.3 over
+    // `hollow_wall.png`'s own byte mean of 116.5), and the gap is not an error:
+    // this ratio is 183.3 over the byte value of a FLAT surface at the
+    // painting's average reflectance, 127.1, not over the mottled painting's own
+    // byte mean. A mottled tile always reads a little darker in bytes than an
+    // even one bouncing the same light, because the encode is concave — +10.6
+    // bytes on Hollow now (was +4.1 on the old JPG; the re-shoot carries more
+    // internal contrast, per the QC report's tonal-range numbers), and the
+    // reason a flat bake can never be byte-identical to the art it is matched
+    // to.
+    expect(bytes(BAKE_STONE) / bytes(painted)).toBeGreaterThan(1.3);
+    expect(bytes(BAKE_STONE) / bytes(painted)).toBeLessThan(1.6);
     expect(walls.some((s) => s.tint === undefined)).toBe(false);
     expect(walls.some((s) => JSON.stringify(s.tint) === JSON.stringify([1, 1, 1, 1]))).toBe(false);
   });
 
-  it('MEASURED, NOT CHOSEN: re-derives every row off the shipped JPEGs', () => {
+  it('MEASURED, NOT CHOSEN: re-derives every row off the shipped PNGs', () => {
     // The argument for these numbers is the measurement, so the measurement is
     // the test. Decoding all five costs ~0.3s and the tiles are TRACKED source
     // art, present in every clone — unlike `public/art/materials/`, which is a
     // gitignored build artifact and is why `battleMaterials.test.ts` has to
     // gate its disk checks and this does not.
     for (const gate of GATES) {
-      const measured = meanLinear(join(REPO, 'web', 'public', 'art', 'tiles', `${gate}_wall.jpg`));
+      const measured = meanLinear(join(REPO, 'web', 'public', 'art', 'tiles', `${gate}_wall.png`));
       const recorded = GATE_WALL_ALBEDO[gate];
       expect(recorded).toBeDefined();
       for (let c = 0; c < 3; c++) expect(recorded[c]).toBeCloseTo(measured[c], 5);
@@ -720,18 +743,23 @@ describe("the baked wall is this gate's rock, not the bake's shared limestone", 
     }
   });
 
-  it('gives each of the five gates its own stone, all of them dark', () => {
+  it('gives each of the five gates its own stone, always a darkening', () => {
+    // UPDATED 2026-07-26: the de-shaded re-shoot reads much brighter than the
+    // JPGs it replaced (no baked shadow left to darken the mean), so the tint
+    // each gate needs is milder now — up to 0.86 on Sunken's green channel,
+    // against the old JPGs' sub-0.25 across the board. The bound that still
+    // matters, and the one the comment below is actually about, is 1: a tint
+    // at or above it would be BRIGHTENING the shared limestone, which no
+    // painted tile asks for.
     const seen = new Set<string>();
     for (const gate of GATES) {
       const walls = bakedWalls(gate);
       const t = walls[0].tint!;
       seen.add(JSON.stringify(t));
       for (const s of walls) expect(s.tint).toEqual(t);
-      // Every one of them is a DARKENING. A tint above 1 would be brightening
-      // the shared limestone, which no painted tile asks for.
       for (let c = 0; c < 3; c++) {
         expect(t[c]).toBeGreaterThan(0);
-        expect(t[c]).toBeLessThan(0.25);
+        expect(t[c]).toBeLessThan(1);
       }
     }
     expect(seen.size).toBe(GATES.length);
@@ -762,7 +790,7 @@ describe("the baked wall is this gate's rock, not the bake's shared limestone", 
   });
 
   it('leaves the painted fallback completely alone', () => {
-    // No bake published: the walls are the gate's own `<gate>_wall.jpg` again,
+    // No bake published: the walls are the gate's own `<gate>_wall.png` again,
     // with the fake AO pair they have always had, and the gate stone must not
     // reach them — multiplying a painting that is already this gate's rock by
     // this gate's rock would square it.

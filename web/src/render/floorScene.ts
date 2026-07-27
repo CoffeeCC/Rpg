@@ -112,17 +112,18 @@ const BAKE_MARGIN = 1.04;
 // carry (measured: mean 187.5/182.4/180.6 sRGB with a total spread of ONE BYTE
 // of luminance across all 1024x1024 of it; every scrap of shape in a baked wall
 // lives in its normal and material maps, none of it in its colour). The painted
-// tiles are per-gate and far darker: `hollow_wall.jpg` is 31.6 mean luminance
-// against the bake's 183.3, so a Hollow Gate wall came out 5.8x too light —
-// pale limestone where §12 wants dark cave rock. In LINEAR light, which is what
-// the surface actually bounces, the same pair is 27x.
+// tiles are per-gate, and at the time this was discovered, far darker: the
+// shipped `hollow_wall.jpg` was 31.6 mean luminance against the bake's 183.3, so
+// a Hollow Gate wall came out 5.8x too light — pale limestone where §12 wants
+// dark cave rock. In LINEAR light, which is what the surface actually bounces,
+// the same pair was 27x.
 //
 // That is not a taste complaint. ENGINE_PLAN §12 says the hero's lantern is the
 // ONLY significant light, and `buildFloorScene`'s room lamp was cut 0.32 -> 0.12
 // on exactly that argument (its +51% of frame luminance against the whole
-// emitter set's +4.5%). A wall reflecting 5.8x what the art says it reflects
-// picks that lamp up from across the board and hands back the ground that
-// retuning bought.
+// emitter set's +4.5%). A wall reflecting several times what the art says it
+// reflects picks that lamp up from across the board and hands back the ground
+// that retuning bought.
 //
 // THE FIX IS A MULTIPLY, AND ON A FLAT ALBEDO A MULTIPLY IS A RE-BAKE. Because
 // the bake's colour is constant, `tint * STONE` is bit-for-bit what Cycles would
@@ -135,9 +136,22 @@ const BAKE_MARGIN = 1.04;
 // tile and the bake upload `SRGB8_ALPHA8`, so `texture()` hands the shader
 // LINEAR reflectance and `vTint` multiplies it there
 // (`passes/lighting.ts`: `vec4 albedo = texture(uAlbedo, vUV) * vTint`). Taking
-// the ratio in bytes instead — 31.6/183.3 = 0.172 for Hollow — leaves the wall
-// at sRGB 83 rather than 36, i.e. still 2.6x too bright, and the whole exercise
-// half-done while looking finished.
+// the ratio in bytes instead of linear reflectance always understates it — see
+// `floorScene.test.ts`'s "THE POINT" test, which asserts both ratios directly
+// off whichever art is currently shipped, so this trap stays caught no matter
+// what the art does next.
+//
+// UPDATED 2026-07-26: `hollow_wall.jpg` above is the ORIGINAL shipped painting,
+// kept as the historical record of why this mechanism exists. The de-shaded
+// re-shoot (`docs/ART_QC_MATERIALS_2026-07-26.md`) replaced all 10 gate tiles
+// with flat, evenly-lit PNGs — no baked directional shadow, which is the defect
+// `ENGINE_PLAN.md` §7 calls "the single most common reason 2D games look wrong
+// the moment real lighting is added." A flat albedo necessarily reads BRIGHTER
+// than art with a shadow painted across it, because the shadow is gone and the
+// lantern supplies it instead: `hollow_wall.png` now measures 116.5 mean
+// luminance, and the bake-vs-painting ratio has fallen from 5.8x/27x to
+// 1.6x/2.2x (bytes/linear) — still enough that the tint below is doing real
+// work, just nowhere near as extreme as the JPG it replaced.
 // -------------------------------------------------------------------------
 
 /**
@@ -151,19 +165,27 @@ const BAKE_MARGIN = 1.04;
 export const BAKE_STONE: readonly [number, number, number] = [0.5, 0.47, 0.46];
 
 /**
- * Each gate's stone, as the MEAN LINEAR albedo of its own `<gate>_wall.jpg`.
+ * Each gate's stone, as the MEAN LINEAR albedo of its own `<gate>_wall.png`.
  *
  * Measured off the shipped art, not chosen — `floorScene.test.ts` decodes the
- * five JPEGs and re-derives every row, so these cannot drift from the paintings
+ * five PNGs and re-derives every row, so these cannot drift from the paintings
  * they describe. Recorded alongside, as byte luminance, because that is the
  * number the eye and the commit log argue in:
  *
  *   gate      wall lum   ground lum   wall/ground     the material
- *   verdant      29.8        100.0        0.130       mossed stone
- *   hollow       31.6        113.0        0.105       raw hewn rock
- *   sunken       39.2        118.3        0.135       wet cut stone, silt
- *   storm        36.0        145.4        0.080       cracked slate, frost
- *   abyss         7.9         24.2        0.233       blackened basalt
+ *   verdant      69.3         60.7        1.142       mossed stone
+ *   hollow      116.5        112.5        1.036       raw hewn rock
+ *   sunken      146.4        122.2        1.198       wet cut stone, silt
+ *   storm       106.6        117.2        0.910       cracked slate, frost
+ *   abyss        50.9         32.5        1.567       blackened basalt
+ *
+ * These are the 2026-07-26 de-shaded re-shoot's numbers (see
+ * `docs/ART_QC_MATERIALS_2026-07-26.md`), not the original shipped JPGs'. The
+ * old paintings had directional shadow baked in and read far darker overall —
+ * hollow_wall.jpg's own mean was 31.6, against this PNG's 116.5 — which is
+ * exactly the defect the re-shoot exists to remove: a flat, evenly-lit albedo
+ * necessarily reads brighter than art with a shadow painted across it, because
+ * the shadow is gone and the engine supplies it instead.
  *
  * The ground column is the check rather than an input: nothing tints the floor,
  * so a wall matched to its own gate's wall art keeps that gate's authored
@@ -172,11 +194,11 @@ export const BAKE_STONE: readonly [number, number, number] = [0.5, 0.47, 0.46];
  * flat texture.
  */
 export const GATE_WALL_ALBEDO: Record<string, readonly [number, number, number]> = {
-  verdant: [0.01225, 0.01939, 0.01118],
-  hollow: [0.0217, 0.01568, 0.02392],
-  sunken: [0.02787, 0.02713, 0.03657],
-  storm: [0.02351, 0.02272, 0.03165],
-  abyss: [0.00301, 0.00228, 0.0037],
+  verdant: [0.081327, 0.132195, 0.038009],
+  hollow: [0.237037, 0.201447, 0.255715],
+  sunken: [0.250403, 0.402438, 0.357884],
+  storm: [0.19247, 0.187081, 0.275103],
+  abyss: [0.053514, 0.054433, 0.056953],
 };
 
 /**
@@ -188,7 +210,7 @@ export const GATE_WALL_ALBEDO: Record<string, readonly [number, number, number]>
  * on one gate, which is the worst way to ship it. A placeholder in the right
  * neighbourhood is a better failure than a bug in the wrong one.
  */
-export const DEFAULT_WALL_ALBEDO: readonly [number, number, number] = [0.017668, 0.01744, 0.021404];
+export const DEFAULT_WALL_ALBEDO: readonly [number, number, number] = [0.16295, 0.195519, 0.196733];
 
 /**
  * What to multiply a baked wall's flat STONE by so it reads as this gate's rock.

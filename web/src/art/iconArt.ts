@@ -117,9 +117,9 @@ export const SPRITE_ART: Record<string, string> = {
 
 /** Per-gate ground/wall textures for continuous map terrain. */
 export const TILE_TEXTURES: Record<string, { ground: string; wall: string }> = {
-  verdant: { ground: 'art/tiles/verdant_ground.jpg', wall: 'art/tiles/verdant_wall.jpg' },
-  hollow: { ground: 'art/tiles/hollow_ground.jpg', wall: 'art/tiles/hollow_wall.jpg' },
-  sunken: { ground: 'art/tiles/sunken_ground.jpg', wall: 'art/tiles/sunken_wall.jpg' },
-  storm: { ground: 'art/tiles/storm_ground.jpg', wall: 'art/tiles/storm_wall.jpg' },
-  abyss: { ground: 'art/tiles/abyss_ground.jpg', wall: 'art/tiles/abyss_wall.jpg' },
+  verdant: { ground: 'art/tiles/verdant_ground.png', wall: 'art/tiles/verdant_wall.png' },
+  hollow: { ground: 'art/tiles/hollow_ground.png', wall: 'art/tiles/hollow_wall.png' },
+  sunken: { ground: 'art/tiles/sunken_ground.png', wall: 'art/tiles/sunken_wall.png' },
+  storm: { ground: 'art/tiles/storm_ground.png', wall: 'art/tiles/storm_wall.png' },
+  abyss: { ground: 'art/tiles/abyss_ground.png', wall: 'art/tiles/abyss_wall.png' },
 };
