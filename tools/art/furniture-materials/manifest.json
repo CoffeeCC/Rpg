@@ -1,0 +1,52 @@
+{
+  "brief": "docs/ART_BRIEF_MATERIALS.md",
+  "date": "2026-07-26",
+  "status": "Installed 2026-07-31 (console deck only). QC'd sample, judged good on sight against the ENGINE_PLAN §7 de-shading brief and installed by the orchestrator — the rest of the furniture set (log_well, pile_tray, lantern_cradle, brass_strap, exhaust_grate, the four wall shapes) is still unstarted and open for the same treatment. Reusable source materials tracked here so a later pass can cut them, or new ones, without regenerating from scratch.",
+  "installed": true,
+  "note": "The two *_body files are copied byte-for-byte into web/public/art/materials/board/ (a gitignored build artifact, so they are not committed there — this directory is the tracked source of record). The two source materials are kept so the rest of the furniture can be cut from the same cloth.",
+  "materials": [
+    {
+      "file": "console_timber.png",
+      "kind": "source material (seamless, both axes)",
+      "size": [1024, 1024],
+      "subject": "aged oiled oak, horizontal grain"
+    },
+    {
+      "file": "console_brass.png",
+      "kind": "source material (seamless, both axes)",
+      "size": [1024, 1024],
+      "subject": "hand-polished tarnished sheet brass"
+    }
+  ],
+  "outputs": [
+    {
+      "file": "console_body.png",
+      "replaces": "web/public/art/materials/board/console_body.png",
+      "cut_from": "console_timber.png",
+      "size": [1024, 348],
+      "alpha": "byte-identical to the shipped file",
+      "tonal_range_before_pct": 0.5,
+      "tonal_range_after_pct": 80.9
+    },
+    {
+      "file": "console_body_brass.png",
+      "replaces": "web/public/art/materials/board/console_body_brass.png",
+      "cut_from": "console_brass.png",
+      "size": [1024, 348],
+      "alpha": "byte-identical to the shipped file",
+      "tonal_range_before_pct": 0.8,
+      "tonal_range_after_pct": 37.7
+    }
+  ],
+  "untouched": [
+    "console_body_normal.png",
+    "console_body_material.png",
+    "console_body_brass_normal.png",
+    "console_body_brass_material.png"
+  ],
+  "review_sheets": [
+    "_compare_console.png",
+    "_compare_brass2.png",
+    "_tile2x2_console_timber.png"
+  ]
+}
