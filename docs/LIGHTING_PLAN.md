@@ -334,11 +334,15 @@ bug depends on; if it did not move, the run proves nothing.
   `components/` now registers a nav scope from the shared `nav/` layer, and
   `controllerNav.test.ts`'s "screen conversion coverage" suite enforces it —
   a new screen cannot ship without someone deciding what its B button does.
-- Aggregate HP on the rail portraits (enemy chip = sum of all enemies, hero
-  chip = party sum).
-- Fixed **slots** for enemies and party. Today both rows are plain flex
-  containers mapping over live units and centre-packing, so a death reflows the
-  row. Paul wants card-game-style slots.
+- ~~Aggregate HP on the rail portraits~~ **Done.** `BattleScreen.tsx`'s
+  `enemyHpSum`/`enemyMaxHpSum` and `heroSideHpSum`/`heroSideMaxHpSum` sum the
+  whole side, not just the lead unit, with a title tooltip spelling that out
+  (2026-07-31 orchestrator pass, verified by reading the live component — this
+  entry was stale).
+- ~~Fixed **slots** for enemies and party.~~ **Done.** `enemySlotOrder` /
+  `partySlotOrder` (`BattleScreen.tsx`) fix row position for the whole fight; a
+  felled unit renders `bf-slot-empty` in its own slot instead of the row
+  reflowing (2026-07-31 orchestrator pass — this entry was also stale).
 - The battle view's bottom-left corner is occupied (draw pile x 60–150, hand
   from x~280, End Turn bottom-right) — moving anything there is Paul's call.
 
