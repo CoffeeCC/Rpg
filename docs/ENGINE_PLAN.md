@@ -3207,3 +3207,71 @@ task, so it is the next thing to ask Grok for rather than the next thing to
 build.
 
 ---
+
+## 24. Three more pieces stop being flat colour (2026-08-01)
+
+The orchestrator's own "reusable for the wood and brass among them" note above
+turned out to name exactly three unambiguous cases: `pile_tray` and
+`lantern_cradle` (both `split()` wood-body-plus-brass-fitting shapes in
+`bake.py`) and `brass_strap` (brass-only, no wood counterpart). None of the
+three needed a new Grok commission — they are cut from the same
+`console_timber.png`/`console_brass.png` seamless sources the console deck
+used, at a different crop offset each so the repeat doesn't read identically
+across pieces on the same board.
+
+**What did, deliberately, stay out of scope.** `log_well` and `exhaust_grate`
+were left alone even though `bake.py` also builds them via `split()` with the
+same wood/brass defaults — because §23 flagged `log_well` as needing its own
+material (parchment/vellum, not timber) and the same caution applies to
+`exhaust_grate`'s body, which reads as a grate lid rather than a wood panel.
+Cutting timber onto either would be forcing the reusable materials onto a
+shape they were never QC'd against. Those two plus the four `wall_*` stone
+shapes remain the actual art bill.
+
+**Mechanism**, generalised from the console deck's ad-hoc process into
+`tools/art/furniture-materials/cut_wood_brass_furniture.py`: load the
+currently shipped PNG's alpha channel, wrap-tile the seamless source material
+to the target's exact pixel dimensions at a per-output crop offset, recombine
+with the *original* alpha, and assert `np.array_equal` on that alpha against
+the shipped file before ever writing anything. The five outputs —
+`pile_tray.png`/`pile_tray_brass.png` (806x1024), `lantern_cradle.png`/
+`lantern_cradle_brass.png` (1024x922, the round base disc plus the two ear
+tabs from §22.5), and `brass_strap.png` (1024x296) — all passed that assertion
+and were copied byte-for-byte into the gitignored
+`web/public/art/materials/board/`, same as the console deck.
+
+**Measured:** wood outputs land at 73.9–78.6% tonal range, matching
+`console_body`'s 80.9% precedent. Brass outputs land at 37.6–45.9%, matching
+`console_body_brass`'s deliberately-restrained 37.7% — the tray rim, the
+cradle's ears/ring and the strap are all thin fittings (tens of pixels wide),
+and §23's own record of the console brass's "two rounds" is explicit that
+pushing a thin brass fitting toward the full-field >60% target is what
+produced the rejected crushed-pepper look, not an improvement. Full numbers
+in `tools/art/furniture-materials/manifest.json`.
+
+**Verified by eye**, not just by measurement, per this project's own standing
+rule (§7, `LIGHTING_PLAN.md` §10): all five outputs composited over mid-grey
+(`_compare_*.png` in the same directory) — timber reads as oiled oak with
+knots and scratches, brass reads as brushed continuous alloy with fine
+hairlines, no gravel-speckle artifact on any of the thin fittings. Silhouettes
+match their described shapes exactly: `pile_tray_brass` is the rim frame
+around the tray's recess, `lantern_cradle_brass` is the ring-plus-two-ears
+shape.
+
+**Verified independently by the orchestrator** (not just re-reporting the
+building agent's own claims): re-ran `tsc -b` and `vitest run` from `web/`
+directly — 60 files, 1465 passed / 3 skipped, identical to the count before
+this change, confirming zero code or test changes were needed; loaded every
+`_compare_*.png` and looked at it; and diffed the five newly-shipped files in
+`web/public/art/materials/board/` byte-for-byte against the tracked copies in
+`tools/art/furniture-materials/` to confirm the install actually happened
+(`np.array_equal` on full RGBA, not just alpha) rather than trusting the
+report. No code changed outside `tools/art/`; `git status` before commit
+showed only the manifest, the five new PNGs, the five review sheets and the
+new cutter script.
+
+**Still open, unchanged:** `log_well`, `exhaust_grate` and the four wall
+shapes are still flat-fill, still waiting on a stone/vellum commission before
+anything can be cut for them.
+
+---

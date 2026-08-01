@@ -1,9 +1,9 @@
 {
   "brief": "docs/ART_BRIEF_MATERIALS.md",
   "date": "2026-07-26",
-  "status": "Installed 2026-07-31 (console deck only). QC'd sample, judged good on sight against the ENGINE_PLAN §7 de-shading brief and installed by the orchestrator — the rest of the furniture set (log_well, pile_tray, lantern_cradle, brass_strap, exhaust_grate, the four wall shapes) is still unstarted and open for the same treatment. Reusable source materials tracked here so a later pass can cut them, or new ones, without regenerating from scratch.",
+  "status": "Installed 2026-07-31 (console deck) and 2026-08-01 (pile_tray, lantern_cradle, brass_strap). Same treatment applied to the three remaining unambiguous wood/brass shapes, cut from the same two source materials with a new generic cutter script. log_well, exhaust_grate and the four wall_* shapes are still flat fill and still out of scope: ENGINE_PLAN §23 flags those as needing a new stone/vellum commission, not a cut of the timber/brass materials already on hand.",
   "installed": true,
-  "note": "The two *_body files are copied byte-for-byte into web/public/art/materials/board/ (a gitignored build artifact, so they are not committed there — this directory is the tracked source of record). The two source materials are kept so the rest of the furniture can be cut from the same cloth.",
+  "note": "The *_body, pile_tray*, lantern_cradle* and brass_strap files are copied byte-for-byte into web/public/art/materials/board/ (a gitignored build artifact, so they are not committed there — this directory is the tracked source of record). The two source materials are kept so the rest of the furniture can be cut from the same cloth.",
   "materials": [
     {
       "file": "console_timber.png",
@@ -36,17 +36,106 @@
       "alpha": "byte-identical to the shipped file",
       "tonal_range_before_pct": 0.8,
       "tonal_range_after_pct": 37.7
+    },
+    {
+      "file": "pile_tray.png",
+      "replaces": "web/public/art/materials/board/pile_tray.png",
+      "cut_from": "console_timber.png",
+      "cut_offset_xy": [0, 0],
+      "size": [806, 1024],
+      "alpha": "byte-identical to the shipped file (np.array_equal, verified before overwrite)",
+      "tonal_range_before_pct": 0.39,
+      "tonal_range_after_pct": 78.6,
+      "mean_rgb_before": [161.7, 134.4, 104.6],
+      "mean_rgb_after": [160.1, 130.9, 102.0]
+    },
+    {
+      "file": "pile_tray_brass.png",
+      "replaces": "web/public/art/materials/board/pile_tray_brass.png",
+      "cut_from": "console_brass.png",
+      "cut_offset_xy": [0, 0],
+      "size": [806, 1024],
+      "alpha": "byte-identical to the shipped file (np.array_equal, verified before overwrite)",
+      "tonal_range_before_pct": 0.48,
+      "tonal_range_after_pct": 45.9,
+      "mean_rgb_before": [190.8, 167.7, 111.3],
+      "mean_rgb_after": [187.4, 164.8, 108.3],
+      "note": "brass rim of the tray, ~84px wide in this canvas — thin fitting like console_body_brass, so restrained tonal range (not pushed toward the >60% full-field target) is deliberate, per the QC doc's 'Two rounds on the brass' finding."
+    },
+    {
+      "file": "lantern_cradle.png",
+      "replaces": "web/public/art/materials/board/lantern_cradle.png",
+      "cut_from": "console_timber.png",
+      "cut_offset_xy": [350, 120],
+      "size": [1024, 922],
+      "alpha": "byte-identical to the shipped file (np.array_equal, verified before overwrite)",
+      "tonal_range_before_pct": 0.39,
+      "tonal_range_after_pct": 73.9,
+      "mean_rgb_before": [161.7, 134.4, 104.6],
+      "mean_rgb_after": [163.1, 131.4, 100.3],
+      "note": "round base disc, per ENGINE_PLAN §22.5 ('the cradle's brass ears running past a perfectly round base disc')."
+    },
+    {
+      "file": "lantern_cradle_brass.png",
+      "replaces": "web/public/art/materials/board/lantern_cradle_brass.png",
+      "cut_from": "console_brass.png",
+      "cut_offset_xy": [350, 120],
+      "size": [1024, 922],
+      "alpha": "byte-identical to the shipped file (np.array_equal, verified before overwrite)",
+      "tonal_range_before_pct": 0.48,
+      "tonal_range_after_pct": 40.7,
+      "mean_rgb_before": [190.8, 167.7, 111.3],
+      "mean_rgb_after": [192.3, 169.1, 111.7],
+      "note": "the two ear tabs plus the ring around the base disc — thin fitting, restrained tonal range is deliberate, same reasoning as pile_tray_brass."
+    },
+    {
+      "file": "brass_strap.png",
+      "replaces": "web/public/art/materials/board/brass_strap.png",
+      "cut_from": "console_brass.png",
+      "cut_offset_xy": [650, 500],
+      "size": [1024, 296],
+      "alpha": "byte-identical to the shipped file (np.array_equal, verified before overwrite)",
+      "tonal_range_before_pct": 0.48,
+      "tonal_range_after_pct": 37.6,
+      "mean_rgb_before": [190.8, 167.7, 111.3],
+      "mean_rgb_after": [194.6, 171.3, 113.4],
+      "note": "brass-only shape (bake.py's shape(build_brass_strap, colour=BRASS), no wood counterpart). Tonal range lands almost exactly on console_body_brass's 37.7% precedent."
     }
   ],
   "untouched": [
     "console_body_normal.png",
     "console_body_material.png",
     "console_body_brass_normal.png",
-    "console_body_brass_material.png"
+    "console_body_brass_material.png",
+    "pile_tray_normal.png",
+    "pile_tray_material.png",
+    "pile_tray_brass_normal.png",
+    "pile_tray_brass_material.png",
+    "lantern_cradle_normal.png",
+    "lantern_cradle_material.png",
+    "lantern_cradle_brass_normal.png",
+    "lantern_cradle_brass_material.png",
+    "brass_strap_normal.png",
+    "brass_strap_material.png"
   ],
+  "still_flat_fill": [
+    "log_well.png",
+    "log_well_brass.png",
+    "exhaust_grate.png",
+    "exhaust_grate_brass.png",
+    "wall_face.png",
+    "wall_face_tall.png",
+    "wall_face_chipped.png"
+  ],
+  "cutter_script": "cut_wood_brass_furniture.py",
   "review_sheets": [
     "_compare_console.png",
     "_compare_brass2.png",
-    "_tile2x2_console_timber.png"
+    "_tile2x2_console_timber.png",
+    "_compare_pile_tray.png",
+    "_compare_pile_tray_brass.png",
+    "_compare_lantern_cradle.png",
+    "_compare_lantern_cradle_brass.png",
+    "_compare_brass_strap.png"
   ]
 }
